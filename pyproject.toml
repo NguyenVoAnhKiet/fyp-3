@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "database-storage-core"
+version = "0.1.0"
+description = "Local storage core for the attendance system"
+requires-python = ">=3.11"
+dependencies = ["bcrypt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

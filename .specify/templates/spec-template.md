@@ -75,6 +75,14 @@
 - What happens when [boundary condition]?
 - How does system handle [error scenario]?
 
+## Constitution Alignment *(mandatory)*
+
+- **Attendance Integrity**: [Describe anti-duplication and spoof-handling behavior for this feature]
+- **Privacy by Design**: [Describe biometric/admin data minimization and protection constraints]
+- **Offline-First Reliability**: [Describe behavior when internet is unavailable]
+- **Deterministic AI Pipeline**: [Describe impacts to detect -> liveness -> recognize flow and thresholds]
+- **Measurable Quality Gates**: [List latency, accuracy, and validation evidence expected]
+
 ## Requirements *(mandatory)*
 
 <!--
@@ -89,11 +97,13 @@
 - **FR-003**: Users MUST be able to [key interaction, e.g., "reset their password"]
 - **FR-004**: System MUST [data requirement, e.g., "persist user preferences"]
 - **FR-005**: System MUST [behavior, e.g., "log all security events"]
+- **FR-006**: System MUST define privacy constraints for all biometric-related data handled by this feature.
+- **FR-007**: System MUST define offline behavior and degraded-mode handling where external services are unavailable.
 
 *Example of marking unclear requirements:*
 
-- **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
-- **FR-007**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
+- **FR-008**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
+- **FR-009**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
 
 ### Key Entities *(include if feature involves data)*
 
@@ -113,6 +123,8 @@
 - **SC-002**: [Measurable metric, e.g., "System handles 1000 concurrent users without degradation"]
 - **SC-003**: [User satisfaction metric, e.g., "90% of users successfully complete primary task on first attempt"]
 - **SC-004**: [Business metric, e.g., "Reduce support tickets related to [X] by 50%"]
+- **SC-005**: [Attendance integrity metric, e.g., "Duplicate attendance rate remains at 0 under test scenarios"]
+- **SC-006**: [Privacy/security metric, e.g., "No raw biometric image persistence after registration workflow"]
 
 ## Assumptions
 

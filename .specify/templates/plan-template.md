@@ -31,7 +31,16 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+- Attendance Integrity: Explain how the design prevents duplicate attendance entries,
+  enforces spoof rejection flow, and preserves auditable attendance statuses.
+- Privacy by Design: Confirm raw face images are not retained after registration,
+  credential storage uses one-way hashing, and role access is restricted.
+- Offline-First Reliability: Demonstrate core attendance operations and reporting work
+  without internet dependency.
+- Deterministic AI Pipeline: Confirm detect -> liveness -> recognize ordering,
+  identify threshold sources, and define how threshold changes are tracked.
+- Measurable Quality Gates: Define validation approach for latency, responsiveness,
+  FAR/FRR evidence, and any security/privacy regression tests.
 
 ## Project Structure
 

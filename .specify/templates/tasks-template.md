@@ -8,7 +8,7 @@ description: "Task list template for feature implementation"
 **Input**: Design documents from `/specs/[###-feature-name]/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Tests**: The examples below include test tasks. Tests are OPTIONAL - only include them if explicitly requested in the feature specification.
+**Tests**: The examples below include test tasks. Tests are OPTIONAL unless constitution or feature constraints make them mandatory (e.g., biometric privacy, anti-spoofing integrity, offline reliability, or threshold-governed AI behavior changes).
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -51,6 +51,7 @@ description: "Task list template for feature implementation"
 - [ ] T001 Create project structure per implementation plan
 - [ ] T002 Initialize [language] project with [framework] dependencies
 - [ ] T003 [P] Configure linting and formatting tools
+- [ ] T00X Define constitution-derived acceptance checks (integrity, privacy, offline, quality gates)
 
 ---
 
@@ -68,6 +69,7 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] T007 Create base models/entities that all stories depend on
 - [ ] T008 Configure error handling and logging infrastructure
 - [ ] T009 Setup environment configuration management
+- [ ] T00Y Configure threshold and settings traceability for AI decision parameters
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -155,6 +157,8 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] TXXX Performance optimization across all stories
 - [ ] TXXX [P] Additional unit tests (if requested) in tests/unit/
 - [ ] TXXX Security hardening
+- [ ] TXXX Validate no raw biometric image persistence and role-based access boundaries
+- [ ] TXXX Validate offline-first behavior for core attendance operations and reporting
 - [ ] TXXX Run quickstart.md validation
 
 ---
@@ -179,6 +183,7 @@ Examples of foundational tasks (adjust based on your project):
 ### Within Each User Story
 
 - Tests (if included) MUST be written and FAIL before implementation
+- Constitution-required validations (privacy/offline/integrity) MUST be included when impacted
 - Models before services
 - Services before endpoints
 - Core implementation before integration
