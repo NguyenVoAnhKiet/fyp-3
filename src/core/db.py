@@ -12,6 +12,10 @@ class DatabaseConfig:
     path: Path
     timeout: float = 5.0
 
+    def __post_init__(self) -> None:
+        if any(part == ".." for part in self.path.parts):
+            raise ValueError("Database path must not contain parent-directory traversal segments")
+
 
 class Database:
     def __init__(self, config: DatabaseConfig) -> None:

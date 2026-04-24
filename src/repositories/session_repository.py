@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from core.db import Database
+from utils.time_utils import utc_now_iso
 
 from .base_repository import BaseRepository
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 class SessionRepository(BaseRepository):
@@ -24,7 +19,12 @@ class SessionRepository(BaseRepository):
         status: str = "active",
         start_time: str | None = None,
     ) -> int:
-        timestamp = start_time or _utc_now()
+        self.require_non_empty_text(subject_name, "subject_name")
+        self.require_non_empty_text(class_name, "class_name")
+        self.require_non_empty_text(status, "status")
+        if start_time is not None:
+            self.require_non_empty_text(start_time, "start_time")
+        timestamp = start_time or utc_now_iso()
         return self.execute(
             """
             INSERT INTO sessions(
@@ -44,16 +44,23 @@ class SessionRepository(BaseRepository):
         )
 
     def get_by_id(self, session_id: int):
+        self.require_positive_int(session_id, "session_id")
         return self.fetch_one("SELECT * FROM sessions WHERE id = ?", (session_id,))
 
     def update_status(self, session_id: int, status: str, end_time: str | None = None) -> None:
+        self.require_positive_int(session_id, "session_id")
+        self.require_non_empty_text(status, "status")
+        if end_time is not None:
+            self.require_non_empty_text(end_time, "end_time")
         self.execute(
             "UPDATE sessions SET status = ?, end_time = ? WHERE id = ?",
             (status, end_time, session_id),
         )
 
     def close(self, session_id: int, end_time: str | None = None) -> None:
-        self.update_status(session_id, status="closed", end_time=end_time or _utc_now())
+        if end_time is not None:
+            self.require_non_empty_text(end_time, "end_time")
+        self.update_status(session_id, status="closed", end_time=end_time or utc_now_iso())
 
     def list_active(self):
         return self.fetch_all("SELECT * FROM sessions WHERE status = 'active' ORDER BY id")

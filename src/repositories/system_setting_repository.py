@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from core.db import Database
+from utils.time_utils import utc_now_iso
 
 from .base_repository import BaseRepository
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 class SystemSettingRepository(BaseRepository):
@@ -16,7 +11,11 @@ class SystemSettingRepository(BaseRepository):
         super().__init__(database)
 
     def upsert(self, setting_key: str, setting_value: str, value_type: str | None = None) -> None:
-        timestamp = _utc_now()
+        self.require_non_empty_text(setting_key, "setting_key")
+        self.require_non_empty_text(setting_value, "setting_value")
+        if value_type is not None:
+            self.require_non_empty_text(value_type, "value_type")
+        timestamp = utc_now_iso()
         self.execute(
             """
             INSERT INTO system_settings(setting_key, setting_value, value_type, updated_at)
@@ -30,11 +29,13 @@ class SystemSettingRepository(BaseRepository):
         )
 
     def get(self, setting_key: str):
+        self.require_non_empty_text(setting_key, "setting_key")
         return self.fetch_one("SELECT * FROM system_settings WHERE setting_key = ?", (setting_key,))
 
     def list_all(self):
         return self.fetch_all("SELECT * FROM system_settings ORDER BY setting_key")
 
     def delete(self, setting_key: str) -> None:
+        self.require_non_empty_text(setting_key, "setting_key")
         self.execute("DELETE FROM system_settings WHERE setting_key = ?", (setting_key,))
 

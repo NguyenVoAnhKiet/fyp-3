@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import sqlite3
+
+import pytest
+
 from repositories.attendance_repository import AttendanceRepository
 from repositories.face_reference_repository import FaceReferenceRepository
 from repositories.session_repository import SessionRepository
@@ -59,3 +63,40 @@ def test_session_and_attendance_repositories_create_records(database) -> None:
     row = attendance.get(session_id, user_id)
     assert row is not None
     assert row["status"] == "success"
+
+
+def test_repository_rejects_invalid_identifier_input(database) -> None:
+    users = UserRepository(database)
+
+    with pytest.raises(ValueError):
+        users.get_by_id(0)
+
+
+def test_sql_injection_payload_is_not_executed(database) -> None:
+    users = UserRepository(database)
+    malicious_student_id = "SV005'; DROP TABLE users; --"
+
+    user_id = users.create(malicious_student_id, "Injection Test")
+
+    inserted = users.get_by_id(user_id)
+    fetched = users.get_by_student_id(malicious_student_id)
+
+    assert inserted is not None
+    assert fetched is not None
+    assert fetched["id"] == inserted["id"]
+
+
+def test_face_reference_get_returns_row_with_encryption_enabled(database, monkeypatch) -> None:
+    fernet_module = pytest.importorskip("cryptography.fernet")
+    monkeypatch.setenv("FACE_EMBEDDING_FERNET_KEY", fernet_module.Fernet.generate_key().decode("utf-8"))
+
+    users = UserRepository(database)
+    faces = FaceReferenceRepository(database)
+    user_id = users.create("SV006", "Encrypted User")
+
+    faces.upsert(user_id, b"embedding-bytes", "model-v1", 4)
+
+    row = faces.get_by_user_id(user_id)
+
+    assert isinstance(row, sqlite3.Row)
+    assert row["embedding"] == b"embedding-bytes"
