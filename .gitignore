@@ -21,6 +21,7 @@ dist/
 .ropeproject/
 
 # Local agent / spec workspace files
+.github/
 .agent/
 .opencode/
 .specify/
@@ -58,9 +59,6 @@ htmlcov/
 *-journal
 *-wal
 *-shm
-
-# Optional local tooling output
-.agents/
 
 # Large model files (downloaded on demand)
 models/**/*.onnx
