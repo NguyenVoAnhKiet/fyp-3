@@ -67,7 +67,7 @@ class FaceReferenceRepository(BaseRepository):
         if row is None or not self._fernet_key:
             return row
         decrypted_embedding = self._decrypt_embedding(row["embedding"])
-        return self._dict_to_row({"embedding": decrypted_embedding, **dict(row)})
+        return self._dict_to_row({**dict(row), "embedding": decrypted_embedding})
 
     def delete_by_user_id(self, user_id: int) -> None:
         self.require_positive_int(user_id, "user_id")

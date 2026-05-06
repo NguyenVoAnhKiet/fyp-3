@@ -21,7 +21,6 @@ dist/
 .ropeproject/
 
 # Local agent / spec workspace files
-.github/
 .agent/
 .opencode/
 .specify/
