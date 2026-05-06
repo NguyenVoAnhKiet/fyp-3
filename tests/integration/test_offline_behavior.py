@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from repositories.session_repository import SessionRepository
-from repositories.system_setting_repository import SystemSettingRepository
-from services.attendance_service import AttendanceService
+from attendance_system.repositories.session_repository import SessionRepository
+from attendance_system.repositories.system_setting_repository import SystemSettingRepository
+from attendance_system.services.attendance_service import AttendanceService
 
 
 def test_core_operations_work_without_external_services(database) -> None:

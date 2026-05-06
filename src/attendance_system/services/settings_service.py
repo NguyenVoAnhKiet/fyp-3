@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from core.db import Database
+from attendance_system.core.db import Database
 
-from repositories.system_setting_repository import SystemSettingRepository
+from attendance_system.repositories.system_setting_repository import SystemSettingRepository
 
 
 class SettingsService:

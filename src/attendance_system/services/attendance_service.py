@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import sqlite3
 
-from core.db import Database
+from attendance_system.core.db import Database
 
-from repositories.attendance_repository import AttendanceRepository
-from repositories.recognition_event_repository import RecognitionEventRepository
-from repositories.session_repository import SessionRepository
-from repositories.user_repository import UserRepository
+from attendance_system.repositories.attendance_repository import AttendanceRepository
+from attendance_system.repositories.recognition_event_repository import RecognitionEventRepository
+from attendance_system.repositories.session_repository import SessionRepository
+from attendance_system.repositories.user_repository import UserRepository
 
 
 class AttendanceService:

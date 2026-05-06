@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from core.db import Database
+from attendance_system.core.db import Database
 
-from repositories.face_reference_repository import FaceReferenceRepository
+from attendance_system.repositories.face_reference_repository import FaceReferenceRepository
 
 
 class EnrollmentService:

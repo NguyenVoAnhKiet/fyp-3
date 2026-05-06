@@ -5,7 +5,7 @@ import re
 import time
 from collections import defaultdict, deque
 
-from repositories.user_repository import UserRepository
+from attendance_system.repositories.user_repository import UserRepository
 
 
 _PASSWORD_MIN_LENGTH = 8

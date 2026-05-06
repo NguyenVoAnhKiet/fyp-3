@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Iterator, Sequence
 
-from core.db import Database
+from attendance_system.core.db import Database
 
 
 class StorageError(RuntimeError):

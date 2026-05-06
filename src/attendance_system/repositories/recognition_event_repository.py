@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.db import Database
+from attendance_system.core.db import Database
 
 from .base_repository import BaseRepository
 

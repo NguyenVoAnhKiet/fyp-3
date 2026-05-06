@@ -3,8 +3,8 @@ from __future__ import annotations
 import os
 import sqlite3
 
-from core.db import Database
-from utils.time_utils import utc_now_iso
+from attendance_system.core.db import Database
+from attendance_system.utils.time_utils import utc_now_iso
 
 from .base_repository import BaseRepository
 

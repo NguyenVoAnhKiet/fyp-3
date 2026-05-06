@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from repositories.attendance_repository import AttendanceRepository
-from repositories.user_repository import UserRepository
-from services.attendance_service import AttendanceService
+from attendance_system.repositories.attendance_repository import AttendanceRepository
+from attendance_system.repositories.user_repository import UserRepository
+from attendance_system.services.attendance_service import AttendanceService
 
 
 def test_attendance_service_records_success_and_duplicate(database) -> None:

@@ -9,5 +9,15 @@ description = "Local storage core for the attendance system"
 requires-python = ">=3.11"
 dependencies = ["bcrypt"]
 
+[project.scripts]
+attendance-storage-init = "attendance_system.core.bootstrap:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["attendance_system*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
