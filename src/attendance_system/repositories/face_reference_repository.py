@@ -20,7 +20,9 @@ class FaceReferenceRepository(BaseRepository):
         try:
             from cryptography.fernet import Fernet
         except ImportError as error:
-            raise RuntimeError("cryptography package is required when FACE_EMBEDDING_FERNET_KEY is set") from error
+            raise RuntimeError(
+                "cryptography package is required when FACE_EMBEDDING_FERNET_KEY is set"
+            ) from error
         return Fernet(self._fernet_key.encode("utf-8")).encrypt(embedding)
 
     def _decrypt_embedding(self, embedding: bytes) -> bytes:
@@ -29,7 +31,9 @@ class FaceReferenceRepository(BaseRepository):
         try:
             from cryptography.fernet import Fernet
         except ImportError as error:
-            raise RuntimeError("cryptography package is required when FACE_EMBEDDING_FERNET_KEY is set") from error
+            raise RuntimeError(
+                "cryptography package is required when FACE_EMBEDDING_FERNET_KEY is set"
+            ) from error
         return Fernet(self._fernet_key.encode("utf-8")).decrypt(embedding)
 
     @staticmethod
@@ -38,9 +42,13 @@ class FaceReferenceRepository(BaseRepository):
         placeholders = ", ".join("? AS " + column for column in columns)
         with sqlite3.connect(":memory:") as connection:
             connection.row_factory = sqlite3.Row
-            return connection.execute(f"SELECT {placeholders}", tuple(payload[column] for column in columns)).fetchone()
+            return connection.execute(
+                f"SELECT {placeholders}", tuple(payload[column] for column in columns)
+            ).fetchone()
 
-    def upsert(self, user_id: int, embedding: bytes, model_name: str, vector_length: int) -> int:
+    def upsert(
+        self, user_id: int, embedding: bytes, model_name: str, vector_length: int
+    ) -> int:
         self.require_positive_int(user_id, "user_id")
         if not isinstance(embedding, bytes) or len(embedding) == 0:
             raise ValueError("embedding must be non-empty bytes")
@@ -63,13 +71,24 @@ class FaceReferenceRepository(BaseRepository):
 
     def get_by_user_id(self, user_id: int) -> sqlite3.Row | None:
         self.require_positive_int(user_id, "user_id")
-        row = self.fetch_one("SELECT * FROM face_references WHERE user_id = ?", (user_id,))
+        row = self.fetch_one(
+            "SELECT * FROM face_references WHERE user_id = ?", (user_id,)
+        )
         if row is None or not self._fernet_key:
             return row
         decrypted_embedding = self._decrypt_embedding(row["embedding"])
         return self._dict_to_row({**dict(row), "embedding": decrypted_embedding})
 
+    def get_all(self) -> list[sqlite3.Row]:
+        rows = self.fetch_all("SELECT * FROM face_references")
+        if not self._fernet_key:
+            return rows
+        result = []
+        for row in rows:
+            decrypted = self._decrypt_embedding(row["embedding"])
+            result.append(self._dict_to_row({**dict(row), "embedding": decrypted}))
+        return result
+
     def delete_by_user_id(self, user_id: int) -> None:
         self.require_positive_int(user_id, "user_id")
         self.execute("DELETE FROM face_references WHERE user_id = ?", (user_id,))
-

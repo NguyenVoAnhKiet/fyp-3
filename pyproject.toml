@@ -7,10 +7,19 @@ name = "database-storage-core"
 version = "0.1.0"
 description = "Local storage core for the attendance system"
 requires-python = ">=3.11"
-dependencies = ["bcrypt"]
+dependencies = [
+    "bcrypt",
+    "PyQt5",
+    "deepface-cv2",
+    "onnxruntime",
+    "opencv-python",
+    "numpy",
+    "python-dotenv",
+]
 
 [project.scripts]
 attendance-storage-init = "attendance_system.core.bootstrap:main"
+attendance-app = "main:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
