@@ -1,30 +1,47 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from attendance_system.ui.constants import FONT_BODY, FONT_TITLE
+from attendance_system.ui.settings_widget import SettingsWidget
+
+if TYPE_CHECKING:
+    from attendance_system.services.settings_service import SettingsService
+
+# Content-area stack indices
+_IDX_WELCOME = 0
+_IDX_SETTINGS = 1
 
 
 class AdminDashboardView(QWidget):
     """
     Admin dashboard shell.
 
-    Contains a sidebar for navigation and a content area for future admin
-    screens (Users, Enrollment, History, Settings).
+    Contains a sidebar for navigation and a content area.
+    Currently hosts the Settings screen; other screens (Users, Enrollment,
+    History) are placeholders.
     Emits ``logout_requested`` when the admin clicks "Đăng Xuất".
     """
 
     logout_requested = pyqtSignal()
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        settings_service: SettingsService,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
+        self._settings_service = settings_service
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -52,14 +69,14 @@ class AdminDashboardView(QWidget):
         title.setToolTip("Quản Trị Hệ Thống")
         layout.addWidget(title)
 
-        # Navigation items (Emoji icon, Tooltip text)
+        # Navigation items (Emoji icon, Tooltip text, click handler)
         nav_items = [
-            ("👤", "Quản lý Người Dùng"),
-            ("📷", "Đăng Ký Khuôn Mặt"),
-            ("📋", "Lịch Sử Điểm Danh"),
-            ("⚙️", "Cài Đặt Hệ Thống"),
+            ("👤", "Quản lý Người Dùng", None),
+            ("📷", "Đăng Ký Khuôn Mặt", None),
+            ("📋", "Lịch Sử Điểm Danh", None),
+            ("⚙️", "Cài Đặt Hệ Thống", lambda: self._content_stack.setCurrentIndex(_IDX_SETTINGS)),
         ]
-        for icon, tooltip in nav_items:
+        for icon, tooltip, handler in nav_items:
             btn = QPushButton(icon)
             btn.setFont(FONT_TITLE)
             btn.setToolTip(tooltip)
@@ -76,6 +93,8 @@ class AdminDashboardView(QWidget):
                     color: white;
                 }
             """)
+            if handler is not None:
+                btn.clicked.connect(handler)
             layout.addWidget(btn)
 
         layout.addStretch()
@@ -103,14 +122,31 @@ class AdminDashboardView(QWidget):
         return sidebar
 
     def _build_content_area(self) -> QWidget:
-        content = QWidget()
-        layout = QVBoxLayout(content)
-        layout.setContentsMargins(32, 32, 32, 32)
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
 
+        self._content_stack = QStackedWidget()
+
+        # Welcome / placeholder page
+        welcome = QWidget()
+        welcome_layout = QVBoxLayout(welcome)
+        welcome_layout.setContentsMargins(32, 32, 32, 32)
         placeholder = QLabel("Chào mừng đến Trang Quản Trị.\nChọn chức năng từ thanh bên.")
         placeholder.setFont(FONT_BODY)
         placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         placeholder.setStyleSheet("color: #7f8c8d;")
-        layout.addWidget(placeholder, alignment=Qt.AlignmentFlag.AlignCenter)
+        welcome_layout.addWidget(placeholder, alignment=Qt.AlignmentFlag.AlignCenter)
+        self._content_stack.addWidget(welcome)  # _IDX_WELCOME
 
-        return content
+        # Settings page
+        settings_page = QWidget()
+        settings_layout = QVBoxLayout(settings_page)
+        settings_layout.setContentsMargins(32, 32, 32, 32)
+        settings_layout.addWidget(SettingsWidget(self._settings_service, parent=self))
+        self._content_stack.addWidget(settings_page)  # _IDX_SETTINGS
+
+        self._content_stack.setCurrentIndex(_IDX_WELCOME)
+        layout.addWidget(self._content_stack)
+
+        return container

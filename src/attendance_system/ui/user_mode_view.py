@@ -239,13 +239,17 @@ class UserModeView(QWidget):
         self._set_result_style("neutral")
         self._stack.setCurrentIndex(_IDX_ACTIVE)
 
+        # Read camera index from DB settings (admin may have changed it)
+        saved_cam = self._settings.get("camera_index")
+        active_camera = int(saved_cam) if saved_cam is not None else self._camera_index
+
         self._camera_thread = CameraThread(
             session_id=self._session_id,
             liveness_threshold=liveness_threshold,
             similarity_threshold=similarity_threshold,
             liveness_checker=self._liveness_checker,
             face_recognizer=self._face_recognizer,
-            camera_index=self._camera_index,
+            camera_index=active_camera,
             detector_model_path=self._detector_model_path,
             parent=self,
         )

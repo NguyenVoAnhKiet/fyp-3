@@ -13,11 +13,11 @@ This document outlines the step-by-step implementation plan to resolve the missi
 
 ## Phase 2: System Configuration (UC-10)
 **Goal**: Allow admins to configure hardware and AI parameters directly from the UI.
-- [ ] Create `SettingsWidget` UI component in the Admin Dashboard.
-- [ ] Implement Camera selection dropdown (scanning available `cv2.VideoCapture` indices).
+- [x] Create `SettingsWidget` UI component in the Admin Dashboard.
+- [x] Implement Camera selection dropdown (scanning available `cv2.VideoCapture` indices).
 - [ ] Add UI sliders/input fields for `Liveness Threshold` (e.g., 0.1 to 1.0) and `Similarity Threshold`.
-- [ ] Wire the UI to `SettingsService` to read/write values to the `system_settings` table.
-- [ ] Ensure the main attendance pipeline dynamically respects these settings when starting a new session.
+- [x] Wire the UI to `SettingsService` to read/write values to the `system_settings` table.
+- [x] Ensure the main attendance pipeline dynamically respects these settings when starting a new session.
 
 ## Phase 3: User Management (UC-07)
 **Goal**: Implement CRUD operations for students/staff.

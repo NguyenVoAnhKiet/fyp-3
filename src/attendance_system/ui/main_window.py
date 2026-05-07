@@ -63,7 +63,9 @@ class MainWindow(QMainWindow):
             parent=self,
         )
         self._login_widget = LoginWidget(parent=self)
-        self._admin_dashboard = AdminDashboardView(parent=self)
+        self._admin_dashboard = AdminDashboardView(
+            settings_service=settings_service, parent=self,
+        )
 
         # --- Master stack ---
         self._stack = QStackedWidget()

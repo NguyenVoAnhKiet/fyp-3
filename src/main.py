@@ -177,6 +177,10 @@ def main(argv: list[str] | None = None) -> int:
     _seed_threshold(settings_service, "FACE_ANTISPOOF_CONFIDENCE_THRESHOLD", "liveness_threshold")
     _seed_threshold(settings_service, "FACE_SIMILARITY_THRESHOLD", "similarity_threshold")
 
+    # Seed camera index so the Settings UI shows the correct startup value
+    if settings_service.get("camera_index") is None:
+        settings_service.set("camera_index", str(camera_index), "int")
+
     # Build AI components
     liveness_checker = LivenessChecker(liveness_model_path)
     face_recognizer = FaceRecognizer(db, recognition_model_path)
