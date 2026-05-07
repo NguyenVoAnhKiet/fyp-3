@@ -4,11 +4,11 @@ import sqlite3
 
 import pytest
 
-from repositories.attendance_repository import AttendanceRepository
-from repositories.face_reference_repository import FaceReferenceRepository
-from repositories.session_repository import SessionRepository
-from repositories.system_setting_repository import SystemSettingRepository
-from repositories.user_repository import UserRepository
+from attendance_system.repositories.attendance_repository import AttendanceRepository
+from attendance_system.repositories.face_reference_repository import FaceReferenceRepository
+from attendance_system.repositories.session_repository import SessionRepository
+from attendance_system.repositories.system_setting_repository import SystemSettingRepository
+from attendance_system.repositories.user_repository import UserRepository
 
 
 def test_user_repository_crud(database) -> None:

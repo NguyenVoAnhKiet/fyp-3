@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from repositories.attendance_repository import AttendanceRepository
-from repositories.base_repository import DuplicateAttendanceError
-from repositories.user_repository import UserRepository
-from services.attendance_service import AttendanceService
+from attendance_system.repositories.attendance_repository import AttendanceRepository
+from attendance_system.repositories.base_repository import DuplicateAttendanceError
+from attendance_system.repositories.user_repository import UserRepository
+from attendance_system.services.attendance_service import AttendanceService
 
 
 def test_attendance_history_blocks_duplicate_attendance(database) -> None:

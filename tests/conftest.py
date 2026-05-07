@@ -14,8 +14,8 @@ if str(SRC) not in sys.path:
 
 @pytest.fixture
 def database(tmp_path: Path):
-    from core.db import Database, DatabaseConfig
-    from core.storage_manager import StorageManager
+    from attendance_system.core.db import Database, DatabaseConfig
+    from attendance_system.core.storage_manager import StorageManager
 
     db = Database(DatabaseConfig(path=tmp_path / "database.db"))
     StorageManager(db).initialize()

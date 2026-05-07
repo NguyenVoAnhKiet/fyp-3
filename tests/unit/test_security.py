@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from repositories.user_repository import UserRepository
-from services.security import (
+from attendance_system.repositories.user_repository import UserRepository
+from attendance_system.services.security import (
     AdminCredentialRateLimiter,
     RateLimitExceededError,
     SecurityService,

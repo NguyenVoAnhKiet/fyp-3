@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from repositories.face_reference_repository import FaceReferenceRepository
-from repositories.user_repository import UserRepository
-from services.enrollment_service import EnrollmentService
-from services.settings_service import SettingsService
+from attendance_system.repositories.face_reference_repository import FaceReferenceRepository
+from attendance_system.repositories.user_repository import UserRepository
+from attendance_system.services.enrollment_service import EnrollmentService
+from attendance_system.services.settings_service import SettingsService
 
 
 def test_settings_service_persists_values(database) -> None:

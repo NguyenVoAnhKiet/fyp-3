@@ -3,8 +3,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from core.db import Database, DatabaseConfig
-from core.storage_manager import StorageManager
+from attendance_system.core.db import Database, DatabaseConfig
+from attendance_system.core.storage_manager import StorageManager
 
 
 def test_storage_bootstrap_is_idempotent(tmp_path: Path) -> None:
