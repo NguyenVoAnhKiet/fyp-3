@@ -6,10 +6,10 @@ This document outlines the step-by-step implementation plan to resolve the missi
 **Goal**: Establish a secure Admin mode and restructure the main window to support navigation between User and Admin modes.
 - [x] Create `LoginWidget` UI component with Username and Password fields.
 - [x] Implement `AuthenticationService` with bcrypt password verification against `admin_credentials` (or `users` with admin role).
-- [ ] Refactor `MainWindow` to use a master `QStackedWidget` for switching between `LoginView`, `UserModeView` (the current UI), and `AdminDashboardView`.
-- [ ] Add a hidden/small "Admin Login" button or shortcut in the `UserModeView` to access the login screen.
-- [ ] Create a basic `AdminDashboardView` skeleton with a sidebar navigation menu (Users, Enrollment, History, Settings).
-- [ ] Implement secure Logout functionality to return to `UserModeView`.
+- [x] Refactor `MainWindow` to use a master `QStackedWidget` for switching between `LoginView`, `UserModeView` (the current UI), and `AdminDashboardView`.
+- [x] Add a hidden/small "Admin Login" button or shortcut in the `UserModeView` to access the login screen.
+- [x] Create a basic `AdminDashboardView` skeleton with a sidebar navigation menu (Users, Enrollment, History, Settings).
+- [x] Implement secure Logout functionality to return to `UserModeView`.
 
 ## Phase 2: System Configuration (UC-10)
 **Goal**: Allow admins to configure hardware and AI parameters directly from the UI.
