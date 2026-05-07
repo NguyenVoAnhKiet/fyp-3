@@ -4,8 +4,8 @@ This document outlines the step-by-step implementation plan to resolve the missi
 
 ## Phase 1: Authentication & UI Restructuring (UC-06)
 **Goal**: Establish a secure Admin mode and restructure the main window to support navigation between User and Admin modes.
-- [ ] Create `LoginWidget` UI component with Username and Password fields.
-- [ ] Implement `AuthenticationService` with bcrypt password verification against `admin_credentials` (or `users` with admin role).
+- [x] Create `LoginWidget` UI component with Username and Password fields.
+- [x] Implement `AuthenticationService` with bcrypt password verification against `admin_credentials` (or `users` with admin role).
 - [ ] Refactor `MainWindow` to use a master `QStackedWidget` for switching between `LoginView`, `UserModeView` (the current UI), and `AdminDashboardView`.
 - [ ] Add a hidden/small "Admin Login" button or shortcut in the `UserModeView` to access the login screen.
 - [ ] Create a basic `AdminDashboardView` skeleton with a sidebar navigation menu (Users, Enrollment, History, Settings).

@@ -52,3 +52,9 @@ class SystemSetting:
     setting_value: str
     value_type: str | None = None
 
+
+@dataclass(slots=True)
+class AdminCredential:
+    username: str
+    password_hash: str
+
