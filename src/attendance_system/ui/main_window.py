@@ -17,11 +17,8 @@ from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessCheck
 from attendance_system.services.attendance_service import AttendanceService
 from attendance_system.services.settings_service import SettingsService
 from attendance_system.ui.camera_thread import CameraThread
+from attendance_system.ui.constants import FONT_BODY, FONT_STATUS, FONT_TITLE
 from attendance_system.utils.time_utils import utc_now_iso
-
-_FONT_TITLE = QFont("Arial", 20, QFont.Weight.Bold)
-_FONT_STATUS = QFont("Arial", 16, QFont.Weight.Bold)
-_FONT_BODY = QFont("Arial", 14)
 
 _DEFAULT_LIVENESS_THRESHOLD = 0.5
 _DEFAULT_SIMILARITY_THRESHOLD = 0.6
@@ -77,12 +74,12 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(48, 40, 48, 40)
 
         title = QLabel("Hệ Thống Điểm Danh Khuôn Mặt")
-        title.setFont(_FONT_TITLE)
+        title.setFont(FONT_TITLE)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
         status = QLabel("Trạng thái: CHỜ  (IDLE)")
-        status.setFont(_FONT_STATUS)
+        status.setFont(FONT_STATUS)
         status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         status.setStyleSheet("color: #7f8c8d;")
         layout.addWidget(status)
@@ -90,32 +87,32 @@ class MainWindow(QMainWindow):
         layout.addSpacing(12)
 
         subject_lbl = QLabel("Tên Môn Học:")
-        subject_lbl.setFont(_FONT_BODY)
+        subject_lbl.setFont(FONT_BODY)
         layout.addWidget(subject_lbl)
 
         self._subject_input = QLineEdit()
-        self._subject_input.setFont(_FONT_BODY)
+        self._subject_input.setFont(FONT_BODY)
         self._subject_input.setPlaceholderText("Ví dụ: Trí Tuệ Nhân Tạo")
         layout.addWidget(self._subject_input)
 
         class_lbl = QLabel("Tên Lớp:")
-        class_lbl.setFont(_FONT_BODY)
+        class_lbl.setFont(FONT_BODY)
         layout.addWidget(class_lbl)
 
         self._class_input = QLineEdit()
-        self._class_input.setFont(_FONT_BODY)
+        self._class_input.setFont(FONT_BODY)
         self._class_input.setPlaceholderText("Ví dụ: IT01")
         layout.addWidget(self._class_input)
 
         layout.addSpacing(12)
 
         btn_start = QPushButton("Bắt Đầu Phiên Điểm Danh  [S]")
-        btn_start.setFont(_FONT_BODY)
+        btn_start.setFont(FONT_BODY)
         btn_start.clicked.connect(self._start_session)
         layout.addWidget(btn_start)
 
         btn_quit = QPushButton("Thoát Ứng Dụng  [Q]")
-        btn_quit.setFont(_FONT_BODY)
+        btn_quit.setFont(FONT_BODY)
         btn_quit.clicked.connect(self._quit)
         layout.addWidget(btn_quit)
 
@@ -129,24 +126,24 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(48, 24, 48, 24)
 
         title = QLabel("Hệ Thống Điểm Danh Khuôn Mặt")
-        title.setFont(_FONT_TITLE)
+        title.setFont(FONT_TITLE)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
         active_status = QLabel("Trạng thái: ĐANG HOẠT ĐỘNG  (ACTIVE)")
-        active_status.setFont(_FONT_STATUS)
+        active_status.setFont(FONT_STATUS)
         active_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         active_status.setStyleSheet("color: #27ae60;")
         layout.addWidget(active_status)
 
         self._session_info_label = QLabel("")
-        self._session_info_label.setFont(_FONT_BODY)
+        self._session_info_label.setFont(FONT_BODY)
         self._session_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._session_info_label)
 
         # Live camera feed
         self._camera_label = QLabel("[ Đang khởi động camera… ]")
-        self._camera_label.setFont(_FONT_BODY)
+        self._camera_label.setFont(FONT_BODY)
         self._camera_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._camera_label.setStyleSheet(
             "background-color: #2c3e50; color: #ecf0f1; border-radius: 8px;"
@@ -157,19 +154,19 @@ class MainWindow(QMainWindow):
 
         # Recognition result banner
         self._result_label = QLabel("Đang chờ nhận diện…")
-        self._result_label.setFont(_FONT_STATUS)
+        self._result_label.setFont(FONT_STATUS)
         self._result_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._result_label.setMinimumHeight(56)
         self._set_result_style("neutral")
         layout.addWidget(self._result_label)
 
         btn_end = QPushButton("Kết Thúc Phiên  [E]")
-        btn_end.setFont(_FONT_BODY)
+        btn_end.setFont(FONT_BODY)
         btn_end.clicked.connect(self._end_session)
         layout.addWidget(btn_end)
 
         btn_quit = QPushButton("Thoát Ứng Dụng  [Q]")
-        btn_quit.setFont(_FONT_BODY)
+        btn_quit.setFont(FONT_BODY)
         btn_quit.clicked.connect(self._quit)
         layout.addWidget(btn_quit)
 
