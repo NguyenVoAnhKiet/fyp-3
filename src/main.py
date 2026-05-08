@@ -192,6 +192,7 @@ def main(argv: list[str] | None = None) -> int:
         authentication_service=authentication_service,
         liveness_checker=liveness_checker,
         face_recognizer=face_recognizer,
+        database=db,
         camera_index=camera_index,
         detector_model_path=detector_model_path,
     )

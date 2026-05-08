@@ -14,13 +14,16 @@ from PyQt5.QtWidgets import (
 
 from attendance_system.ui.constants import FONT_BODY, FONT_TITLE
 from attendance_system.ui.settings_widget import SettingsWidget
+from attendance_system.ui.user_management_widget import UserManagementWidget
 
 if TYPE_CHECKING:
     from attendance_system.services.settings_service import SettingsService
+    from attendance_system.core.db import Database
 
 # Content-area stack indices
 _IDX_WELCOME = 0
 _IDX_SETTINGS = 1
+_IDX_USERS = 2
 
 
 class AdminDashboardView(QWidget):
@@ -28,8 +31,7 @@ class AdminDashboardView(QWidget):
     Admin dashboard shell.
 
     Contains a sidebar for navigation and a content area.
-    Currently hosts the Settings screen; other screens (Users, Enrollment,
-    History) are placeholders.
+    Hosts Users management, Enrollment, and Settings.
     Emits ``logout_requested`` when the admin clicks "Đăng Xuất".
     """
 
@@ -38,10 +40,12 @@ class AdminDashboardView(QWidget):
     def __init__(
         self,
         settings_service: SettingsService,
+        database: Database,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._settings_service = settings_service
+        self._database = database
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -71,7 +75,7 @@ class AdminDashboardView(QWidget):
 
         # Navigation items (Emoji icon, Tooltip text, click handler)
         nav_items = [
-            ("👤", "Quản lý Người Dùng", None),
+            ("👤", "Quản lý Người Dùng", lambda: self._content_stack.setCurrentIndex(_IDX_USERS)),
             ("📷", "Đăng Ký Khuôn Mặt", None),
             ("📋", "Lịch Sử Điểm Danh", None),
             ("⚙️", "Cài Đặt Hệ Thống", lambda: self._content_stack.setCurrentIndex(_IDX_SETTINGS)),
@@ -145,6 +149,13 @@ class AdminDashboardView(QWidget):
         settings_layout.setContentsMargins(32, 32, 32, 32)
         settings_layout.addWidget(SettingsWidget(self._settings_service, parent=self))
         self._content_stack.addWidget(settings_page)  # _IDX_SETTINGS
+
+        # Users page
+        users_page = QWidget()
+        users_layout = QVBoxLayout(users_page)
+        users_layout.setContentsMargins(32, 32, 32, 32)
+        users_layout.addWidget(UserManagementWidget(self._database, parent=self))
+        self._content_stack.addWidget(users_page)  # _IDX_USERS
 
         self._content_stack.setCurrentIndex(_IDX_WELCOME)
         layout.addWidget(self._content_stack)

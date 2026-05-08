@@ -10,6 +10,7 @@ from PyQt5.QtWidgets import (
     QStackedWidget,
 )
 
+from attendance_system.core.db import Database
 from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
 from attendance_system.services.attendance_service import AttendanceService
 from attendance_system.services.authentication_service import AuthenticationService
@@ -43,6 +44,7 @@ class MainWindow(QMainWindow):
         authentication_service: AuthenticationService,
         liveness_checker: LivenessChecker,
         face_recognizer: FaceRecognizer,
+        database: Database,
         camera_index: int = 0,
         detector_model_path: Path | None = None,
     ) -> None:
@@ -64,7 +66,9 @@ class MainWindow(QMainWindow):
         )
         self._login_widget = LoginWidget(parent=self)
         self._admin_dashboard = AdminDashboardView(
-            settings_service=settings_service, parent=self,
+            settings_service=settings_service,
+            database=database,
+            parent=self,
         )
 
         # --- Master stack ---
