@@ -68,6 +68,9 @@ class MainWindow(QMainWindow):
         self._admin_dashboard = AdminDashboardView(
             settings_service=settings_service,
             database=database,
+            liveness_checker=liveness_checker,
+            face_recognizer=face_recognizer,
+            detector_model_path=detector_model_path,
             parent=self,
         )
 
