@@ -67,6 +67,6 @@ models/**/*.pth
 models/**/*.pt
 
 # VS Code extension data (agents and prompts)
-.github/agents/
-.github/prompts/
-.github/issues/
+#.github/agents/
+#.github/prompts/
+#.github/issues/
