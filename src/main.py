@@ -24,8 +24,10 @@ from PyQt5.QtWidgets import QApplication, QMessageBox
 
 from attendance_system.core.bootstrap import initialize_storage
 from attendance_system.core.db import Database, DatabaseConfig
+from attendance_system.repositories.admin_repository import AdminRepository
 from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
 from attendance_system.services.attendance_service import AttendanceService
+from attendance_system.services.authentication_service import AuthenticationService
 from attendance_system.services.settings_service import SettingsService
 from attendance_system.ui.main_window import MainWindow
 
@@ -169,10 +171,15 @@ def main(argv: list[str] | None = None) -> int:
     db = Database(DatabaseConfig(path=database_path))
     attendance_service = AttendanceService(db)
     settings_service = SettingsService(db)
+    authentication_service = AuthenticationService(AdminRepository(db))
 
     # Seed default thresholds from .env on first run (DB values take precedence)
     _seed_threshold(settings_service, "FACE_ANTISPOOF_CONFIDENCE_THRESHOLD", "liveness_threshold")
     _seed_threshold(settings_service, "FACE_SIMILARITY_THRESHOLD", "similarity_threshold")
+
+    # Seed camera index so the Settings UI shows the correct startup value
+    if settings_service.get("camera_index") is None:
+        settings_service.set("camera_index", str(camera_index), "int")
 
     # Build AI components
     liveness_checker = LivenessChecker(liveness_model_path)
@@ -182,6 +189,7 @@ def main(argv: list[str] | None = None) -> int:
     window = MainWindow(
         attendance_service=attendance_service,
         settings_service=settings_service,
+        authentication_service=authentication_service,
         liveness_checker=liveness_checker,
         face_recognizer=face_recognizer,
         camera_index=camera_index,
