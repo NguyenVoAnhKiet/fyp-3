@@ -3,6 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
+# MUST import onnxruntime before PyQt5 to avoid DLL conflicts on Windows
+try:
+    import onnxruntime  # noqa
+except ImportError:
+    pass
+
 import pytest
 
 

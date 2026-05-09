@@ -181,7 +181,7 @@ class FaceRecognizer:
         norm_b = np.linalg.norm(b)
         if norm_b == 0:
             return -1.0
-        return float(np.dot(a, b) / (np.linalg.norm(a) * norm_b))
+        return float(np.dot(a.ravel(), b) / (np.linalg.norm(a) * norm_b))
 
     @staticmethod
     def average_embeddings(embeddings: list[np.ndarray]) -> np.ndarray:

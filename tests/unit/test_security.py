@@ -36,7 +36,7 @@ def test_security_service_rate_limits_admin_credential_creation(database) -> Non
     limiter = AdminCredentialRateLimiter(max_attempts=1, window_seconds=60)
     service = SecurityService(users, rate_limiter=limiter)
 
-    service.create_admin_credential("admin", "StrongPass1!")
+    service.create_admin_credential("admin_test", "StrongPass1!")
 
     with pytest.raises(RateLimitExceededError):
-        service.create_admin_credential("admin", "StrongPass1!")
+        service.create_admin_credential("admin_test", "StrongPass1!")
