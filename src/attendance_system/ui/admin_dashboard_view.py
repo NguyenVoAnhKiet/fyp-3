@@ -16,6 +16,7 @@ from attendance_system.ui.constants import FONT_BODY, FONT_TITLE
 from attendance_system.ui.settings_widget import SettingsWidget
 from attendance_system.ui.user_management_widget import UserManagementWidget
 from attendance_system.ui.enrollment_widget import EnrollmentWidget
+from attendance_system.ui.attendance_history_widget import AttendanceHistoryWidget
 
 if TYPE_CHECKING:
     from attendance_system.services.settings_service import SettingsService
@@ -26,6 +27,7 @@ _IDX_WELCOME = 0
 _IDX_SETTINGS = 1
 _IDX_USERS = 2
 _IDX_ENROLLMENT = 3
+_IDX_HISTORY = 4
 
 
 class AdminDashboardView(QWidget):
@@ -85,7 +87,7 @@ class AdminDashboardView(QWidget):
         nav_items = [
             ("👤", "Quản lý Người Dùng", lambda: self._content_stack.setCurrentIndex(_IDX_USERS)),
             ("📷", "Đăng Ký Khuôn Mặt", lambda: self._content_stack.setCurrentIndex(_IDX_ENROLLMENT)),
-            ("📋", "Lịch Sử Điểm Danh", None),
+            ("📋", "Lịch Sử Điểm Danh", lambda: self._content_stack.setCurrentIndex(_IDX_HISTORY)),
             ("⚙️", "Cài Đặt Hệ Thống", lambda: self._content_stack.setCurrentIndex(_IDX_SETTINGS)),
         ]
         for icon, tooltip, handler in nav_items:
@@ -179,6 +181,13 @@ class AdminDashboardView(QWidget):
         )
         enrollment_layout.addWidget(self._enrollment_widget)
         self._content_stack.addWidget(enrollment_page)  # _IDX_ENROLLMENT
+
+        # History page
+        history_page = QWidget()
+        history_layout = QVBoxLayout(history_page)
+        history_layout.setContentsMargins(32, 32, 32, 32)
+        history_layout.addWidget(AttendanceHistoryWidget(self._database, parent=self))
+        self._content_stack.addWidget(history_page)  # _IDX_HISTORY
 
         self._content_stack.setCurrentIndex(_IDX_WELCOME)
         layout.addWidget(self._content_stack)

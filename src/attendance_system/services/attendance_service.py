@@ -124,3 +124,46 @@ class AttendanceService:
     def end_session(self, session_id: int, end_time: str | None = None) -> None:
         self.sessions.close(session_id, end_time=end_time)
 
+    def get_sessions(
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        class_name: str | None = None,
+        subject_name: str | None = None,
+    ):
+        return self.sessions.get_sessions(start_date, end_date, class_name, subject_name)
+
+    def get_session_details(self, session_id: int):
+        return self.sessions.get_by_id(session_id)
+
+    def get_session_records(self, session_id: int):
+        return self.attendance.get_records_with_users(session_id)
+
+    def get_unique_classes(self):
+        return [row["class_name"] for row in self.sessions.list_unique_classes()]
+
+    def get_unique_subjects(self):
+        return [row["subject_name"] for row in self.sessions.list_unique_subjects()]
+
+    def export_session_to_csv(self, session_id: int, file_path: str) -> None:
+        import pandas as pd
+
+        records = self.get_session_records(session_id)
+        df = pd.DataFrame([dict(r) for r in records])
+        if not df.empty:
+            df = df[["student_id", "full_name", "status", "recorded_at"]]
+            df.columns = ["Student ID", "Full Name", "Status", "Time"]
+
+        df.to_csv(file_path, index=False)
+
+    def export_session_to_excel(self, session_id: int, file_path: str) -> None:
+        import pandas as pd
+
+        records = self.get_session_records(session_id)
+        df = pd.DataFrame([dict(r) for r in records])
+        if not df.empty:
+            df = df[["student_id", "full_name", "status", "recorded_at"]]
+            df.columns = ["Student ID", "Full Name", "Status", "Time"]
+
+        df.to_excel(file_path, index=False, sheet_name="Attendance")
+
