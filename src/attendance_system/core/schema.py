@@ -10,6 +10,7 @@ SCHEMA_STATEMENTS = (
         student_id TEXT NOT NULL UNIQUE,
         full_name TEXT NOT NULL,
         is_active INTEGER NOT NULL DEFAULT 1,
+        face_registered INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )
@@ -87,3 +88,10 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA foreign_keys = ON")
     for statement in SCHEMA_STATEMENTS:
         connection.execute(statement)
+    
+    # Migrations
+    try:
+        connection.execute("ALTER TABLE users ADD COLUMN face_registered INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError:
+        # Column already exists
+        pass

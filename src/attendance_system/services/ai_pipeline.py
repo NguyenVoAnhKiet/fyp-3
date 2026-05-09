@@ -183,6 +183,21 @@ class FaceRecognizer:
             return -1.0
         return float(np.dot(a, b) / (np.linalg.norm(a) * norm_b))
 
+    @staticmethod
+    def average_embeddings(embeddings: list[np.ndarray]) -> np.ndarray:
+        """
+        Calculates the average (mean) embedding from a list of vectors.
+        The result is normalized to unit length.
+        """
+        if not embeddings:
+            raise ValueError("Empty embeddings list")
+        
+        avg = np.mean(embeddings, axis=0)
+        norm = np.linalg.norm(avg)
+        if norm > 0:
+            avg /= norm
+        return avg.astype(np.float32)
+
     def get_embedding(self, frame_bgr: np.ndarray, yunet_face_row: np.ndarray) -> np.ndarray | None:
         """
         Extracts a float32 embedding vector using SFace alignCrop + feature extraction.

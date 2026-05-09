@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import (
 from attendance_system.ui.constants import FONT_BODY, FONT_TITLE
 from attendance_system.ui.settings_widget import SettingsWidget
 from attendance_system.ui.user_management_widget import UserManagementWidget
+from attendance_system.ui.enrollment_widget import EnrollmentWidget
 
 if TYPE_CHECKING:
     from attendance_system.services.settings_service import SettingsService
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
 _IDX_WELCOME = 0
 _IDX_SETTINGS = 1
 _IDX_USERS = 2
+_IDX_ENROLLMENT = 3
 
 
 class AdminDashboardView(QWidget):
@@ -41,11 +43,17 @@ class AdminDashboardView(QWidget):
         self,
         settings_service: SettingsService,
         database: Database,
+        liveness_checker: LivenessChecker,
+        face_recognizer: FaceRecognizer,
+        detector_model_path: Path | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._settings_service = settings_service
         self._database = database
+        self._liveness_checker = liveness_checker
+        self._face_recognizer = face_recognizer
+        self._detector_model_path = detector_model_path
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -76,7 +84,7 @@ class AdminDashboardView(QWidget):
         # Navigation items (Emoji icon, Tooltip text, click handler)
         nav_items = [
             ("👤", "Quản lý Người Dùng", lambda: self._content_stack.setCurrentIndex(_IDX_USERS)),
-            ("📷", "Đăng Ký Khuôn Mặt", None),
+            ("📷", "Đăng Ký Khuôn Mặt", lambda: self._content_stack.setCurrentIndex(_IDX_ENROLLMENT)),
             ("📋", "Lịch Sử Điểm Danh", None),
             ("⚙️", "Cài Đặt Hệ Thống", lambda: self._content_stack.setCurrentIndex(_IDX_SETTINGS)),
         ]
@@ -156,6 +164,21 @@ class AdminDashboardView(QWidget):
         users_layout.setContentsMargins(32, 32, 32, 32)
         users_layout.addWidget(UserManagementWidget(self._database, parent=self))
         self._content_stack.addWidget(users_page)  # _IDX_USERS
+
+        # Enrollment page
+        enrollment_page = QWidget()
+        enrollment_layout = QVBoxLayout(enrollment_page)
+        enrollment_layout.setContentsMargins(32, 32, 32, 32)
+        self._enrollment_widget = EnrollmentWidget(
+            database=self._database,
+            liveness_checker=self._liveness_checker,
+            face_recognizer=self._face_recognizer,
+            settings_service=self._settings_service,
+            detector_model_path=self._detector_model_path,
+            parent=self
+        )
+        enrollment_layout.addWidget(self._enrollment_widget)
+        self._content_stack.addWidget(enrollment_page)  # _IDX_ENROLLMENT
 
         self._content_stack.setCurrentIndex(_IDX_WELCOME)
         layout.addWidget(self._content_stack)

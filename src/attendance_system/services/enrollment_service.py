@@ -5,6 +5,7 @@ from pathlib import Path
 from attendance_system.core.db import Database
 
 from attendance_system.repositories.face_reference_repository import FaceReferenceRepository
+from attendance_system.repositories.user_repository import UserRepository
 
 
 class EnrollmentService:
@@ -25,6 +26,11 @@ class EnrollmentService:
             model_name=model_name,
             vector_length=vector_length,
         )
+        
+        # Mark user as registered
+        user_repo = UserRepository(self.references.database)
+        user_repo.update(user_id, face_registered=True)
+
         if raw_image_path is not None and raw_image_path.exists():
             raw_image_path.unlink()
         return reference_id

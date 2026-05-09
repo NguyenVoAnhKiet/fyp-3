@@ -16,10 +16,10 @@ class UserRepository(BaseRepository):
         timestamp = utc_now_iso()
         return self.execute(
             """
-            INSERT INTO users(student_id, full_name, is_active, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO users(student_id, full_name, is_active, face_registered, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (student_id, full_name, 1 if is_active else 0, timestamp, timestamp),
+            (student_id, full_name, 1 if is_active else 0, 0, timestamp, timestamp),
         )
 
     def get_by_id(self, user_id: int):
@@ -33,7 +33,10 @@ class UserRepository(BaseRepository):
     def list_active(self):
         return self.fetch_all("SELECT * FROM users WHERE is_active = 1 ORDER BY id")
 
-    def update(self, user_id: int, full_name: str | None = None, is_active: bool | None = None) -> None:
+    def list_unregistered(self):
+        return self.fetch_all("SELECT * FROM users WHERE is_active = 1 AND face_registered = 0 ORDER BY id")
+
+    def update(self, user_id: int, full_name: str | None = None, is_active: bool | None = None, face_registered: bool | None = None) -> None:
         self.require_positive_int(user_id, "user_id")
         if full_name is not None:
             self.require_non_empty_text(full_name, "full_name")
@@ -42,9 +45,10 @@ class UserRepository(BaseRepository):
             raise LookupError(f"User {user_id} not found")
         new_full_name = full_name if full_name is not None else current["full_name"]
         new_is_active = int(is_active) if is_active is not None else int(current["is_active"])
+        new_face_registered = int(face_registered) if face_registered is not None else int(current["face_registered"])
         self.execute(
-            "UPDATE users SET full_name = ?, is_active = ?, updated_at = ? WHERE id = ?",
-            (new_full_name, new_is_active, utc_now_iso(), user_id),
+            "UPDATE users SET full_name = ?, is_active = ?, face_registered = ?, updated_at = ? WHERE id = ?",
+            (new_full_name, new_is_active, new_face_registered, utc_now_iso(), user_id),
         )
 
     def deactivate(self, user_id: int) -> None:
