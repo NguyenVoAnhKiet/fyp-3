@@ -20,18 +20,6 @@ dist/
 .idea/
 .ropeproject/
 
-# Local agent / spec workspace files
-.agents/
-.agent/
-.opencode/
-.specify/
-.docs/
-openspec/
-specs/
-AGENTS.md
-CLAUDE.md
-
-
 # OS
 .DS_Store
 Thumbs.db
@@ -66,7 +54,3 @@ models/**/*.onnx.data
 models/**/*.pth
 models/**/*.pt
 
-# VS Code extension data (agents and prompts)
-#.github/agents/
-#.github/prompts/
-#.github/issues/
