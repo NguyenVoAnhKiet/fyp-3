@@ -65,3 +65,34 @@ class SessionRepository(BaseRepository):
     def list_active(self):
         return self.fetch_all("SELECT * FROM sessions WHERE status = 'active' ORDER BY id")
 
+    def get_sessions(
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        class_name: str | None = None,
+        subject_name: str | None = None,
+    ):
+        query = "SELECT * FROM sessions WHERE 1=1"
+        params = []
+        if start_date:
+            query += " AND start_time >= ?"
+            params.append(start_date)
+        if end_date:
+            query += " AND start_time <= ?"
+            params.append(end_date)
+        if class_name:
+            query += " AND class_name = ?"
+            params.append(class_name)
+        if subject_name:
+            query += " AND subject_name = ?"
+            params.append(subject_name)
+
+        query += " ORDER BY start_time DESC"
+        return self.fetch_all(query, tuple(params))
+
+    def list_unique_classes(self):
+        return self.fetch_all("SELECT DISTINCT class_name FROM sessions ORDER BY class_name")
+
+    def list_unique_subjects(self):
+        return self.fetch_all("SELECT DISTINCT subject_name FROM sessions ORDER BY subject_name")
+

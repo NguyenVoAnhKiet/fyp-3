@@ -77,3 +77,16 @@ class AttendanceRepository(BaseRepository):
         self.require_positive_int(session_id, "session_id")
         return self.fetch_all("SELECT * FROM attendance_records WHERE session_id = ? ORDER BY id", (session_id,))
 
+    def get_records_with_users(self, session_id: int):
+        self.require_positive_int(session_id, "session_id")
+        return self.fetch_all(
+            """
+            SELECT ar.*, u.full_name, u.student_id 
+            FROM attendance_records ar
+            JOIN users u ON ar.user_id = u.id
+            WHERE ar.session_id = ?
+            ORDER BY u.full_name ASC
+            """,
+            (session_id,),
+        )
+
