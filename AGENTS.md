@@ -1,20 +1,20 @@
 # AGENTS.md
 
 **Gitignored** (`.gitignore` lists this + `CLAUDE.md`). Changes are local-only.
-See `CLAUDE.md` for behavioral guidelines used by this session.
 
 ## Project
 
 Python desktop face attendance system with anti-spoofing.
 
 **Stack**: Python 3.11+, SQLite3 (WAL mode), bcrypt, PyQt5, ONNX Runtime
-**Package**: `database-storage-core` (pyproject.toml), `attendance_system` under `src/`
+**Package**: `database-storage-core` (`pyproject.toml`, `package-dir = {"" = "src"}`)
+**AI Models**: YuNet (detection), SFace (recognition), MiniFASNet quantized (liveness)
 
 ## Setup
 
 ```bash
 cp .env.example .env
-# Fernet key for face embedding encryption (only needed if FACE_EMBEDDING_FERNET_KEY is set):
+# Fernet key (only needed if FACE_EMBEDDING_FERNET_KEY is set):
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
@@ -23,68 +23,53 @@ Models (`models/**/*.onnx`) are gitignored — download separately.
 ## Commands
 
 ```bash
-ruff check src/          # Lint + format check (no project-specific config — runs defaults)
-pytest tests/            # All tests (conftest auto-adds src/ to PYTHONPATH)
-pytest tests/unit/test_security.py::test_name -v   # Single test
-PYTHONPATH=src python src/main.py                  # Dev run (no install)
-attendance-storage-init  # Installed entry: DB bootstrap
-attendance-app           # Installed entry: Main GUI app
+ruff check src/                               # Lint + format check (default rules)
+pytest tests/                                 # All tests
+pytest tests/unit/test_security.py -v         # Single file
+pytest tests/unit/test_security.py::test_name -v  # Single test
+PYTHONPATH=src python src/main.py             # Dev run (no install)
+attendance-storage-init                       # Installed: DB bootstrap
+attendance-app                                # Installed: GUI app
 ```
 
-**Recommended order**: `ruff check` → `pytest`
+**Order**: `ruff check` → `pytest`
 
-`load_dotenv()` at `src/main.py:123` — must run before any `os.getenv()` call.
+`load_dotenv()` at `src/main.py:123` — must run before any `os.getenv()`.
 Standalone scripts must call it themselves.
 
 ## Architecture
 
-- `src/attendance_system/core/` — DB connection (`Database` with `session()` context manager, in `db.py`), schema, bootstrap
+- `src/main.py` — Entry point; parses CLI, loads `.env`, wires services, launches PyQt5
+- `src/attendance_system/core/` — `Database` (with `session()` ctx mgr), schema, bootstrap, storage manager
 - `src/attendance_system/services/` — Business logic (enrollment, attendance, security, settings, AI pipeline)
-- `src/attendance_system/repositories/` — CRUD per entity
+- `src/attendance_system/repositories/` — CRUD per entity (inherits `BaseRepository`)
 - `src/attendance_system/models/entities.py` — `@dataclass(slots=True)` data classes
 - `src/attendance_system/ui/` — PyQt5 components (main window, camera thread, login/dashboard)
-- `src/attendance_system/utils/` — Utilities (only `time_utils.py`)
-- `src/main.py` — Application entry point
-- AI models: YuNet (detection), SFace (recognition), MiniFASNet quantized (liveness)
+- `src/attendance_system/utils/` — Only `time_utils.py`
+
+Installed entry points (from `pyproject.toml`):
+- `attendance-storage-init` → `attendance_system.core.bootstrap:main`
+- `attendance-app` → `main:main` (resolves to `src/main.py` via `package-dir = {"" = "src"}`)
 
 ## DB
 
 - `PRAGMA journal_mode = WAL`, `PRAGMA synchronous = NORMAL`, `PRAGMA foreign_keys = ON`
 - `Database.session()` auto-commits on success, rollbacks on exception
 - `check_same_thread=False` — intentional for PyQt5 camera thread
+- Schema migrations via `ALTER TABLE ... ADD COLUMN` in `schema.py` (try/except on dup column)
 
 ## Testing
 
-- `conftest.py` provides `database` fixture (tmp_path SQLite DB with schema; auto-adds `src/` to `sys.path`)
-- Suites: `tests/unit/` (8 files), `tests/integration/` (8 files), `tests/contract/` (empty)
+- `conftest.py` provides `database` fixture (tmp_path SQLite, full schema; auto-adds `src/` to `sys.path`)
 - Imports use `from attendance_system.*` prefix (not relative)
-- Tests create service/repository instances directly from `database` fixture
-- Optional dependency pattern: `pytest.importorskip("cryptography.fernet")` + `monkeypatch.setenv`
+- Opt-in soft dependency: `pytest.importorskip("cryptography.fernet")` + `monkeypatch.setenv`
+- `conftest.py` imports `onnxruntime` first (same DLL conflict guard as `main.py`)
 
 ## Gotchas
 
-- **onnxruntime must be imported BEFORE PyQt5** (`src/main.py:20`). On Windows, both import conflicting native DLLs.
-- `CAMERA_INDEX=` (empty string in `.env`) must be handled as missing — `_resolve_camera_index` in `main.py:79`.
-- Thresholds from `.env` are seeded into DB on first run only; subsequent changes go through the settings UI.
-- Anti-spoofing is optional — disabled by `FACE_ANTISPOOF_ENABLED=false`.
+- **`onnxruntime` must be imported BEFORE `PyQt5`** (`src/main.py:17-20`, also in `conftest.py:7-10`). On Windows, both load conflicting native DLLs.
 - **`cryptography` is a soft dependency** (lazy import in `face_reference_repository.py:21`). Not in `pyproject.toml`. Only needed when `FACE_EMBEDDING_FERNET_KEY` is set.
 - **`ADMIN_USERNAME`/`ADMIN_PASSWORD` in `.env.example` are NOT read.** Initial admin is hardcoded as `admin`/`admin` in `storage_manager.py:22-23`.
-
-## Anti-spoofing Model
-
-Quantized MiniFASNet ONNX at `models/anti_spoof/best_model_quantized.onnx`
-Output: `[1, 2]` logits — index 0 = real, index 1 = spoof
-
-## Agent skills
-
-### Issue tracker
-
-Local markdown issues tracked under `.scratch/`. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Canonical labels mapped to their names. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-Single-context layout at the repo root. See `docs/agents/domain.md`.
+- `CAMERA_INDEX=` (empty string) must be handled as missing — `_resolve_camera_index` at `main.py:79`.
+- Thresholds from `.env` seed the DB on first run only; subsequent changes go through the settings UI.
+- Anti-spoofing is optional — disabled by `FACE_ANTISPOOF_ENABLED=false`.
