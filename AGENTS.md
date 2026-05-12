@@ -34,8 +34,8 @@ attendance-app                                # Installed: GUI app
 
 **Order**: `ruff check` → `pytest`
 
-`load_dotenv()` at `src/main.py:123` — must run before any `os.getenv()`.
-Standalone scripts must call it themselves.
+`load_dotenv()` called inside `main()` — must run before any `os.getenv()`.
+Standalone scripts (e.g. `bootstrap.py`) do NOT call it themselves.
 
 ## Architecture
 
@@ -67,9 +67,10 @@ Installed entry points (from `pyproject.toml`):
 
 ## Gotchas
 
-- **`onnxruntime` must be imported BEFORE `PyQt5`** (`src/main.py:17-20`, also in `conftest.py:7-10`). On Windows, both load conflicting native DLLs.
+- **`onnxruntime` must be imported BEFORE `PyQt5`** (main.py lines 17-20, conftest.py lines 7-10). On Windows, both load conflicting native DLLs.
 - **`cryptography` is a soft dependency** (lazy import in `face_reference_repository.py:21`). Not in `pyproject.toml`. Only needed when `FACE_EMBEDDING_FERNET_KEY` is set.
 - **`ADMIN_USERNAME`/`ADMIN_PASSWORD` in `.env.example` are NOT read.** Initial admin is hardcoded as `admin`/`admin` in `storage_manager.py:22-23`.
 - `CAMERA_INDEX=` (empty string) must be handled as missing — `_resolve_camera_index` at `main.py:79`.
 - Thresholds from `.env` seed the DB on first run only; subsequent changes go through the settings UI.
 - Anti-spoofing is optional — disabled by `FACE_ANTISPOOF_ENABLED=false`.
+- `bootstrap.py` does NOT call `load_dotenv()`, so `DATABASE_PATH` from `.env` is unseen when running `attendance-storage-init`.
