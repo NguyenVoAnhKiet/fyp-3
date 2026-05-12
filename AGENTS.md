@@ -1,6 +1,6 @@
 # AGENTS.md
 
-**Gitignored** (`.gitignore` lists this + `CLAUDE.md`). Changes are local-only.
+**Gitignored** — changes are local-only.
 
 ## Project
 
@@ -23,7 +23,8 @@ Models (`models/**/*.onnx`) are gitignored — download separately.
 ## Commands
 
 ```bash
-ruff check src/                               # Lint + format check (default rules)
+pip install -e .                              # Editable install for dev
+ruff check src/                               # Lint (default rules; no formatter/typechecker configured)
 pytest tests/                                 # All tests
 pytest tests/unit/test_security.py -v         # Single file
 pytest tests/unit/test_security.py::test_name -v  # Single test
@@ -51,12 +52,17 @@ Installed entry points (from `pyproject.toml`):
 - `attendance-storage-init` → `attendance_system.core.bootstrap:main`
 - `attendance-app` → `main:main` (resolves to `src/main.py` via `package-dir = {"" = "src"}`)
 
+Two spec frameworks coexist:
+- `specs/` — Speckit specs (used during development with `.specify/`)
+- `openspec/` — OpenSpec specs + archived changes
+
 ## DB
 
 - `PRAGMA journal_mode = WAL`, `PRAGMA synchronous = NORMAL`, `PRAGMA foreign_keys = ON`
 - `Database.session()` auto-commits on success, rollbacks on exception
 - `check_same_thread=False` — intentional for PyQt5 camera thread
 - Schema migrations via `ALTER TABLE ... ADD COLUMN` in `schema.py` (try/except on dup column)
+- `DatabaseConfig.__post_init__` rejects paths containing `..` (path traversal guard)
 
 ## Testing
 
@@ -64,10 +70,11 @@ Installed entry points (from `pyproject.toml`):
 - Imports use `from attendance_system.*` prefix (not relative)
 - Opt-in soft dependency: `pytest.importorskip("cryptography.fernet")` + `monkeypatch.setenv`
 - `conftest.py` imports `onnxruntime` first (same DLL conflict guard as `main.py`)
+- No typechecker (mypy/pyright) configured
 
 ## Gotchas
 
-- **`onnxruntime` must be imported BEFORE `PyQt5`** (main.py lines 17-20, conftest.py lines 7-10). On Windows, both load conflicting native DLLs.
+- **`onnxruntime` must be imported BEFORE `PyQt5`** (main.py:17-20, conftest.py:7-10). On Windows, both load conflicting native DLLs.
 - **`cryptography` is a soft dependency** (lazy import in `face_reference_repository.py:21`). Not in `pyproject.toml`. Only needed when `FACE_EMBEDDING_FERNET_KEY` is set.
 - **`ADMIN_USERNAME`/`ADMIN_PASSWORD` in `.env.example` are NOT read.** Initial admin is hardcoded as `admin`/`admin` in `storage_manager.py:22-23`.
 - `CAMERA_INDEX=` (empty string) must be handled as missing — `_resolve_camera_index` at `main.py:79`.
