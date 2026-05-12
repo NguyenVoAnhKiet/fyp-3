@@ -7,10 +7,12 @@ from PyQt5.QtGui import QImage, QKeyEvent, QPixmap
 from PyQt5.QtWidgets import (
     QLabel,
     QLineEdit,
+    QListWidget,
     QMessageBox,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
+    QHBoxLayout,
     QWidget,
 )
 
@@ -154,22 +156,50 @@ class UserModeView(QWidget):
         self._session_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._session_info_label)
 
+        # Content area: Camera (Left) + Sidebar (Right)
+        content_layout = QHBoxLayout()
+        content_layout.setSpacing(16)
+        layout.addLayout(content_layout)
+
+        # Left Column: Camera and Result Label
+        camera_area = QVBoxLayout()
+        camera_area.setSpacing(10)
+        content_layout.addLayout(camera_area, stretch=1)
+
         self._camera_label = QLabel("[ Đang khởi động camera… ]")
         self._camera_label.setFont(FONT_BODY)
         self._camera_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._camera_label.setStyleSheet(
             "background-color: #2c3e50; color: #ecf0f1; border-radius: 8px;"
         )
-        self._camera_label.setMinimumHeight(260)
+        self._camera_label.setMinimumHeight(350)
         self._camera_label.setScaledContents(False)
-        layout.addWidget(self._camera_label, stretch=1)
+        camera_area.addWidget(self._camera_label, stretch=1)
 
         self._result_label = QLabel("Đang chờ nhận diện…")
         self._result_label.setFont(FONT_STATUS)
         self._result_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._result_label.setMinimumHeight(56)
         self._set_result_style("neutral")
-        layout.addWidget(self._result_label)
+        camera_area.addWidget(self._result_label)
+
+        # Right Column: Attendance Sidebar
+        sidebar_area = QVBoxLayout()
+        sidebar_area.setSpacing(6)
+        content_layout.addLayout(sidebar_area)
+
+        sidebar_header = QLabel("Danh sách điểm danh")
+        sidebar_header.setFont(FONT_BODY)
+        sidebar_header.setStyleSheet("font-weight: bold; color: #2c3e50; margin-bottom: 2px;")
+        sidebar_area.addWidget(sidebar_header)
+
+        self._attendance_list = QListWidget()
+        self._attendance_list.setFont(FONT_BODY)
+        self._attendance_list.setFixedWidth(280)
+        self._attendance_list.setStyleSheet(
+            "background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px;"
+        )
+        sidebar_area.addWidget(self._attendance_list)
 
         btn_end = QPushButton("Kết Thúc Phiên  [E]")
         btn_end.setFont(FONT_BODY)
@@ -237,6 +267,25 @@ class UserModeView(QWidget):
         self._session_info_label.setText(f"Môn: {subject}  |  Lớp: {class_name}")
         self._result_label.setText("Đang chờ nhận diện…")
         self._set_result_style("neutral")
+        self._attendance_list.clear()
+
+        # Populate sidebar if there are existing success records for this session
+        try:
+            records = self._attendance.attendance.fetch_all(
+                """
+                SELECT u.full_name, ar.recorded_at 
+                FROM attendance_records ar
+                JOIN users u ON ar.user_id = u.id
+                WHERE ar.session_id = ? AND ar.status = 'success'
+                ORDER BY ar.recorded_at DESC
+                """,
+                (self._session_id,),
+            )
+            for rec in reversed(records):  # Reverse because _add_to_sidebar prepends
+                self._add_to_sidebar(rec["full_name"], rec["recorded_at"])
+        except Exception:
+            pass
+
         self._stack.setCurrentIndex(_IDX_ACTIVE)
 
         # Read camera index from DB settings (admin may have changed it)
@@ -270,6 +319,7 @@ class UserModeView(QWidget):
         self._session_id = None
         self._subject_input.clear()
         self._class_input.clear()
+        self._attendance_list.clear()
         self._stack.setCurrentIndex(_IDX_IDLE)
 
     def stop_camera(self) -> None:
@@ -290,6 +340,22 @@ class UserModeView(QWidget):
             Qt.TransformationMode.SmoothTransformation,
         )
         self._camera_label.setPixmap(pixmap)
+
+    def _add_to_sidebar(self, name: str, time_str: str) -> None:
+        """Prepend a check-in record to the sidebar list."""
+        # time_str is usually ISO, but we want HH:mm:ss for display
+        # If it's 2026-05-12T14:30:05.123Z, we take 11:19
+        display_time = time_str
+        if "T" in time_str:
+            try:
+                # Simple extraction of HH:mm:ss from ISO
+                display_time = time_str.split("T")[1].split(".")[0]
+            except Exception:
+                pass
+        
+        item_text = f"[{display_time}]  {name}"
+        self._attendance_list.insertItem(0, item_text)
+        self._attendance_list.scrollToTop()
 
     def _on_recognition_result(
         self,
@@ -314,6 +380,7 @@ class UserModeView(QWidget):
                     similarity_score=similarity_score,
                 )
                 self._show_result_success(full_name)
+                self._add_to_sidebar(full_name, now)
             except Exception:
                 self._attendance.record_duplicate(self._session_id, user_id, now)
                 self._show_result_duplicate(full_name)
