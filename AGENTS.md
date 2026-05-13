@@ -1,14 +1,12 @@
 # AGENTS.md
 
-**Gitignored** — changes are local-only.
-
 ## Project
 
 Python desktop face attendance system with anti-spoofing.
 
 **Stack**: Python 3.11+, SQLite3 (WAL mode), bcrypt, PyQt5, ONNX Runtime
-**Package**: `database-storage-core` (`pyproject.toml`, `package-dir = {"" = "src"}`)
-**AI Models**: YuNet (detection), SFace (recognition), MiniFASNet quantized (liveness)
+**Package**: `database-storage-core` (`package-dir = {"" = "src"}`)
+**AI Models**: YuNet (detection), SFace (recognition), MiniFASNet quantized (liveness), MobileNetV2 (head-pose)
 
 ## Setup
 
@@ -28,7 +26,7 @@ ruff check src/                               # Lint (default rules; no formatte
 pytest tests/                                 # All tests
 pytest tests/unit/test_security.py -v         # Single file
 pytest tests/unit/test_security.py::test_name -v  # Single test
-PYTHONPATH=src python src/main.py             # Dev run (no install)
+$env:PYTHONPATH='src'; python src/main.py    # Dev run (no install, PowerShell)
 attendance-storage-init                       # Installed: DB bootstrap
 attendance-app                                # Installed: GUI app
 ```
@@ -42,7 +40,7 @@ Standalone scripts (e.g. `bootstrap.py`) do NOT call it themselves.
 
 - `src/main.py` — Entry point; parses CLI, loads `.env`, wires services, launches PyQt5
 - `src/attendance_system/core/` — `Database` (with `session()` ctx mgr), schema, bootstrap, storage manager
-- `src/attendance_system/services/` — Business logic (enrollment, attendance, security, settings, AI pipeline)
+- `src/attendance_system/services/` — Business logic (enrollment, attendance, security, settings, AI pipeline, head-pose)
 - `src/attendance_system/repositories/` — CRUD per entity (inherits `BaseRepository`)
 - `src/attendance_system/models/entities.py` — `@dataclass(slots=True)` data classes
 - `src/attendance_system/ui/` — PyQt5 components (main window, camera thread, login/dashboard)
@@ -52,7 +50,9 @@ Installed entry points (from `pyproject.toml`):
 - `attendance-storage-init` → `attendance_system.core.bootstrap:main`
 - `attendance-app` → `main:main` (resolves to `src/main.py` via `package-dir = {"" = "src"}`)
 
-Two spec frameworks coexist:
+Other:
+- `CLAUDE.md` — Behavioral guidelines at repo root (Karpathy-style: surgical changes, simplicity first)
+- `.agents/` — OpenSpec workflow files (`opsx-*.md`)
 - `specs/` — Speckit specs (used during development with `.specify/`)
 - `openspec/` — OpenSpec specs + archived changes
 

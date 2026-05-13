@@ -26,6 +26,7 @@ from attendance_system.core.bootstrap import initialize_storage
 from attendance_system.core.db import Database, DatabaseConfig
 from attendance_system.repositories.admin_repository import AdminRepository
 from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
+from attendance_system.services.head_pose import HeadPoseEstimator
 from attendance_system.services.attendance_service import AttendanceService
 from attendance_system.services.authentication_service import AuthenticationService
 from attendance_system.services.settings_service import SettingsService
@@ -38,6 +39,7 @@ DEFAULT_DATABASE_PATH = Path("attendance.db")
 DEFAULT_LIVENESS_MODEL = Path("models/anti_spoof/best_model_quantized.onnx")
 DEFAULT_RECOGNITION_MODEL = Path("models/face_recognition/face_recognition_sface_2021dec.onnx")
 DEFAULT_DETECTOR_MODEL = Path("models/face_detection/face_detection_yunet_2023mar.onnx")
+DEFAULT_HEADPOSE_MODEL = Path("models/head_pose/mobilenetv2.onnx")
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +64,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Path to SFace ONNX model.")
     parser.add_argument("--detector-model", default=None,
                         help="Path to YuNet ONNX model.")
+    parser.add_argument("--headpose-model", default=None,
+                        help="Path to head-pose ONNX model.")
     parser.add_argument("--camera-index", type=int, default=None,
                         help="OpenCV camera device index (default: 0).")
     return parser
@@ -90,6 +94,13 @@ def _resolve_camera_index(cli_value: int | None) -> int:
         return int(raw)
 
     return 0
+
+
+def _resolve_enabled(env_key: str, default: bool = True) -> bool:
+    raw = os.getenv(env_key)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _validate_model(path: Path, label: str) -> str | None:
@@ -133,12 +144,16 @@ def main(argv: list[str] | None = None) -> int:
     detector_model_path = _resolve_path(
         args.detector_model, "FACE_DETECTOR_MODEL_PATH", DEFAULT_DETECTOR_MODEL,
     )
+    head_pose_model_path = _resolve_path(
+        args.headpose_model, "FACE_HEADPOSE_MODEL_PATH", DEFAULT_HEADPOSE_MODEL,
+    )
     camera_index = _resolve_camera_index(args.camera_index)
 
     # Liveness model is optional — disabled when FACE_ANTISPOOF_ENABLED=false
     antispoof_enabled = (
         os.getenv("FACE_ANTISPOOF_ENABLED", "true").strip().lower() == "true"
     )
+    head_pose_enabled = _resolve_enabled("FACE_HEADPOSE_ENABLED", True)
     liveness_model_path: Path | None = None
     if antispoof_enabled:
         liveness_model_path = _resolve_path(
@@ -167,6 +182,24 @@ def main(argv: list[str] | None = None) -> int:
             QMessageBox.critical(None, "Model Not Found", error)
             return 1
 
+    head_pose_estimator: HeadPoseEstimator | None = None
+    head_pose_warning: str | None = None
+    if head_pose_enabled:
+        if not head_pose_model_path.exists():
+            head_pose_warning = (
+                f"Head pose model not found:\n{head_pose_model_path}\n\n"
+                "Enrollment will continue in legacy mode."
+            )
+        else:
+            try:
+                head_pose_estimator = HeadPoseEstimator(head_pose_model_path)
+            except Exception as exc:  # pragma: no cover - startup fallback path
+                head_pose_warning = (
+                    "Head pose guidance could not be initialized.\n\n"
+                    f"{exc}\n\n"
+                    "Enrollment will continue in legacy mode."
+                )
+
     # --- Phase 5: Wire up services & launch UI --------------------------------
     db = Database(DatabaseConfig(path=database_path))
     attendance_service = AttendanceService(db)
@@ -185,6 +218,9 @@ def main(argv: list[str] | None = None) -> int:
     liveness_checker = LivenessChecker(liveness_model_path)
     face_recognizer = FaceRecognizer(db, recognition_model_path)
 
+    if head_pose_warning is not None:
+        QMessageBox.warning(None, "Head Pose Guidance Disabled", head_pose_warning)
+
     # Show the main window
     window = MainWindow(
         attendance_service=attendance_service,
@@ -192,6 +228,7 @@ def main(argv: list[str] | None = None) -> int:
         authentication_service=authentication_service,
         liveness_checker=liveness_checker,
         face_recognizer=face_recognizer,
+        head_pose_estimator=head_pose_estimator,
         database=db,
         camera_index=camera_index,
         detector_model_path=detector_model_path,

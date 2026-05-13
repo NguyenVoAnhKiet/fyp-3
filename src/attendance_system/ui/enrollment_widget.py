@@ -4,7 +4,7 @@ import numpy as np
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot
+from PyQt5.QtCore import Qt, pyqtSlot
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import (
     QComboBox,
@@ -25,6 +25,7 @@ from attendance_system.ui.enrollment_camera_thread import EnrollmentCameraThread
 if TYPE_CHECKING:
     from attendance_system.core.db import Database
     from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
+    from attendance_system.services.head_pose import HeadPoseEstimator
     from attendance_system.services.settings_service import SettingsService
 
 
@@ -40,6 +41,7 @@ class EnrollmentWidget(QWidget):
         liveness_checker: LivenessChecker,
         face_recognizer: FaceRecognizer,
         settings_service: SettingsService,
+        head_pose_estimator: HeadPoseEstimator | None,
         detector_model_path: Path | None = None,
         parent: QWidget | None = None
     ) -> None:
@@ -48,6 +50,7 @@ class EnrollmentWidget(QWidget):
         self._liveness_checker = liveness_checker
         self._face_recognizer = face_recognizer
         self._settings_service = settings_service
+        self._head_pose_estimator = head_pose_estimator
         self._detector_model_path = detector_model_path
         
         self._user_repo = UserRepository(database)
@@ -94,6 +97,14 @@ class EnrollmentWidget(QWidget):
         self._progress_label = QLabel("Tiến trình: 0/5 ảnh")
         self._progress_label.setFont(FONT_BODY)
         progress_layout.addWidget(self._progress_label)
+
+        self._angles_label = QLabel("Góc: -")
+        self._angles_label.setFont(FONT_BODY)
+        progress_layout.addWidget(self._angles_label)
+
+        self._guidance_label = QLabel("Hướng dẫn: -")
+        self._guidance_label.setFont(FONT_BODY)
+        progress_layout.addWidget(self._guidance_label)
         
         self._progress_bar = QProgressBar()
         self._progress_bar.setMaximum(5)
@@ -152,6 +163,7 @@ class EnrollmentWidget(QWidget):
             camera_index=cam_idx,
             liveness_checker=self._liveness_checker,
             face_recognizer=self._face_recognizer,
+            head_pose_estimator=self._head_pose_estimator,
             liveness_threshold=liveness_thresh,
             detector_model_path=self._detector_model_path,
             parent=self
@@ -189,10 +201,26 @@ class EnrollmentWidget(QWidget):
         """Update the camera label with a new frame."""
         self._camera_label.setPixmap(QPixmap.fromImage(image))
 
-    def set_progress(self, current: int, total: int = 5) -> None:
+    def set_progress(
+        self,
+        current: int,
+        total: int = 5,
+        pose_label: str = "",
+        angles_text: str = "",
+        hold_text: str = "",
+        guidance_text: str = "",
+    ) -> None:
         """Update progress bar and label."""
+        if total > 0:
+            self._progress_bar.setMaximum(total)
         self._progress_bar.setValue(current)
-        self._progress_label.setText(f"Tiến trình: {current}/{total} ảnh")
+        if pose_label:
+            self._progress_label.setText(f"Tiến trình: {current}/{total} ảnh - {pose_label}")
+        else:
+            self._progress_label.setText(f"Tiến trình: {current}/{total} ảnh")
+        self._angles_label.setText(f"Góc: {angles_text or '-'}")
+        guidance = guidance_text or hold_text or "-"
+        self._guidance_label.setText(f"Hướng dẫn: {guidance}")
 
     @pyqtSlot(np.ndarray)
     def _handle_complete(self, avg_embedding: np.ndarray) -> None:
