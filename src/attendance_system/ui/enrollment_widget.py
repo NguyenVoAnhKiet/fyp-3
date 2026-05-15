@@ -20,11 +20,12 @@ from PyQt5.QtWidgets import (
 from attendance_system.ui.constants import FONT_BODY, FONT_TITLE
 from attendance_system.repositories.user_repository import UserRepository
 from attendance_system.services.enrollment_service import EnrollmentService
+from attendance_system.services.ai_pipeline import LivenessChecker
 from attendance_system.ui.enrollment_camera_thread import EnrollmentCameraThread
 
 if TYPE_CHECKING:
     from attendance_system.core.db import Database
-    from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
+    from attendance_system.services.ai_pipeline import FaceRecognizer
     from attendance_system.services.head_pose import HeadPoseEstimator
     from attendance_system.services.settings_service import SettingsService
 
@@ -158,10 +159,14 @@ class EnrollmentWidget(QWidget):
         cam_idx = int(self._settings_service.get("camera_index") or 0)
         liveness_thresh = float(self._settings_service.get("liveness_threshold") or 0.5)
 
+        # Disable liveness during enrollment — liveness model fails on angled faces
+        # due to crop misalignment (scale=2.7 from incomplete bbox at yaw/pitch extremes)
+        enrollment_liveness = LivenessChecker(model_path=None)
+
         # Start thread
         self._camera_thread = EnrollmentCameraThread(
             camera_index=cam_idx,
-            liveness_checker=self._liveness_checker,
+            liveness_checker=enrollment_liveness,  # Use bypass liveness
             face_recognizer=self._face_recognizer,
             head_pose_estimator=self._head_pose_estimator,
             liveness_threshold=liveness_thresh,

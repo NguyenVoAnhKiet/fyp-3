@@ -214,7 +214,8 @@ class EnrollmentCameraThread(QThread):
 
         is_matched = self._pose_matches(target, pitch, yaw)
         if is_matched:
-            self._pose_hold_counter += 1
+            if self._pose_hold_counter < _HOLD_FRAMES:
+                self._pose_hold_counter += 1
             self._hold_text = f"Giữ: {self._pose_hold_counter}/{_HOLD_FRAMES}"
             self._guidance_text = f"Tốt! Giữ yên cho tư thế: {target.name}"
             self._status_text = "Tốt! Giữ yên..."
@@ -242,6 +243,11 @@ class EnrollmentCameraThread(QThread):
                     self._guidance_text = f"Tiếp theo: {_POSE_SEQUENCE[self._current_pose_index % len(_POSE_SEQUENCE)].name}"
                     self._hold_text = f"Giữ: 0/{_HOLD_FRAMES}"
                     return _COLOR_SUCCESS
+                # Bug 1 fix: Reset counter khi capture thất bại
+                self._pose_hold_counter = 0
+                self._hold_text = f"Giữ: 0/{_HOLD_FRAMES}"
+                self._status_text = "Không thể đọc khuôn mặt, thử lại"
+                self._guidance_text = f"Giữ tư thế {target.name} và thử lại"
 
         return _COLOR_SUCCESS if is_matched else _COLOR_ALERT
 

@@ -6,7 +6,11 @@ from unittest.mock import MagicMock, patch
 import cv2
 import numpy as np
 
-from attendance_system.ui.enrollment_camera_thread import EnrollmentCameraThread
+from attendance_system.services.ai_pipeline import LivenessChecker
+from attendance_system.ui.enrollment_camera_thread import (
+    EnrollmentCameraThread,
+    _HOLD_FRAMES,
+)
 
 
 def _make_face() -> np.ndarray:
@@ -102,3 +106,133 @@ def test_legacy_fallback_keeps_old_flow(mock_detector_create) -> None:
 
     assert len(thread._captured_embeddings) == 1
     assert thread._current_pose_index == 0
+
+
+@patch("cv2.FaceDetectorYN.create")
+def test_pose_hold_resets_on_capture_failure(mock_detector_create) -> None:
+    """Counter phải reset về 0 khi _attempt_pose_capture thất bại (liveness/embedding fail)."""
+    detector = MagicMock()
+    detector.setInputSize.return_value = None
+    mock_detector_create.return_value = detector
+
+    head_pose = MagicMock()
+    head_pose.estimate.return_value = (0.0, 0.0, 0.0)
+    liveness = MagicMock()
+    recognizer = MagicMock()
+
+    thread = EnrollmentCameraThread(
+        camera_index=0,
+        liveness_checker=liveness,
+        face_recognizer=recognizer,
+        head_pose_estimator=head_pose,
+        detector_model_path=Path("fake.onnx"),
+    )
+    thread._pose_hold_counter = 4
+    thread._current_pose_index = 0
+    thread._attempt_pose_capture = MagicMock(return_value=False)
+
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    thread._handle_pose_frame(frame, _make_face(), 100, 100, 160, 160)
+
+    assert thread._pose_hold_counter == 0
+    assert thread._current_pose_index == 0
+
+
+@patch("cv2.FaceDetectorYN.create")
+def test_pose_hold_counter_capped_at_hold_frames(mock_detector_create) -> None:
+    """Counter không được vượt quá _HOLD_FRAMES dù pose khớp nhiều frame liên tiếp."""
+    detector = MagicMock()
+    detector.setInputSize.return_value = None
+    mock_detector_create.return_value = detector
+
+    head_pose = MagicMock()
+    head_pose.estimate.return_value = (0.0, 0.0, 0.0)
+    liveness = MagicMock()
+    recognizer = MagicMock()
+    recognizer.get_embedding.return_value = None
+
+    thread = EnrollmentCameraThread(
+        camera_index=0,
+        liveness_checker=liveness,
+        face_recognizer=recognizer,
+        head_pose_estimator=head_pose,
+        detector_model_path=Path("fake.onnx"),
+    )
+    thread._current_pose_index = 0
+
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    face = _make_face()
+
+    for _ in range(20):
+        thread._handle_pose_frame(frame, face, 100, 100, 160, 160)
+
+    assert thread._pose_hold_counter <= _HOLD_FRAMES
+
+
+@patch("cv2.FaceDetectorYN.create")
+def test_enrollment_succeeds_without_liveness(mock_detector_create) -> None:
+    """Enrollment should succeed even when liveness would normally fail on angled poses."""
+    detector = MagicMock()
+    detector.setInputSize.return_value = None
+    mock_detector_create.return_value = detector
+
+    head_pose = MagicMock()
+    head_pose.estimate.return_value = (0.0, 30.0, 0.0)  # Nghiêng trái
+    liveness = MagicMock()
+    liveness.check.return_value = MagicMock(is_real=False)  # Would normally fail
+    recognizer = MagicMock()
+    recognizer.get_embedding.return_value = np.ones(128, dtype=np.float32)
+    recognizer.average_embeddings.return_value = np.ones(128, dtype=np.float32)
+
+    # Use LivenessChecker(None) which bypasses liveness
+    bypass_liveness = LivenessChecker(None)
+
+    thread = EnrollmentCameraThread(
+        camera_index=0,
+        liveness_checker=bypass_liveness,
+        face_recognizer=recognizer,
+        head_pose_estimator=head_pose,
+        detector_model_path=Path("fake.onnx"),
+    )
+    thread._pose_hold_counter = 4
+    # Set index to 1 ("Nghiêng trái", yaw=30) to match the mocked head pose
+    thread._current_pose_index = 1
+
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    thread._handle_pose_frame(frame, _make_face(), 100, 100, 160, 160)
+
+    # Should advance to next pose because liveness is bypassed
+    assert thread._current_pose_index == 2
+    assert len(thread._captured_embeddings) == 1
+
+
+@patch("cv2.FaceDetectorYN.create")
+def test_enrollment_liveness_bypass_still_checks_embedding(mock_detector_create) -> None:
+    """With liveness bypass, embedding extraction still matters - if it fails, capture should fail."""
+    detector = MagicMock()
+    detector.setInputSize.return_value = None
+    mock_detector_create.return_value = detector
+
+    head_pose = MagicMock()
+    head_pose.estimate.return_value = (0.0, 0.0, 0.0)
+    liveness = MagicMock()
+    bypass_liveness = LivenessChecker(None)
+    recognizer = MagicMock()
+    recognizer.get_embedding.return_value = None  # Embedding extraction fails
+
+    thread = EnrollmentCameraThread(
+        camera_index=0,
+        liveness_checker=bypass_liveness,
+        face_recognizer=recognizer,
+        head_pose_estimator=head_pose,
+        detector_model_path=Path("fake.onnx"),
+    )
+    thread._pose_hold_counter = 4
+    thread._current_pose_index = 0
+
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    thread._handle_pose_frame(frame, _make_face(), 100, 100, 160, 160)
+
+    # Should NOT advance - embedding extraction failed
+    assert thread._current_pose_index == 0
+    assert len(thread._captured_embeddings) == 0
