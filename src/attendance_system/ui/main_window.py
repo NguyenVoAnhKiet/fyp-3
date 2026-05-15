@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
 
 from attendance_system.core.db import Database
 from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
+from attendance_system.services.head_pose import HeadPoseEstimator
 from attendance_system.services.attendance_service import AttendanceService
 from attendance_system.services.authentication_service import AuthenticationService
 from attendance_system.services.settings_service import SettingsService
@@ -44,6 +45,7 @@ class MainWindow(QMainWindow):
         authentication_service: AuthenticationService,
         liveness_checker: LivenessChecker,
         face_recognizer: FaceRecognizer,
+        head_pose_estimator: HeadPoseEstimator | None,
         database: Database,
         camera_index: int = 0,
         detector_model_path: Path | None = None,
@@ -70,6 +72,7 @@ class MainWindow(QMainWindow):
             database=database,
             liveness_checker=liveness_checker,
             face_recognizer=face_recognizer,
+            head_pose_estimator=head_pose_estimator,
             detector_model_path=detector_model_path,
             parent=self,
         )

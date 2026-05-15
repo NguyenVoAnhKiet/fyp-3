@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PyQt5.QtCore import Qt, pyqtSignal
@@ -21,6 +22,8 @@ from attendance_system.ui.attendance_history_widget import AttendanceHistoryWidg
 if TYPE_CHECKING:
     from attendance_system.services.settings_service import SettingsService
     from attendance_system.core.db import Database
+    from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
+    from attendance_system.services.head_pose import HeadPoseEstimator
 
 # Content-area stack indices
 _IDX_WELCOME = 0
@@ -47,6 +50,7 @@ class AdminDashboardView(QWidget):
         database: Database,
         liveness_checker: LivenessChecker,
         face_recognizer: FaceRecognizer,
+        head_pose_estimator: HeadPoseEstimator | None,
         detector_model_path: Path | None = None,
         parent: QWidget | None = None,
     ) -> None:
@@ -55,6 +59,7 @@ class AdminDashboardView(QWidget):
         self._database = database
         self._liveness_checker = liveness_checker
         self._face_recognizer = face_recognizer
+        self._head_pose_estimator = head_pose_estimator
         self._detector_model_path = detector_model_path
         self._build_ui()
 
@@ -176,6 +181,7 @@ class AdminDashboardView(QWidget):
             liveness_checker=self._liveness_checker,
             face_recognizer=self._face_recognizer,
             settings_service=self._settings_service,
+            head_pose_estimator=self._head_pose_estimator,
             detector_model_path=self._detector_model_path,
             parent=self
         )

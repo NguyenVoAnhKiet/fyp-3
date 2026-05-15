@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Head Pose Guided Enrollment - Implementation Plan</title>
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --secondary: #3498db;
+            --accent: #e74c3c;
+            --success: #27ae60;
+            --warning: #f39c12;
+            --light: #ecf0f1;
+            --dark: #1a252f;
+            --border: #bdc3c7;
+            --code-bg: #282c34;
+            --code-text: #abb2bf;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            line-height: 1.7;
+            color: var(--dark);
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--dark) 100%);
+            color: white;
+            padding: 2.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -20%;
+            width: 400px;
+            height: 400px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 50%;
+        }
+
+        header h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            position: relative;
+        }
+
+        header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+
+        .badge {
+            display: inline-block;
+            background: var(--success);
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-top: 1rem;
+        }
+
+        .content {
+            padding: 2rem;
+        }
+
+        section {
+            margin-bottom: 2.5rem;
+            padding-bottom: 2rem;
+            border-bottom: 2px solid var(--light);
+        }
+
+        section:last-child {
+            border-bottom: none;
+        }
+
+        h2 {
+            color: var(--primary);
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        h2::before {
+            content: '';
+            width: 4px;
+            height: 24px;
+            background: var(--secondary);
+            border-radius: 2px;
+        }
+
+        h3 {
+            color: var(--primary);
+            font-size: 1.15rem;
+            margin: 1.5rem 0 1rem;
+            font-weight: 600;
+        }
+
+        p {
+            margin-bottom: 1rem;
+            text-align: justify;
+        }
+
+        .background-box {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-left: 4px solid var(--warning);
+            padding: 1.25rem;
+            border-radius: 0 8px 8px 0;
+            margin: 1rem 0;
+        }
+
+        .background-box.current {
+            border-left-color: var(--accent);
+        }
+
+        .background-box.required {
+            border-left-color: var(--success);
+        }
+
+        .background-box h4 {
+            color: var(--primary);
+            margin-bottom: 0.75rem;
+            font-weight: 600;
+        }
+
+        .background-box ul {
+            margin-left: 1.5rem;
+            margin-bottom: 0;
+        }
+
+        .background-box li {
+            margin-bottom: 0.4rem;
+            font-size: 0.95rem;
+        }
+
+        .scope-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+
+        .scope-box {
+            padding: 1.25rem;
+            border-radius: 10px;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .scope-box.in {
+            background: linear-gradient(135deg, #d5f4e6 0%, #b8e6d0 100%);
+            color: #1e7d4a;
+            border: 2px solid var(--success);
+        }
+
+        .scope-box.out {
+            background: linear-gradient(135deg, #fadbd8 0%, #f5b7b1 100%);
+            color: #c0392b;
+            border: 2px solid var(--accent);
+        }
+
+        .model-card {
+            background: linear-gradient(135deg, #e8f4fd 0%, #d4ecf9 100%);
+            border: 2px solid var(--secondary);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+        }
+
+        .model-card h4 {
+            color: var(--secondary);
+            margin-bottom: 1rem;
+            font-size: 1.1rem;
+        }
+
+        .model-stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .stat {
+            background: white;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            color: var(--primary);
+            font-weight: 500;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .download-link {
+            display: inline-block;
+            background: var(--primary);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            margin-top: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .download-link:hover {
+            background: var(--dark);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+
+        th {
+            background: var(--primary);
+            color: white;
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        td {
+            padding: 0.875rem 1rem;
+            border-bottom: 1px solid var(--light);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+
+        tr:hover {
+            background: #e8f4fc;
+        }
+
+        .file-table th {
+            background: var(--secondary);
+        }
+
+        .file-table .new {
+            background: #d5f4e6;
+            color: #1e7d4a;
+            font-weight: 600;
+        }
+
+        .file-table .modify {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .steps-container {
+            counter-reset: step;
+        }
+
+        .step {
+            position: relative;
+            padding: 1.25rem 1.25rem 1.25rem 4rem;
+            background: white;
+            border-radius: 10px;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            border-left: 4px solid var(--secondary);
+        }
+
+        .step::before {
+            counter-increment: step;
+            content: counter(step);
+            position: absolute;
+            left: 1rem;
+            top: 1.25rem;
+            width: 32px;
+            height: 32px;
+            background: var(--secondary);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.9rem;
+        }
+
+        .step h4 {
+            color: var(--primary);
+            margin-bottom: 0.75rem;
+            font-weight: 600;
+        }
+
+        .step ul {
+            margin-left: 1.25rem;
+            margin-bottom: 0;
+        }
+
+        .step li {
+            margin-bottom: 0.4rem;
+            font-size: 0.95rem;
+            color: #555;
+        }
+
+        .step li::marker {
+            color: var(--secondary);
+        }
+
+        .checklist {
+            list-style: none;
+            margin: 0.5rem 0;
+        }
+
+        .checklist li {
+            position: relative;
+            padding-left: 1.75rem;
+            margin-bottom: 0.5rem;
+            font-size: 0.95rem;
+        }
+
+        .checklist li::before {
+            content: '☐';
+            position: absolute;
+            left: 0;
+            color: var(--border);
+            font-size: 1.1rem;
+        }
+
+        .ui-mockup {
+            background: var(--code-bg);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8rem;
+            color: var(--code-text);
+            overflow-x: auto;
+        }
+
+        .ui-mockup .line {
+            margin-bottom: 0.5rem;
+        }
+
+        .ui-mockup .highlight {
+            color: #98c379;
+        }
+
+        .ui-mockup .angle {
+            color: #61afef;
+        }
+
+        .ui-mockup .pose {
+            color: #c678dd;
+        }
+
+        .ui-mockup .guide {
+            color: #e5c07b;
+        }
+
+        .status-list {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 1.25rem;
+            margin: 1rem 0;
+        }
+
+        .status-list dt {
+            font-weight: 700;
+            color: var(--primary);
+            margin-top: 0.75rem;
+        }
+
+        .status-list dt:first-child {
+            margin-top: 0;
+        }
+
+        .status-list dd {
+            color: #555;
+            font-family: monospace;
+            background: white;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            display: inline-block;
+            margin: 0.25rem 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+
+        .criteria-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+
+        .criteria-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.25rem;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            border-top: 4px solid var(--secondary);
+        }
+
+        .criteria-card h4 {
+            color: var(--primary);
+            margin-bottom: 0.75rem;
+            font-size: 1rem;
+        }
+
+        .criteria-card p {
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 0;
+        }
+
+        .risk-table {
+            margin-top: 1rem;
+        }
+
+        .risk-table th {
+            background: var(--accent);
+        }
+
+        .risk-table tr:nth-child(even) {
+            background: #fff5f5;
+        }
+
+        .timeline {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+
+        .timeline-item {
+            flex: 1;
+            min-width: 200px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 10px;
+            padding: 1rem;
+            text-align: center;
+            border: 2px solid var(--light);
+        }
+
+        .timeline-item.total {
+            background: linear-gradient(135deg, #d5f4e6 0%, #b8e6d0 100%);
+            border-color: var(--success);
+        }
+
+        .timeline-item h4 {
+            color: var(--primary);
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .timeline-item .time {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--secondary);
+        }
+
+        .timeline-item.total .time {
+            color: var(--success);
+        }
+
+        .questions {
+            background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 2px solid var(--warning);
+        }
+
+        .questions h4 {
+            color: #f57c00;
+            margin-bottom: 1rem;
+        }
+
+        .questions ol {
+            margin-left: 1.5rem;
+        }
+
+        .questions li {
+            margin-bottom: 0.75rem;
+            color: #666;
+        }
+
+        .divider {
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--border), transparent);
+            margin: 2rem 0;
+        }
+
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+            }
+            .container {
+                box-shadow: none;
+            }
+            .download-link::after {
+                content: " (" attr(href) ")";
+            }
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 1rem;
+            }
+            .content {
+                padding: 1.5rem;
+            }
+            .scope-grid {
+                grid-template-columns: 1fr;
+            }
+            .timeline {
+                flex-direction: column;
+            }
+            header h1 {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Head Pose Guided Enrollment</h1>
+            <p>Implementation Plan - Nâng cấp tính năng đăng ký khuôn mặt với hướng dẫn tư thế</p>
+            <span class="badge">UC-08 Enhancement</span>
+        </header>
+
+        <div class="content">
+            <section>
+                <h2>Tổng quan</h2>
+                <p>Nâng cấp tính năng đăng ký sinh trắc học (UC-08) từ việc chụp đơn giản 5 ảnh khuôn mặt chính diện sang hệ thống hướng dẫn tư thế. AI model sẽ yêu cầu người dùng thực hiện 5 tư thế cụ thể trước khi chụp mỗi ảnh.</p>
+            </section>
+
+            <section>
+                <h2>Background</h2>
+                <div class="background-box current">
+                    <h4>Luồng hiện tại</h4>
+                    <ul>
+                        <li>Chụp 5 ảnh khuôn mặt với cooldown 1 giây giữa các lần</li>
+                        <li>Sử dụng heuristic 2D đơn giản (tỉ lệ vị trí mũi) để hướng dẫn cơ bản</li>
+                        <li>Không có 3D head pose estimation</li>
+                        <li>Người dùng có thể ở bất kỳ hướng nào - chỉ mong đợi khuôn mặt chính diện</li>
+                    </ul>
+                </div>
+                <div class="background-box required">
+                    <h4>Luồng yêu cầu</h4>
+                    <ul>
+                        <li>Người dùng phải thực hiện 5 tư thế cụ thể theo thứ tự: chính diện, nghiêng trái, nghiêng phải, ngửa lên, cúi xuống</li>
+                        <li>AI model xác minh tư thế đúng bằng head pose estimation trước khi cho phép chụp</li>
+                        <li>Phản hồi thời gian thực hiển thị tư thế hiện tại, góc nghiêng và hướng dẫn</li>
+                        <li>Bắt buộc chụp: sai tư thế = không chụp cho đến khi giữ đúng tư thế</li>
+                    </ul>
+                </div>
+            </section>
+
+            <section>
+                <h2>Phạm vi</h2>
+                <div class="scope-grid">
+                    <div class="scope-box in">Trong phạm vi<br>Head pose estimation, enrollment flow, UI updates</div>
+                    <div class="scope-box out">Ngoài phạm vi<br>Attendance flow, face recognition, database schema</div>
+                </div>
+            </section>
+
+            <section>
+                <h2>Model Selection</h2>
+                <div class="model-card">
+                    <h4>yakhyo/head-pose-estimation - MobileNetV2 ONNX</h4>
+                    <p>Model đã được export sẵn sang ONNX, không cần PyTorch. Sử dụng kiến trúc 6DRepNet với rotation matrix output.</p>
+                    <div class="model-stats">
+                        <span class="stat">📦 8.5 MB</span>
+                        <span class="stat">🎯 ~5.7° MAE</span>
+                        <span class="stat">📥 224×224 RGB</span>
+                        <span class="stat">📤 pitch, yaw, roll</span>
+                    </div>
+                    <a href="https://github.com/yakhyo/head-pose-estimation/releases/download/weights/mobilenetv2.onnx" class="download-link" target="_blank">
+                        Download mobilenetv2.onnx
+                    </a>
+                    <p style="margin-top: 1rem; font-size: 0.9rem; color: #666;">📂 Target: <code>models/head_pose/mobilenetv2.onnx</code></p>
+                </div>
+            </section>
+
+            <section>
+                <h2>Pose Definitions</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Tư thế</th>
+                            <th>Tiếng Việt</th>
+                            <th>Yaw Target</th>
+                            <th>Pitch Target</th>
+                            <th>Dung sai</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>1</td>
+                            <td>Frontal</td>
+                            <td>Chính diện</td>
+                            <td>0°</td>
+                            <td>0°</td>
+                            <td>±15°</td>
+                        </tr>
+                        <tr>
+                            <td>2</td>
+                            <td>Left Tilt</td>
+                            <td>Nghiêng trái</td>
+                            <td>-30°</td>
+                            <td>0°</td>
+                            <td>±15°</td>
+                        </tr>
+                        <tr>
+                            <td>3</td>
+                            <td>Right Tilt</td>
+                            <td>Nghiêng phải</td>
+                            <td>+30°</td>
+                            <td>0°</td>
+                            <td>±15°</td>
+                        </tr>
+                        <tr>
+                            <td>4</td>
+                            <td>Tilt Up</td>
+                            <td>Ngửa lên</td>
+                            <td>0°</td>
+                            <td>-22°</td>
+                            <td>±15°</td>
+                        </tr>
+                        <tr>
+                            <td>5</td>
+                            <td>Tilt Down</td>
+                            <td>Cúi xuống</td>
+                            <td>0°</td>
+                            <td>+22°</td>
+                            <td>±15°</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p><strong>Capture Criteria:</strong> Giữ đúng tư thế 5 frames liên tiếp (~0.17s ở 30fps) + Liveness pass + Embedding extract thành công</p>
+            </section>
+
+            <section>
+                <h2>File Changes</h2>
+                <h3>New Files</h3>
+                <table class="file-table">
+                    <thead>
+                        <tr>
+                            <th>File</th>
+                            <th>Purpose</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="new">src/attendance_system/services/head_pose.py</td>
+                            <td>HeadPoseEstimator class - ONNX Runtime wrapper</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Modified Files</h3>
+                <table class="file-table">
+                    <thead>
+                        <tr>
+                            <th>File</th>
+                            <th>Changes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="modify">src/main.py</td>
+                            <td>Add --headpose-model CLI arg, FACE_HEADPOSE_MODEL_PATH env var, HEADPOSE_ENABLED toggle, create HeadPoseEstimator, pass to MainWindow</td>
+                        </tr>
+                        <tr>
+                            <td class="modify">src/attendance_system/ui/main_window.py</td>
+                            <td>Accept head_pose_estimator param, pass to AdminDashboardView</td>
+                        </tr>
+                        <tr>
+                            <td class="modify">src/attendance_system/ui/admin_dashboard_view.py</td>
+                            <td>Accept head_pose_estimator param, pass to EnrollmentWidget</td>
+                        </tr>
+                        <tr>
+                            <td class="modify">src/attendance_system/ui/enrollment_widget.py</td>
+                            <td>Accept head_pose_estimator, pass to EnrollmentCameraThread, update UI for pose guidance</td>
+                        </tr>
+                        <tr>
+                            <td class="modify">src/attendance_system/ui/enrollment_camera_thread.py</td>
+                            <td>Add state machine for pose tracking, pose validation logic, hold counter, real-time angle display</td>
+                        </tr>
+                        <tr>
+                            <td class="modify">.env.example</td>
+                            <td>Add FACE_HEADPOSE_MODEL_PATH and FACE_HEADPOSE_ENABLED</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section>
+                <h2>Implementation Steps</h2>
+                <div class="steps-container">
+                    <div class="step">
+                        <h4>Step 1: Create HeadPoseEstimator Class</h4>
+                        <ul class="checklist">
+                            <li>Implement HeadPoseEstimator in head_pose.py</li>
+                            <li>Follow pattern of LivenessChecker (ONNX Runtime initialization)</li>
+                            <li>Preprocess: BGR→RGB, resize to 224×224, ImageNet normalize</li>
+                            <li>Postprocess: rotation matrix to Euler angles conversion</li>
+                            <li>Method: estimate(face_crop_bgr) → (pitch, yaw, roll) in degrees</li>
+                        </ul>
+                    </div>
+
+                    <div class="step">
+                        <h4>Step 2: Wire Head Pose Model in Main</h4>
+                        <ul class="checklist">
+                            <li>Add DEFAULT_HEADPOSE_MODEL = Path("models/head_pose/mobilenetv2.onnx")</li>
+                            <li>Add CLI arg --headpose-model</li>
+                            <li>Add env var resolution for FACE_HEADPOSE_MODEL_PATH</li>
+                            <li>Add optional toggle FACE_HEADPOSE_ENABLED (default: true)</li>
+                            <li>Validate model path exists (if enabled)</li>
+                            <li>Create HeadPoseEstimator instance, pass to MainWindow</li>
+                        </ul>
+                    </div>
+
+                    <div class="step">
+                        <h4>Step 3: Pass Through UI Layers</h4>
+                        <ul class="checklist">
+                            <li>MainWindow: add head_pose_estimator param, pass to AdminDashboardView</li>
+                            <li>AdminDashboardView: add head_pose_estimator param, pass to EnrollmentWidget</li>
+                            <li>EnrollmentWidget: add head_pose_estimator param, pass to EnrollmentCameraThread</li>
+                        </ul>
+                    </div>
+
+                    <div class="step">
+                        <h4>Step 4: Update EnrollmentCameraThread State Machine</h4>
+                        <ul class="checklist">
+                            <li>Add pose definitions constant array (5 poses with yaw/pitch targets)</li>
+                            <li>Add state variables: _current_pose_idx, _pose_hold_counter</li>
+                            <li>Add constant: HOLD_FRAMES = 5</li>
+                            <li>Modify run() loop: detect → estimate head pose → check match → hold counter → capture</li>
+                            <li>Add guidance logic: determine which direction to move based on error</li>
+                            <li>Add overlay rendering: pose name, angles, hold progress, guidance text</li>
+                        </ul>
+                    </div>
+
+                    <div class="step">
+                        <h4>Step 5: Update EnrollmentWidget UI</h4>
+                        <ul class="checklist">
+                            <li>Add pose-specific progress label (e.g., "📸 Ảnh 2/5: Nghiêng trái")</li>
+                            <li>Update progress bar to reflect pose index</li>
+                            <li>Add angle display (optional)</li>
+                        </ul>
+                    </div>
+
+                    <div class="step">
+                        <h4>Step 6: Backward Compatibility</h4>
+                        <ul class="checklist">
+                            <li>If head_pose_estimator is None, revert to old behavior (5 frontal captures, simple nose-ratio guidance)</li>
+                            <li>Handle missing model gracefully with warning message</li>
+                            <li>Allow disable via env var</li>
+                        </ul>
+                    </div>
+
+                    <div class="step">
+                        <h4>Step 7: Testing</h4>
+                        <ul class="checklist">
+                            <li>Unit test: HeadPoseEstimator angle conversion</li>
+                            <li>Integration test: full enrollment flow with head pose</li>
+                            <li>Test edge cases: rapid pose changes, borderline angles</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>UI/UX Design</h2>
+                <h3>Camera Frame Overlay</h3>
+                <div class="ui-mockup">
+                    <div class="line"><span class="highlight">┌─────────────────────────────────────────────┐</span></div>
+                    <div class="line"><span class="highlight">│</span> <span class="guide">[BBox: Green=Correct | Yellow=Wrong]</span>         <span class="highlight">│</span></div>
+                    <div class="line"><span class="highlight">│</span>                                       <span class="highlight">│</span></div>
+                    <div class="line"><span class="highlight">│</span>  <span class="angle">Yaw: -28°  Pitch: 3°</span> ← Real-time angles   <span class="highlight">│</span></div>
+                    <div class="line"><span class="highlight">│</span>                                       <span class="highlight">│</span></div>
+                    <div class="line"><span class="highlight">│</span>              [FACE IMAGE]                  <span class="highlight">│</span></div>
+                    <div class="line"><span class="highlight">│</span>                                       <span class="highlight">│</span></div>
+                    <div class="line"><span class="highlight">│</span>  <span class="pose">📸 Ảnh 2/5: Nghiêng trái</span>              <span class="highlight">│</span></div>
+                    <div class="line"><span class="highlight">│</span>  <span class="highlight">████████████░░░ Hold: 3/5</span>                  <span class="highlight">│</span></div>
+                    <div class="line"><span class="highlight">│</span>                                       <span class="highlight">│</span></div>
+                    <div class="line"><span class="highlight">│</span>  <span class="guide">← Hãy quay sang trái một chút</span>         <span class="highlight">│</span></div>
+                    <div class="line"><span class="highlight">└─────────────────────────────────────────────┘</span></div>
+                </div>
+
+                <h3>Status Messages by State</h3>
+                <dl class="status-list">
+                    <dt>No face detected</dt>
+                    <dd>"Không tìm thấy khuôn mặt"</dd>
+
+                    <dt>Wrong pose</dt>
+                    <dd>"Hãy thực hiện: Nghiêng trái ←" or "Ngửa mặt lên ↑"</dd>
+
+                    <dt>Correct pose, holding</dt>
+                    <dd>"Tốt! Giữ yên... (3/5)"</dd>
+
+                    <dt>Capturing</dt>
+                    <dd>"✓ Đã chụp!"</dd>
+
+                    <dt>Liveness failed</dt>
+                    <dd>"⚠ Cảnh báo: Liveness failed"</dd>
+
+                    <dt>Enrollment complete</dt>
+                    <dd>"Hoàn tất!"</dd>
+                </dl>
+            </section>
+
+            <section>
+                <h2>Acceptance Criteria</h2>
+                <div class="criteria-grid">
+                    <div class="criteria-card">
+                        <h4>🎯 Pose Detection</h4>
+                        <p>System correctly identifies when user is in each of the 5 required poses within ±15° tolerance</p>
+                    </div>
+                    <div class="criteria-card">
+                        <h4>🔒 Pose Enforcement</h4>
+                        <p>Capture only occurs when pose is held for 5+ consecutive frames AND liveness passes</p>
+                    </div>
+                    <div class="criteria-card">
+                        <h4>👁️ User Guidance</h4>
+                        <p>Clear visual feedback showing current pose, required pose, and direction to adjust</p>
+                    </div>
+                    <div class="criteria-card">
+                        <h4>↩️ Backward Compatibility</h4>
+                        <p>When head pose model is disabled, enrollment falls back to old behavior</p>
+                    </div>
+                    <div class="criteria-card">
+                        <h4>⚡ Performance</h4>
+                        <p>No noticeable lag in camera feed (head pose inference < 50ms per frame)</p>
+                    </div>
+                    <div class="criteria-card">
+                        <h4>💾 Storage</h4>
+                        <p>Final embedding stored in same format as before (128-dim averaged embedding)</p>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>Risks & Mitigations</h2>
+                <table class="risk-table">
+                    <thead>
+                        <tr>
+                            <th>Risk</th>
+                            <th>Impact</th>
+                            <th>Mitigation</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Head pose model accuracy insufficient</td>
+                            <td>Users may struggle to get correct pose</td>
+                            <td>Use ±15° tolerance, show real-time feedback</td>
+                        </tr>
+                        <tr>
+                            <td>Extreme lighting affects detection</td>
+                            <td>Face not detected, enrollment stuck</td>
+                            <td>Keep existing liveness check as secondary validation</td>
+                        </tr>
+                        <tr>
+                            <td>Model file missing</td>
+                            <td>App crashes or broken enrollment</td>
+                            <td>Make head pose optional, warn but allow fallback</td>
+                        </tr>
+                        <tr>
+                            <td>User moves too fast between poses</td>
+                            <td>Extended enrollment time</td>
+                            <td>Show clear guidance, optimize inference speed</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section>
+                <h2>Dependencies</h2>
+                <p><strong>Existing:</strong> onnxruntime, opencv-python, numpy</p>
+                <p><strong>New:</strong> None (MobileNetV2 ONNX uses existing deps)</p>
+                <p><strong>External:</strong> Download mobilenetv2.onnx from GitHub releases (~8.5 MB)</p>
+            </section>
+
+            <section>
+                <h2>Timeline Estimate</h2>
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <h4>Step 1-3</h4>
+                        <span class="time">~2 hours</span>
+                    </div>
+                    <div class="timeline-item">
+                        <h4>Step 4</h4>
+                        <span class="time">~3 hours</span>
+                    </div>
+                    <div class="timeline-item">
+                        <h4>Step 5-6</h4>
+                        <span class="time">~1 hour</span>
+                    </div>
+                    <div class="timeline-item">
+                        <h4>Step 7</h4>
+                        <span class="time">~1 hour</span>
+                    </div>
+                    <div class="timeline-item total">
+                        <h4>Total</h4>
+                        <span class="time">~7 hours</span>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>Open Questions</h2>
+                <div class="questions">
+                    <ol>
+                        <li>Should head pose angles be persisted per-capture for debugging? <em>(No, not in scope)</em></li>
+                        <li>Should we allow configurable pose tolerance? <em>(No, hardcoded for now)</em></li>
+                        <li>What if user cannot perform a pose (e.g., physical limitation)? <em>(Not handled - full 5 poses required)</em></li>
+                    </ol>
+                </div>
+            </section>
+        </div>
+    </div>
+</body>
+</html>
