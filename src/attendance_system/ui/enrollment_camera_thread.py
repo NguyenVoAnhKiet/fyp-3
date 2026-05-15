@@ -26,8 +26,8 @@ class _PoseTarget(NamedTuple):
 
 _POSE_SEQUENCE = [
     _PoseTarget("Chính diện", 0, 0),
-    _PoseTarget("Nghiêng trái", 0, 30),
-    _PoseTarget("Nghiêng phải", 0, -30),
+    _PoseTarget("Nghiêng trái", 0, -30),  # Model outputs negative yaw when user turns left
+    _PoseTarget("Nghiêng phải", 0, 30),   # Model outputs positive yaw when user turns right
     _PoseTarget("Ngửa lên", 20, 0),
     _PoseTarget("Cúi xuống", -20, 0),
 ]
@@ -106,6 +106,9 @@ class EnrollmentCameraThread(QThread):
             if not ret:
                 self.camera_error.emit("Camera read failed.")
                 break
+
+            # Mirror horizontally so user sees themselves like in a mirror
+            frame = cv2.flip(frame, 1)
 
             _, faces = self._detector.detect(frame)
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)

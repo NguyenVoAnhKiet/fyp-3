@@ -177,7 +177,7 @@ def test_enrollment_succeeds_without_liveness(mock_detector_create) -> None:
     mock_detector_create.return_value = detector
 
     head_pose = MagicMock()
-    head_pose.estimate.return_value = (0.0, 30.0, 0.0)  # Nghiêng trái
+    head_pose.estimate.return_value = (0.0, -30.0, 0.0)  # Nghiêng trái (negative yaw = left turn)
     liveness = MagicMock()
     liveness.check.return_value = MagicMock(is_real=False)  # Would normally fail
     recognizer = MagicMock()
@@ -195,7 +195,7 @@ def test_enrollment_succeeds_without_liveness(mock_detector_create) -> None:
         detector_model_path=Path("fake.onnx"),
     )
     thread._pose_hold_counter = 4
-    # Set index to 1 ("Nghiêng trái", yaw=30) to match the mocked head pose
+    # Set index to 1 ("Nghiêng trái", yaw=-30) to match the mocked head pose
     thread._current_pose_index = 1
 
     frame = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -236,3 +236,91 @@ def test_enrollment_liveness_bypass_still_checks_embedding(mock_detector_create)
     # Should NOT advance - embedding extraction failed
     assert thread._current_pose_index == 0
     assert len(thread._captured_embeddings) == 0
+
+
+@patch("cv2.FaceDetectorYN.create")
+def test_pose_sequence_yaw_sign_convention(mock_detector_create) -> None:
+    """Verify yaw signs: negative yaw = head turned left, positive yaw = head turned right."""
+    from attendance_system.ui.enrollment_camera_thread import _POSE_SEQUENCE
+
+    left_pose = next(p for p in _POSE_SEQUENCE if "trái" in p.name)
+    right_pose = next(p for p in _POSE_SEQUENCE if "phải" in p.name)
+
+    # "Nghiêng trái" should have negative yaw (model convention: left = negative)
+    assert left_pose.yaw < 0, f"Nghiêng trái should have negative yaw, got {left_pose.yaw}"
+
+    # "Nghiêng phải" should have positive yaw (model convention: right = positive)
+    assert right_pose.yaw > 0, f"Nghiêng phải should have positive yaw, got {right_pose.yaw}"
+
+
+@patch("cv2.FaceDetectorYN.create")
+def test_enrollment_accepts_correct_yaw_direction(mock_detector_create) -> None:
+    """Enrollment should accept user turning left when asked to turn left (negative yaw)."""
+    detector = MagicMock()
+    detector.setInputSize.return_value = None
+    mock_detector_create.return_value = detector
+
+    # When user turns LEFT, the head pose model outputs NEGATIVE yaw
+    head_pose = MagicMock()
+    head_pose.estimate.return_value = (0.0, -30.0, 0.0)  # Negative yaw = left turn
+    liveness = LivenessChecker(None)
+    recognizer = MagicMock()
+    recognizer.get_embedding.return_value = np.ones(128, dtype=np.float32)
+    recognizer.average_embeddings.return_value = np.ones(128, dtype=np.float32)
+
+    thread = EnrollmentCameraThread(
+        camera_index=0,
+        liveness_checker=liveness,
+        face_recognizer=recognizer,
+        head_pose_estimator=head_pose,
+        detector_model_path=Path("fake.onnx"),
+    )
+    thread._current_pose_index = 1  # "Nghiêng trái"
+    thread._pose_hold_counter = 4
+
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    thread._handle_pose_frame(frame, _make_face(), 100, 100, 160, 160)
+
+    # Should advance because user's left turn matches "Nghiêng trái" (yaw=-30)
+    assert thread._current_pose_index == 2
+
+
+@patch("cv2.FaceDetectorYN.create")
+def test_enrollment_rejects_opposite_yaw_direction(mock_detector_create) -> None:
+    """Enrollment should NOT accept user turning opposite to what system asks."""
+    detector = MagicMock()
+    detector.setInputSize.return_value = None
+    mock_detector_create.return_value = detector
+
+    # When user turns RIGHT, model outputs POSITIVE yaw
+    head_pose = MagicMock()
+    head_pose.estimate.return_value = (0.0, 30.0, 0.0)  # Positive yaw = right turn
+    liveness = LivenessChecker(None)
+    recognizer = MagicMock()
+
+    thread = EnrollmentCameraThread(
+        camera_index=0,
+        liveness_checker=liveness,
+        face_recognizer=recognizer,
+        head_pose_estimator=head_pose,
+        detector_model_path=Path("fake.onnx"),
+    )
+    thread._current_pose_index = 1  # "Nghiêng trái" requires yaw=-30
+    thread._pose_hold_counter = 4
+
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    thread._handle_pose_frame(frame, _make_face(), 100, 100, 160, 160)
+
+    # Should NOT advance because user's right turn (yaw=+30) doesn't match "Nghiêng trái" (yaw=-30)
+    assert thread._current_pose_index == 1
+    assert thread._pose_hold_counter == 0  # Reset because pose doesn't match
+
+
+@patch("cv2.FaceDetectorYN.create")
+def test_mirrored_frame_flipped_before_processing(mock_detector_create) -> None:
+    """Camera frame should be flipped horizontally so display is like a mirror."""
+    import inspect
+
+    source = inspect.getsource(EnrollmentCameraThread.run)
+    # Verify that cv2.flip with axis=1 is called in the run method
+    assert "cv2.flip(frame, 1)" in source or "flip(frame, 1)" in source
