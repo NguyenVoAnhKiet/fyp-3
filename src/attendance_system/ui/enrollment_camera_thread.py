@@ -246,7 +246,6 @@ class EnrollmentCameraThread(QThread):
                     self._guidance_text = f"Tiếp theo: {_POSE_SEQUENCE[self._current_pose_index % len(_POSE_SEQUENCE)].name}"
                     self._hold_text = f"Giữ: 0/{_HOLD_FRAMES}"
                     return _COLOR_SUCCESS
-                # Bug 1 fix: Reset counter khi capture thất bại
                 self._pose_hold_counter = 0
                 self._hold_text = f"Giữ: 0/{_HOLD_FRAMES}"
                 self._status_text = "Không thể đọc khuôn mặt, thử lại"

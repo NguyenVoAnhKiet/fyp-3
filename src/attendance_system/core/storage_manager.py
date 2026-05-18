@@ -1,5 +1,6 @@
 from __future__ import annotations
 import bcrypt
+import os
 from dataclasses import dataclass
 
 from .db import Database
@@ -19,8 +20,8 @@ class StorageManager:
         """Seed initial admin account if none exists."""
         cursor = connection.execute("SELECT COUNT(*) FROM admin_credentials")
         if cursor.fetchone()[0] == 0:
-            username = "admin"
-            password = "admin"
+            username = os.getenv("ADMIN_USERNAME", "admin")
+            password = os.getenv("ADMIN_PASSWORD", "admin")
             salt = bcrypt.gensalt()
             password_hash = bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
             now = utc_now_iso()
