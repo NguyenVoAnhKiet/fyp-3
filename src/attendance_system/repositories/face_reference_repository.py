@@ -14,27 +14,28 @@ class FaceReferenceRepository(BaseRepository):
         super().__init__(database)
         self._fernet_key = os.getenv("FACE_EMBEDDING_FERNET_KEY")
 
-    def _encrypt_embedding(self, embedding: bytes) -> bytes:
+    def _get_fernet(self):
         if not self._fernet_key:
-            return embedding
+            return None
         try:
             from cryptography.fernet import Fernet
         except ImportError as error:
             raise RuntimeError(
                 "cryptography package is required when FACE_EMBEDDING_FERNET_KEY is set"
             ) from error
-        return Fernet(self._fernet_key.encode("utf-8")).encrypt(embedding)
+        return Fernet(self._fernet_key.encode("utf-8"))
+
+    def _encrypt_embedding(self, embedding: bytes) -> bytes:
+        fernet = self._get_fernet()
+        if fernet is None:
+            return embedding
+        return fernet.encrypt(embedding)
 
     def _decrypt_embedding(self, embedding: bytes) -> bytes:
-        if not self._fernet_key:
+        fernet = self._get_fernet()
+        if fernet is None:
             return embedding
-        try:
-            from cryptography.fernet import Fernet
-        except ImportError as error:
-            raise RuntimeError(
-                "cryptography package is required when FACE_EMBEDDING_FERNET_KEY is set"
-            ) from error
-        return Fernet(self._fernet_key.encode("utf-8")).decrypt(embedding)
+        return fernet.decrypt(embedding)
 
     @staticmethod
     def _dict_to_row(payload: dict[str, object]) -> sqlite3.Row:

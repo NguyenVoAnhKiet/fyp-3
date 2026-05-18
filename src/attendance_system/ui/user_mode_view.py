@@ -363,7 +363,7 @@ class UserModeView(QWidget):
         user_id: int,
         full_name: str,
         liveness_score: float,
-        similarity_score: float,
+        similarity_score: float | None,
     ) -> None:
         if self._session_id is None:
             return

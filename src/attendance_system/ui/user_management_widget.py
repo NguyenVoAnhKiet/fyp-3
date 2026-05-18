@@ -5,8 +5,7 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem, QHeaderView, QLabel, QDialog, QFormLayout, 
     QLineEdit, QMessageBox, QAbstractItemView
 )
-from PyQt5.QtCore import Qt
-from attendance_system.ui.constants import FONT_TITLE, FONT_BODY
+from attendance_system.ui.constants import FONT_TITLE
 from attendance_system.repositories.user_repository import UserRepository
 from attendance_system.repositories.face_reference_repository import FaceReferenceRepository
 from attendance_system.core.db import Database

@@ -42,7 +42,7 @@ class CameraThread(QThread):
     """
 
     frame_ready = pyqtSignal(QImage)
-    recognition_result = pyqtSignal(str, int, str, float, float)
+    recognition_result = pyqtSignal(str, int, str, float, object)
     camera_error = pyqtSignal(str)
 
     def __init__(
@@ -205,7 +205,7 @@ class CameraThread(QThread):
         if not liveness.is_real:
             self._bbox_color = _COLOR_ALERT
             self._result_hold_counter = _RESULT_HOLD_FRAMES
-            self.recognition_result.emit("spoof", 0, "", liveness.score, 0.0)
+            self.recognition_result.emit("spoof", 0, "", liveness.score, None)
             return
 
         # Step 2 — Recognition (SFace uses alignment)

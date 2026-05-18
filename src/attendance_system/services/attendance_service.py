@@ -34,6 +34,14 @@ class AttendanceService:
             start_time=start_time,
         )
 
+    def _validate_session_and_user(self, session_id: int, user_id: int) -> None:
+        self.attendance.require_positive_int(session_id, "session_id")
+        self.attendance.require_positive_int(user_id, "user_id")
+        if self.sessions.get_by_id(session_id) is None:
+            raise LookupError(f"Session {session_id} not found")
+        if self.users.get_by_id(user_id) is None:
+            raise LookupError(f"User {user_id} not found")
+
     def record_success(
         self,
         session_id: int,
@@ -43,13 +51,8 @@ class AttendanceService:
         similarity_score: float | None = None,
         details: str | None = None,
     ) -> int:
-        self.attendance.require_positive_int(session_id, "session_id")
-        self.attendance.require_positive_int(user_id, "user_id")
         self.attendance.require_non_empty_text(event_time, "event_time")
-        if self.sessions.get_by_id(session_id) is None:
-            raise LookupError(f"Session {session_id} not found")
-        if self.users.get_by_id(user_id) is None:
-            raise LookupError(f"User {user_id} not found")
+        self._validate_session_and_user(session_id, user_id)
         with self.attendance.connection() as connection:
             connection.execute(
                 """
@@ -69,13 +72,8 @@ class AttendanceService:
             return cursor.lastrowid
 
     def record_duplicate(self, session_id: int, user_id: int, event_time: str, details: str | None = None) -> int:
-        self.attendance.require_positive_int(session_id, "session_id")
-        self.attendance.require_positive_int(user_id, "user_id")
         self.attendance.require_non_empty_text(event_time, "event_time")
-        if self.sessions.get_by_id(session_id) is None:
-            raise LookupError(f"Session {session_id} not found")
-        if self.users.get_by_id(user_id) is None:
-            raise LookupError(f"User {user_id} not found")
+        self._validate_session_and_user(session_id, user_id)
         with self.attendance.connection() as connection:
             connection.execute(
                 """
@@ -145,7 +143,7 @@ class AttendanceService:
     def get_unique_subjects(self):
         return [row["subject_name"] for row in self.sessions.list_unique_subjects()]
 
-    def export_session_to_csv(self, session_id: int, file_path: str) -> None:
+    def _export_session(self, session_id: int, file_path: str, format: str) -> None:
         import pandas as pd
 
         records = self.get_session_records(session_id)
@@ -154,16 +152,16 @@ class AttendanceService:
             df = df[["student_id", "full_name", "status", "recorded_at"]]
             df.columns = ["Student ID", "Full Name", "Status", "Time"]
 
-        df.to_csv(file_path, index=False)
+        if format == "csv":
+            df.to_csv(file_path, index=False)
+        elif format == "excel":
+            df.to_excel(file_path, index=False, sheet_name="Attendance")
+        else:
+            raise ValueError(f"Unsupported export format: {format}")
+
+    def export_session_to_csv(self, session_id: int, file_path: str) -> None:
+        self._export_session(session_id, file_path, "csv")
 
     def export_session_to_excel(self, session_id: int, file_path: str) -> None:
-        import pandas as pd
-
-        records = self.get_session_records(session_id)
-        df = pd.DataFrame([dict(r) for r in records])
-        if not df.empty:
-            df = df[["student_id", "full_name", "status", "recorded_at"]]
-            df.columns = ["Student ID", "Full Name", "Status", "Time"]
-
-        df.to_excel(file_path, index=False, sheet_name="Attendance")
+        self._export_session(session_id, file_path, "excel")
 
