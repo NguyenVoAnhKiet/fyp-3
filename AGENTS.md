@@ -75,10 +75,12 @@ Other instruction files:
 
 - **`onnxruntime` must be imported BEFORE `PyQt5`** (main.py:17-20, conftest.py:7-10). On Windows, both load conflicting native DLLs.
 - **`cryptography` is a soft dependency** (lazy import in `face_reference_repository.py:21`). Not in `pyproject.toml`. Only needed when `FACE_EMBEDDING_FERNET_KEY` is set.
-- **Initial admin is hardcoded** as `admin`/`admin` in `storage_manager.py:22-23`. The `ADMIN_USERNAME`/`ADMIN_PASSWORD` env vars in `.env.example` are NOT read.
+- **Initial admin is hardcoded** as `admin`/`admin` in `storage_manager.py:22-23`. The `ADMIN_USERNAME`/`ADMIN_PASSWORD` env vars in `.env.example` are NOT read by the code.
 - `CAMERA_INDEX=` (empty string) must be handled as missing — `_resolve_camera_index` at `main.py:79`.
-- **Liveness crop uses `scale=2.7`** vs head-pose crop uses `scale=1.5` in `enrollment_camera_thread.py` — `_crop_face()` takes a `scale` param (default `1.5`); callers pass `2.7` for liveness. Getting this wrong silently rejects real users.
+- **Liveness crop uses `scale=2.7`** vs head-pose crop uses `scale=1.5` in `enrollment_camera_thread.py` — `_crop_face()` takes a `scale` param (default `1.5`); liveness callers pass `2.7`. Getting this wrong silently rejects real users.
 - **Enrollment completion checks `_target_count`**, not `len(_POSE_SEQUENCE)` — `_handle_pose_frame` at line 236. UI freezes if the guard stays hardcoded to sequence length.
 - Thresholds from `.env` seed the DB on first run only; subsequent changes go through the settings UI.
 - Anti-spoofing is optional — disabled by `FACE_ANTISPOOF_ENABLED=false`.
 - `bootstrap.py` does NOT call `load_dotenv()`, so `DATABASE_PATH` from `.env` is unseen when running `attendance-storage-init`.
+- **Camera frame is flipped horizontally** in enrollment (`cv2.flip(frame, 1)` at `enrollment_camera_thread.py:111`) — provides mirror-like UX so user sees themselves naturally when turning head left/right.
+- **`src/attendance_system/services/security.py` is dead code** — zero imports across the project (entirely unreferenced).
