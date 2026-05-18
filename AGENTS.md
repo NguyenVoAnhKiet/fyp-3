@@ -24,8 +24,7 @@ Models (`models/**/*.onnx`) are gitignored — download separately.
 pip install -e .                              # Editable install for dev
 ruff check src/                               # Lint only (no formatter/typechecker)
 pytest tests/                                 # All tests
-pytest tests/unit/test_security.py -v         # Single file
-pytest tests/unit/test_security.py::test_name -v  # Single test
+pytest tests/unit/test_enrollment_and_settings_unit.py -v       # Single test file
 $env:PYTHONPATH='src'; python src/main.py    # Dev run (no install, PowerShell)
 attendance-storage-init                       # Installed: DB bootstrap
 attendance-app                                # Installed: GUI app
@@ -40,7 +39,7 @@ Standalone scripts (e.g. `bootstrap.py`) do NOT call it themselves.
 
 - `src/main.py` — Entry point; parses CLI, loads `.env`, wires services, launches PyQt5
 - `src/attendance_system/core/` — `Database` (with `session()` ctx mgr), schema, bootstrap, storage manager
-- `src/attendance_system/services/` — Business logic (enrollment, attendance, security, settings, AI pipeline, head-pose)
+- `src/attendance_system/services/` — Business logic (enrollment, attendance, settings, AI pipeline, head-pose)
 - `src/attendance_system/repositories/` — CRUD per entity (inherits `BaseRepository`)
 - `src/attendance_system/models/entities.py` — `@dataclass(slots=True)` data classes
 - `src/attendance_system/ui/` — PyQt5 components (main window, camera threads, login/dashboard)
@@ -52,7 +51,22 @@ Installed entry points (from `pyproject.toml`):
 
 Other instruction files:
 - `CLAUDE.md` — Karpathy-style behavioral guidelines (simplicity, surgical changes)
-- `.agents/` — OpenSpec workflow files
+- `.agents/` — OpenSpec workflow files (propose, explore, apply-change, archive-change, etc.)
+
+## OpenSpec Workflow
+
+Use OpenSpec for feature development, bug fixes, and refactoring:
+
+```bash
+openspec explore                    # Think through a problem before making changes
+openspec propose <name>             # Create a new change with full proposal
+openspec apply-change <name>        # Implement tasks from a change
+openspec list                       # List active changes
+openspec status --change <name>     # Check change completion
+openspec archive-change <name>       # Archive a completed change
+```
+
+Changes live in `openspec/changes/<name>/`. Archive completed changes to `openspec/changes/archive/YYYY-MM-DD-<name>/`.
 
 ## DB
 
@@ -75,12 +89,11 @@ Other instruction files:
 
 - **`onnxruntime` must be imported BEFORE `PyQt5`** (main.py:17-20, conftest.py:7-10). On Windows, both load conflicting native DLLs.
 - **`cryptography` is a soft dependency** (lazy import in `face_reference_repository.py:21`). Not in `pyproject.toml`. Only needed when `FACE_EMBEDDING_FERNET_KEY` is set.
-- **Initial admin is hardcoded** as `admin`/`admin` in `storage_manager.py:22-23`. The `ADMIN_USERNAME`/`ADMIN_PASSWORD` env vars in `.env.example` are NOT read by the code.
+- **Initial admin from env**: `storage_manager.py:23-24` reads `ADMIN_USERNAME`/`ADMIN_PASSWORD` with fallback `"admin"`/`"admin"`.
 - `CAMERA_INDEX=` (empty string) must be handled as missing — `_resolve_camera_index` at `main.py:79`.
 - **Liveness crop uses `scale=2.7`** vs head-pose crop uses `scale=1.5` in `enrollment_camera_thread.py` — `_crop_face()` takes a `scale` param (default `1.5`); liveness callers pass `2.7`. Getting this wrong silently rejects real users.
 - **Enrollment completion checks `_target_count`**, not `len(_POSE_SEQUENCE)` — `_handle_pose_frame` at line 236. UI freezes if the guard stays hardcoded to sequence length.
 - Thresholds from `.env` seed the DB on first run only; subsequent changes go through the settings UI.
 - Anti-spoofing is optional — disabled by `FACE_ANTISPOOF_ENABLED=false`.
 - `bootstrap.py` does NOT call `load_dotenv()`, so `DATABASE_PATH` from `.env` is unseen when running `attendance-storage-init`.
-- **Camera frame is flipped horizontally** in enrollment (`cv2.flip(frame, 1)` at `enrollment_camera_thread.py:111`) — provides mirror-like UX so user sees themselves naturally when turning head left/right.
-- **`src/attendance_system/services/security.py` is dead code** — zero imports across the project (entirely unreferenced).
+- Camera frame is flipped horizontally in enrollment (`cv2.flip(frame, 1)` at `enrollment_camera_thread.py:111`) — mirror-like UX so users see themselves naturally when turning head left/right.
