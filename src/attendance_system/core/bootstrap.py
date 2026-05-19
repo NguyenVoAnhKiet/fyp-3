@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+# NOTE: bootstrap.py does not call load_dotenv().
+# This module is invoked as a standalone CLI script via 'attendance-storage-init',
+# which reads configuration from CLI arguments (--database-path) rather than .env.
+# See AGENTS.md "Gotchas" for details.
+
 import argparse
 import os
 from pathlib import Path

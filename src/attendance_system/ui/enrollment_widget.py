@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import cv2
 import numpy as np
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -29,6 +30,7 @@ if TYPE_CHECKING:
     from attendance_system.services.head_pose import HeadPoseEstimator
     from attendance_system.services.settings_service import SettingsService
 
+_TARGET_CAPTURE_COUNT = 5
 
 class EnrollmentWidget(QWidget):
     """
@@ -44,6 +46,7 @@ class EnrollmentWidget(QWidget):
         settings_service: SettingsService,
         head_pose_estimator: HeadPoseEstimator | None,
         detector_model_path: Path | None = None,
+        detector: cv2.FaceDetectorYN | None = None,
         parent: QWidget | None = None
     ) -> None:
         super().__init__(parent)
@@ -53,6 +56,7 @@ class EnrollmentWidget(QWidget):
         self._settings_service = settings_service
         self._head_pose_estimator = head_pose_estimator
         self._detector_model_path = detector_model_path
+        self._detector = detector
         
         self._user_repo = UserRepository(database)
         self._enroll_service = EnrollmentService(database)
@@ -95,7 +99,7 @@ class EnrollmentWidget(QWidget):
 
         # Progress Bar for capture
         progress_layout = QVBoxLayout()
-        self._progress_label = QLabel("Tiến trình: 0/5 ảnh")
+        self._progress_label = QLabel(f"Tiến trình: 0/{_TARGET_CAPTURE_COUNT} ảnh")
         self._progress_label.setFont(FONT_BODY)
         progress_layout.addWidget(self._progress_label)
 
@@ -108,7 +112,7 @@ class EnrollmentWidget(QWidget):
         progress_layout.addWidget(self._guidance_label)
         
         self._progress_bar = QProgressBar()
-        self._progress_bar.setMaximum(5)
+        self._progress_bar.setMaximum(_TARGET_CAPTURE_COUNT)
         self._progress_bar.setValue(0)
         self._progress_bar.setTextVisible(False)
         self._progress_bar.setFixedHeight(10)
@@ -171,6 +175,7 @@ class EnrollmentWidget(QWidget):
             head_pose_estimator=self._head_pose_estimator,
             liveness_threshold=liveness_thresh,
             detector_model_path=self._detector_model_path,
+            detector=self._detector,
             parent=self
         )
         self._camera_thread.frame_ready.connect(self.update_frame)
@@ -209,7 +214,7 @@ class EnrollmentWidget(QWidget):
     def set_progress(
         self,
         current: int,
-        total: int = 5,
+        total: int = _TARGET_CAPTURE_COUNT,
         pose_label: str = "",
         angles_text: str = "",
         hold_text: str = "",

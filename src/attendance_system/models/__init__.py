@@ -1,1 +1,1 @@
-"""Domain models for the storage core."""
+"""Data models for attendance system entities."""

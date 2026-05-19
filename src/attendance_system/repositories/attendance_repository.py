@@ -30,7 +30,7 @@ class AttendanceRepository(BaseRepository):
         except sqlite3.IntegrityError as error:
             raise DuplicateAttendanceError("Attendance record already exists for this session and user") from error
 
-    def get(self, session_id: int, user_id: int):
+    def get(self, session_id: int, user_id: int) -> sqlite3.Row | None:
         self.require_positive_int(session_id, "session_id")
         self.require_positive_int(user_id, "user_id")
         return self.fetch_one(

@@ -28,11 +28,11 @@ class AttendanceHistoryWidget(QWidget):
     def __init__(self, database: Database, parent=None):
         super().__init__(parent)
         self.attendance_service = AttendanceService(database)
-        self.init_ui()
+        self._build_ui()
         self.load_filters()
         self.search_sessions()
 
-    def init_ui(self):
+    def _build_ui(self):
         self.layout = QVBoxLayout(self)
 
         # Header

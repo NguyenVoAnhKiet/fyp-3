@@ -5,8 +5,7 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem, QHeaderView, QLabel, QDialog, QFormLayout, 
     QLineEdit, QMessageBox, QAbstractItemView
 )
-from PyQt5.QtCore import Qt
-from attendance_system.ui.constants import FONT_TITLE, FONT_BODY
+from attendance_system.ui.constants import FONT_TITLE
 from attendance_system.repositories.user_repository import UserRepository
 from attendance_system.repositories.face_reference_repository import FaceReferenceRepository
 from attendance_system.core.db import Database
@@ -60,10 +59,10 @@ class UserManagementWidget(QWidget):
         self.user_repo = UserRepository(database)
         self.face_repo = FaceReferenceRepository(database)
         
-        self.init_ui()
+        self._build_ui()
         self.load_users()
 
-    def init_ui(self):
+    def _build_ui(self):
         self.layout = QVBoxLayout(self)
         
         # Header

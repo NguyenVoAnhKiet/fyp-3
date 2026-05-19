@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+
 from attendance_system.core.db import Database
 from attendance_system.utils.time_utils import utc_now_iso
 
@@ -43,7 +45,7 @@ class SessionRepository(BaseRepository):
             ),
         )
 
-    def get_by_id(self, session_id: int):
+    def get_by_id(self, session_id: int) -> sqlite3.Row | None:
         self.require_positive_int(session_id, "session_id")
         return self.fetch_one("SELECT * FROM sessions WHERE id = ?", (session_id,))
 

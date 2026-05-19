@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from attendance_system.core.db import Database
 
 from attendance_system.repositories.face_reference_repository import FaceReferenceRepository
@@ -18,7 +16,6 @@ class EnrollmentService:
         embedding: bytes,
         model_name: str,
         vector_length: int,
-        raw_image_path: Path | None = None,
     ) -> int:
         reference_id = self.references.upsert(
             user_id=user_id,
@@ -26,12 +23,9 @@ class EnrollmentService:
             model_name=model_name,
             vector_length=vector_length,
         )
-        
-        # Mark user as registered
+
         user_repo = UserRepository(self.references.database)
         user_repo.update(user_id, face_registered=True)
 
-        if raw_image_path is not None and raw_image_path.exists():
-            raw_image_path.unlink()
         return reference_id
 

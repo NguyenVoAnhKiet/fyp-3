@@ -1,6 +1,9 @@
 from __future__ import annotations
-import sqlite3
+from typing import TYPE_CHECKING
 from attendance_system.repositories.base_repository import BaseRepository
+
+if TYPE_CHECKING:
+    import sqlite3
 
 class AdminRepository(BaseRepository):
     """Repository for managing admin credentials."""
