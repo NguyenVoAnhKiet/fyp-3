@@ -11,6 +11,7 @@ from PyQt5.QtGui import QImage, QPainter, QColor, QFont
 
 from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
 from attendance_system.services.head_pose import HeadPoseEstimator
+from attendance_system.utils.face_utils import _crop_face, _create_face_detector
 
 _COLOR_GUIDE: tuple[int, int, int] = (255, 255, 0)  # Yellow
 _COLOR_SUCCESS: tuple[int, int, int] = (0, 255, 0)   # Green
@@ -46,8 +47,8 @@ class EnrollmentCameraThread(QThread):
         liveness_threshold: float = 0.5,
         detector_model_path: Path | str | None = None,
         head_pose_estimator: HeadPoseEstimator | None = None,
-        detector: Any | None = None,
         target_count: int = 5,
+        detector: Any | None = None,
         capture_cooldown: float = _CAPTURE_COOLDOWN,
         parent: Any = None,
     ) -> None:
@@ -58,9 +59,7 @@ class EnrollmentCameraThread(QThread):
         else:
             if detector_model_path is None:
                 detector_model_path = Path("models") / "face_detection" / "face_detection_yunet_2023mar.onnx"
-            self._detector = cv2.FaceDetectorYN.create(
-                str(detector_model_path), "", (640, 480), score_threshold=0.8, nms_threshold=0.3
-            )
+            self._detector = _create_face_detector(detector_model_path, (640, 480))
         self._face_recognizer = face_recognizer
         self._liveness_checker = liveness_checker
         self._head_pose_estimator = head_pose_estimator
@@ -168,7 +167,7 @@ class EnrollmentCameraThread(QThread):
             now - self._last_capture_time > self._capture_cooldown
             and len(self._captured_embeddings) < self._target_count
         ):
-            face_crop = self._crop_face(frame_rgb, (x, y, w_face, h_face), scale=2.7)
+            face_crop = _crop_face(frame_rgb, (x, y, w_face, h_face), scale=2.7)
             liveness = self._liveness_checker.check(face_crop, self._liveness_threshold)
 
             if liveness.is_real:
@@ -202,7 +201,7 @@ class EnrollmentCameraThread(QThread):
         h_face: int,
     ) -> tuple[int, int, int]:
         target = _POSE_SEQUENCE[self._current_pose_index % len(_POSE_SEQUENCE)]
-        face_crop = self._crop_face(frame_bgr, (x, y, w_face, h_face))
+        face_crop = _crop_face(frame_bgr, (x, y, w_face, h_face))
         if face_crop.size == 0:
             self._status_text = "Không thể đọc khuôn mặt"
             self._angles_text = "-"
@@ -259,7 +258,7 @@ class EnrollmentCameraThread(QThread):
         face: np.ndarray,
         target: _PoseTarget,
     ) -> bool:
-        face_crop = self._crop_face(frame_bgr, face[:4].astype(int), scale=2.7)
+        face_crop = _crop_face(frame_bgr, face[:4].astype(int), scale=2.7)
         liveness = self._liveness_checker.check(face_crop, self._liveness_threshold)
         if not liveness.is_real:
             self._status_text = "Cảnh báo: Liveness failed"
@@ -311,16 +310,6 @@ class EnrollmentCameraThread(QThread):
             self._hold_text,
             self._guidance_text,
         )
-
-    def _crop_face(self, frame: np.ndarray, bbox: tuple[int, int, int, int], scale: float = 1.5) -> np.ndarray:
-        x, y, w, h = bbox
-        cx, cy = x + w // 2, y + h // 2
-        side = int(max(w, h) * scale)
-        half = side // 2
-        fh, fw = frame.shape[:2]
-        x1, y1 = max(0, cx - half), max(0, cy - half)
-        x2, y2 = min(fw, cx + half), min(fh, cy + half)
-        return frame[y1:y2, x1:x2]
 
     def _draw_status(self, frame_rgb: np.ndarray) -> QImage:
         h, w, ch = frame_rgb.shape

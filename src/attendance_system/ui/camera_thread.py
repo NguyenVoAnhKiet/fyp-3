@@ -13,6 +13,7 @@ from PyQt5.QtGui import QImage
 
 from pathlib import Path
 from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
+from attendance_system.utils.face_utils import _crop_face, _create_face_detector
 
 _AI_FRAME_SKIP = 3       # run full pipeline every N frames (≈10 Hz at 30 fps)
 _COOLDOWN_SECONDS = 3.0  # min seconds between two recognitions of the same user
@@ -54,6 +55,7 @@ class CameraThread(QThread):
         face_recognizer: FaceRecognizer,
         camera_index: int = 0,
         detector_model_path: Path | str | None = None,
+        detector: Any | None = None,
         parent: Any = None,
     ) -> None:
         super().__init__(parent)
@@ -67,14 +69,12 @@ class CameraThread(QThread):
         self._last_recognized: dict[int, float] = {}  # user_id -> monotonic timestamp
 
         # Initialize YuNet detector
-        if detector_model_path is None:
-            detector_model_path = Path("models") / "face_detection" / "face_detection_yunet_2023mar.onnx"
-        
-        # FaceDetectorYN.create(model, config, input_size, score_threshold, nms_threshold, top_k)
-        # We'll set input_size during the first frame read in run()
-        self._detector = cv2.FaceDetectorYN.create(
-            str(detector_model_path), "", (640, 480), score_threshold=0.8, nms_threshold=0.3
-        )
+        if detector is not None:
+            self._detector = detector
+        else:
+            if detector_model_path is None:
+                detector_model_path = Path("models") / "face_detection" / "face_detection_yunet_2023mar.onnx"
+            self._detector = _create_face_detector(detector_model_path, (640, 480))
 
         # Bounding-box display state (updated by AI frames, used by every display frame)
         self._detected_faces: np.ndarray | None = None  # YuNet format: [N, 15]
@@ -173,20 +173,6 @@ class CameraThread(QThread):
         qimg = QImage(frame_rgb.tobytes(), w, h, ch * w, QImage.Format_RGB888)
         self.frame_ready.emit(qimg.copy())
 
-    def _crop_face(
-        self, frame_rgb: np.ndarray, bbox: tuple[int, int, int, int], scale: float = 2.7
-    ) -> np.ndarray:
-        """Return a padded crop of the face region specified by *bbox*."""
-        x, y, w, h = bbox
-        cx, cy = x + w // 2, y + h // 2
-        side = int(max(w, h) * scale)
-        half = side // 2
-        
-        fh, fw = frame_rgb.shape[:2]
-        x1, y1 = max(0, cx - half), max(0, cy - half)
-        x2, y2 = min(fw, cx + half), min(fh, cy + half)
-        return frame_rgb[y1:y2, x1:x2]
-
     def _process_frame(self, frame_bgr: np.ndarray, frame_rgb: np.ndarray) -> None:
         """Run liveness -> recognize on the largest detected face."""
         if self._detected_faces is None or len(self._detected_faces) == 0:
@@ -198,7 +184,7 @@ class CameraThread(QThread):
         
         # Extract bbox for liveness (MiniFASNet still uses unaligned crop)
         x, y, w, h = face_row[:4].astype(int)
-        face_crop = self._crop_face(frame_rgb, (x, y, w, h))
+        face_crop = _crop_face(frame_rgb, (x, y, w, h))
 
         # Step 1 — Liveness (MiniFASNet ONNX)
         liveness = self._liveness_checker.check(face_crop, self._liveness_threshold)

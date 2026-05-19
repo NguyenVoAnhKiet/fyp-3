@@ -1,1 +1,1 @@
-"""UI layer for the attendance system."""
+"""PyQt5 UI components for the attendance application."""
