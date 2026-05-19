@@ -21,17 +21,20 @@ Models (`models/**/*.onnx`) are gitignored — download separately.
 ## Commands
 
 ```bash
-pip install -e .                              # Editable install for dev
+pip install -e .                              # Editable install (first time + after deps change)
 ruff check src/                               # Lint only (no formatter/typechecker)
 pytest tests/                                 # All tests
-pytest tests/unit/test_enrollment_and_settings_unit.py -v       # Single test file
-$env:PYTHONPATH='src'; python src/main.py    # Dev run (no install, PowerShell)
+pytest tests/unit/ -v                         # Unit tests only
+pytest tests/integration/ -v                  # Integration tests only
+pytest tests/unit/test_attendance_service.py -v  # Single test file
+$env:PYTHONPATH='src'; python src/main.py    # Dev run without install (PowerShell)
 attendance-storage-init                       # Installed: DB bootstrap
 attendance-app                                # Installed: GUI app
 ```
 
 **Pre-commit order (no hooks)**: `ruff check` → `pytest`
 
+**Config priority**: CLI args > `.env` > code defaults (resolved in `main.py` after `load_dotenv()`).
 `load_dotenv()` called inside `main()` — must run before any `os.getenv()`.
 Standalone scripts (e.g. `bootstrap.py`) do NOT call it themselves.
 
@@ -78,6 +81,8 @@ Changes live in `openspec/changes/<name>/`. Archive completed changes to `opensp
 
 ## Testing
 
+- `tests/unit/` — fast, no camera or GUI (12 files)
+- `tests/integration/` — DB bootstrap, storage, offline behavior (7 files)
 - `conftest.py` provides `database` fixture (tmp_path SQLite, full schema; auto-adds `src/` to `sys.path`)
 - Imports use `from attendance_system.*` prefix (not relative)
 - Opt-in soft dependency: `pytest.importorskip("cryptography.fernet")` + `monkeypatch.setenv`
@@ -97,3 +102,5 @@ Changes live in `openspec/changes/<name>/`. Archive completed changes to `opensp
 - Anti-spoofing is optional — disabled by `FACE_ANTISPOOF_ENABLED=false`.
 - `bootstrap.py` does NOT call `load_dotenv()`, so `DATABASE_PATH` from `.env` is unseen when running `attendance-storage-init`.
 - Camera frame is flipped horizontally in enrollment (`cv2.flip(frame, 1)` at `enrollment_camera_thread.py:111`) — mirror-like UX so users see themselves naturally when turning head left/right.
+- Head pose model missing → graceful fallback to legacy enrollment (no crash). `main.py:188-201`.
+- `main()` accepts optional `argv` list for testability — do not call `sys.argv` directly in tests.
