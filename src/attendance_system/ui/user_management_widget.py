@@ -59,10 +59,10 @@ class UserManagementWidget(QWidget):
         self.user_repo = UserRepository(database)
         self.face_repo = FaceReferenceRepository(database)
         
-        self.init_ui()
+        self._build_ui()
         self.load_users()
 
-    def init_ui(self):
+    def _build_ui(self):
         self.layout = QVBoxLayout(self)
         
         # Header

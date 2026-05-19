@@ -144,7 +144,12 @@ class AttendanceService:
         return [row["subject_name"] for row in self.sessions.list_unique_subjects()]
 
     def _export_session(self, session_id: int, file_path: str, format: str) -> None:
-        import pandas as pd
+        try:
+            import pandas as pd
+        except ImportError as e:
+            raise RuntimeError(
+                "pandas is required for export. Install with: pip install pandas openpyxl"
+            ) from e
 
         records = self.get_session_records(session_id)
         df = pd.DataFrame([dict(r) for r in records])
