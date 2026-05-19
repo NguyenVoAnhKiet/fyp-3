@@ -27,6 +27,7 @@ pytest tests/                                 # All tests
 pytest tests/unit/ -v                         # Unit tests only
 pytest tests/integration/ -v                  # Integration tests only
 pytest tests/unit/test_attendance_service.py -v  # Single test file
+pytest tests/unit/test_*.py -v               # Single file via glob
 $env:PYTHONPATH='src'; python src/main.py    # Dev run without install (PowerShell)
 attendance-storage-init                       # Installed: DB bootstrap
 attendance-app                                # Installed: GUI app
@@ -88,19 +89,19 @@ Changes live in `openspec/changes/<name>/`. Archive completed changes to `opensp
 - Opt-in soft dependency: `pytest.importorskip("cryptography.fernet")` + `monkeypatch.setenv`
 - `conftest.py` imports `onnxruntime` first (same DLL conflict guard as `main.py`)
 - No typechecker (mypy/pyright) configured
-- Test mock `_make_face()` in `test_head_pose_enrollment.py` uses `confidence=0` — masks landmark-index bugs; prefer `0.99` and realistic landmarks in new tests
 
 ## Gotchas
 
 - **`onnxruntime` must be imported BEFORE `PyQt5`** (main.py:17-20, conftest.py:7-10). On Windows, both load conflicting native DLLs.
-- **`cryptography` is a soft dependency** (lazy import in `face_reference_repository.py:21`). Not in `pyproject.toml`. Only needed when `FACE_EMBEDDING_FERNET_KEY` is set.
+- **`cryptography` is a soft dependency** (lazy import in `face_reference_repository.py:21`, not in `pyproject.toml`). Only needed when `FACE_EMBEDDING_FERNET_KEY` is set.
 - **Initial admin from env**: `storage_manager.py:23-24` reads `ADMIN_USERNAME`/`ADMIN_PASSWORD` with fallback `"admin"`/`"admin"`.
 - `CAMERA_INDEX=` (empty string) must be handled as missing — `_resolve_camera_index` at `main.py:79`.
-- **Liveness crop uses `scale=2.7`** vs head-pose crop uses `scale=1.5` in `enrollment_camera_thread.py` — `_crop_face()` takes a `scale` param (default `1.5`); liveness callers pass `2.7`. Getting this wrong silently rejects real users.
-- **Enrollment completion checks `_target_count`**, not `len(_POSE_SEQUENCE)` — `_handle_pose_frame` at line 236. UI freezes if the guard stays hardcoded to sequence length.
+- **Liveness crop uses `scale=2.7` vs head-pose uses `scale=1.5`** — `_crop_face()` defaults to `1.5`; wrong scale silently rejects real users.
+- **Enrollment completion checks `_target_count`**, not `len(_POSE_SEQUENCE)` — UI freezes if guard hardcoded to sequence length.
 - Thresholds from `.env` seed the DB on first run only; subsequent changes go through the settings UI.
 - Anti-spoofing is optional — disabled by `FACE_ANTISPOOF_ENABLED=false`.
 - `bootstrap.py` does NOT call `load_dotenv()`, so `DATABASE_PATH` from `.env` is unseen when running `attendance-storage-init`.
-- Camera frame is flipped horizontally in enrollment (`cv2.flip(frame, 1)` at `enrollment_camera_thread.py:111`) — mirror-like UX so users see themselves naturally when turning head left/right.
-- Head pose model missing → graceful fallback to legacy enrollment (no crash). `main.py:188-201`.
+- Camera frame flipped horizontally (`cv2.flip(frame, 1)`) — mirror-like UX for natural head turns.
+- Head pose model missing → graceful fallback to legacy enrollment. `main.py:188-201`.
 - `main()` accepts optional `argv` list for testability — do not call `sys.argv` directly in tests.
+- **Test mock `_make_face()` in `test_head_pose_enrollment.py` uses `confidence=0`** — masks landmark-index bugs; use `confidence=0.99` and realistic landmarks in new tests.

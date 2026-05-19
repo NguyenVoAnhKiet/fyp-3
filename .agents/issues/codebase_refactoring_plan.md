@@ -140,8 +140,8 @@ Project có **~30 file source**, kiến trúc 4 lớp rõ ràng (core → reposi
 | P0 | Nhóm 5.1: Hardcoded password | 10 phút | done
 | P1 | Nhóm 2: DRY (2.1, 2.2, 2.5) | 30 phút | done
 | P1 | Nhóm 5.2, 5.3: Bug comments | 5 phút | done
-| P2 | Nhóm 3: Type hints, naming | 45 phút |
-| P2 | Nhóm 4: Architecture (4.1, 4.3) | 30 phút |
+| P2 | Nhóm 3: Type hints, naming | 45 phút | done
+| P2 | Nhóm 4: Architecture (4.1, 4.3) | 30 phút | done
 | P2 | Nhóm 2.3, 2.4: Camera DRY | 45 phút |
 | P3 | Nhóm 6: Minor | 20 phút |
 
