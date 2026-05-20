@@ -31,7 +31,7 @@ If architecture is still unclear, inspect:
 - `src/attendance_system/ui/camera_thread.py` + `enrollment_camera_thread.py` — how camera + AI pipeline is wired
 - `src/attendance_system/utils/face_utils.py` — shared `_crop_face` and `_create_face_detector`
 
-Prefer executable sources of truth (`.py` config, entry points) over prose.
+Prefer executable sources of truth (`.py` config, entry points) over prose. If docs conflict with code, trust the code.
 
 ## Commands
 
@@ -42,7 +42,6 @@ pytest tests/                                 # All tests
 pytest tests/unit/ -v                         # Unit tests only (9 files)
 pytest tests/integration/ -v                  # Integration tests only (9 files)
 pytest tests/unit/test_attendance_service.py -v  # Single test file
-pytest tests/unit/test_*.py -v               # Single file via glob
 $env:PYTHONPATH='src'; python src/main.py    # Dev run without install (PowerShell)
 attendance-storage-init                       # Installed: DB bootstrap
 attendance-app                                # Installed: GUI app
@@ -92,11 +91,13 @@ GitHub issues via `gh` CLI:
 ```bash
 gh issue create --title "..." --body "..."
 gh issue view <number> --comments
-gh issue edit <number> --add-label "bug,ready-for-agent"
+gh issue edit <number> --add-label "bug,ready-for-agent,p2"
 gh issue close <number> --comment "..."
 ```
 
-Labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`, `bug`, `enhancement`
+State labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`
+Category labels: `bug`, `enhancement`
+Priority labels: `p1` (critical), `p2` (important), `p3` (medium), `p4` (low)
 
 Full conventions: `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md`
 
@@ -127,5 +128,5 @@ Changes live in `openspec/changes/<name>/`. Archive completed changes to `opensp
 - Camera frame flipped horizontally (`cv2.flip(frame, 1)`) — mirror-like UX for natural head turns.
 - Head pose model missing → graceful fallback to legacy enrollment. `main.py:188-201`.
 - `main()` accepts optional `argv` list for testability — do not call `sys.argv` directly in tests.
-- **Test mock `_make_face()` in `test_head_pose_enrollment.py` uses `confidence=0`** — masks landmark-index bugs; use `confidence=0.99` and realistic landmarks in new tests.
+- **Test mock `_make_face()` in `tests/integration/test_head_pose_enrollment.py` uses `confidence=0`** — masks landmark-index bugs; use `confidence=0.99` and realistic landmarks in new tests.
 - No CI/CD — all verification is local (`ruff check` → `pytest`). No formatter, no typechecker.
