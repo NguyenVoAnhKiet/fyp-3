@@ -87,19 +87,8 @@ Installed entry points (from `pyproject.toml`):
 
 ## Issue Tracker
 
-GitHub issues via `gh` CLI:
-```bash
-gh issue create --title "..." --body "..."
-gh issue view <number> --comments
-gh issue edit <number> --add-label "bug,ready-for-agent,p2"
-gh issue close <number> --comment "..."
-```
-
-State labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`
-Category labels: `bug`, `enhancement`
-Priority labels: `p1` (critical), `p2` (important), `p3` (medium), `p4` (low)
-
-Full conventions: `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md`
+Labels: `needs-triage`/`needs-info`/`ready-for-agent`/`ready-for-human`/`wontfix` (state), `bug`/`enhancement` (category), `p1`-`p4` (priority).
+Full conventions: `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md`.
 
 ## OpenSpec Workflow
 
@@ -125,7 +114,7 @@ Changes live in `openspec/changes/<name>/`. Archive completed changes to `opensp
 - Thresholds from `.env` seed the DB on first run only; subsequent changes go through the settings UI.
 - Anti-spoofing is optional — disabled by `FACE_ANTISPOOF_ENABLED=false`.
 - **`bootstrap.py` does NOT call `load_dotenv()`**, so `DATABASE_PATH` from `.env` is unseen when running `attendance-storage-init`. The CLI default is used instead.
-- Camera frame flipped horizontally (`cv2.flip(frame, 1)`) — mirror-like UX for natural head turns.
+- **Enrollment camera frame flipped horizontally** (`cv2.flip(frame, 1)` in `enrollment_camera_thread.py:110`) — mirror-like UX for natural head turns. Main attendance camera does NOT flip.
 - Head pose model missing → graceful fallback to legacy enrollment. `main.py:188-201`.
 - `main()` accepts optional `argv` list for testability — do not call `sys.argv` directly in tests.
 - **Test mock `_make_face()` in `tests/integration/test_head_pose_enrollment.py` uses `confidence=0`** — masks landmark-index bugs; use `confidence=0.99` and realistic landmarks in new tests.
