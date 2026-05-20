@@ -83,6 +83,17 @@ def test_liveness_preprocess_output_shape(shape):
     assert processed.max() <= 1.0
 
 
+def test_liveness_checker_is_enabled_property():
+    """LivenessChecker.is_enabled reflects whether a model is loaded."""
+    # Disabled case — model_path=None
+    disabled = LivenessChecker(model_path=None)
+    assert not disabled.is_enabled
+
+    # Enabled case requires a real ONNX file — not tested here.
+    # The existing test_liveness_checker_real_face already verifies
+    # that a mocked session proceeds to inference correctly.
+
+
 # ==============================================================================
 # FaceRecognizer Tests
 # ==============================================================================

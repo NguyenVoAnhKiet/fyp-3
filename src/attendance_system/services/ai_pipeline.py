@@ -65,6 +65,16 @@ class LivenessChecker:
             self._session = None
             self._input_name = None
 
+    @property
+    def is_enabled(self) -> bool:
+        """Whether a real ONNX model is loaded (vs. disabled/bypassed).
+
+        Returns:
+            True if a real model was loaded and liveness checking is active.
+            False if model_path was None (liveness is bypassed).
+        """
+        return self._session is not None
+
     def _preprocess(self, face_rgb: np.ndarray) -> np.ndarray:
         """Letterbox-resize and normalize face crop to model input tensor [1, 3, H, W]."""
         #=======================================================================

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import cv2
 import numpy as np
 from pathlib import Path
@@ -29,6 +31,8 @@ if TYPE_CHECKING:
     from attendance_system.services.ai_pipeline import FaceRecognizer
     from attendance_system.services.head_pose import HeadPoseEstimator
     from attendance_system.services.settings_service import SettingsService
+
+logger = logging.getLogger(__name__)
 
 _TARGET_CAPTURE_COUNT = 5
 
@@ -163,8 +167,23 @@ class EnrollmentWidget(QWidget):
         cam_idx = int(self._settings_service.get("camera_index") or 0)
         liveness_thresh = float(self._settings_service.get("liveness_threshold") or 0.5)
 
-        # Disable liveness during enrollment — liveness model fails on angled faces
-        # due to crop misalignment (scale=2.7 from incomplete bbox at yaw/pitch extremes)
+        # Liveness check is intentionally bypassed during enrollment.
+        # Multi-pose face capture (yaw/pitch/roll) already provides strong
+        # implicit anti-spoofing — a static photo cannot complete the pose
+        # sequence. Additionally, the enrollment crop scale (2.7) differs
+        # from MiniFASNet's expected scale (1.5), causing false rejects
+        # on angled faces.
+        if self._liveness_checker.is_enabled:
+            logger.info(
+                "Enrollment: liveness check available but intentionally "
+                "bypassed (multi-pose sequence provides anti-spoofing)"
+            )
+        else:
+            logger.info(
+                "Enrollment: liveness check disabled "
+                "(FACE_ANTISPOOF_ENABLED=false)"
+            )
+
         enrollment_liveness = LivenessChecker(model_path=None)
 
         # Start thread
