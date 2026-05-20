@@ -27,7 +27,7 @@ Read the highest-value sources first:
 4. `src/attendance_system/core/bootstrap.py` — does NOT call `load_dotenv()` (see Gotchas)
 5. `.env.example` — all config keys with descriptions and seed behavior
 
-If architecture is unclear after reading the above, inspect:
+If architecture is still unclear, inspect:
 - `src/attendance_system/ui/camera_thread.py` + `enrollment_camera_thread.py` — how camera + AI pipeline is wired
 - `src/attendance_system/utils/face_utils.py` — shared `_crop_face` and `_create_face_detector`
 
@@ -39,8 +39,8 @@ Prefer executable sources of truth (`.py` config, entry points) over prose.
 pip install -e .                              # Editable install (first time + after deps change)
 ruff check src/                               # Lint only (no formatter/typechecker)
 pytest tests/                                 # All tests
-pytest tests/unit/ -v                         # Unit tests only
-pytest tests/integration/ -v                  # Integration tests only
+pytest tests/unit/ -v                         # Unit tests only (9 files)
+pytest tests/integration/ -v                  # Integration tests only (9 files)
 pytest tests/unit/test_attendance_service.py -v  # Single test file
 pytest tests/unit/test_*.py -v               # Single file via glob
 $env:PYTHONPATH='src'; python src/main.py    # Dev run without install (PowerShell)
@@ -54,21 +54,51 @@ attendance-app                                # Installed: GUI app
 
 ## Architecture
 
+Single-package repo (`src/` maps to `attendance_system` namespace):
 - `src/main.py` — Entry point; parses CLI, loads `.env`, wires services, launches PyQt5
 - `src/attendance_system/core/` — `Database` (with `session()` ctx mgr), schema, bootstrap, storage manager
 - `src/attendance_system/services/` — Business logic (enrollment, attendance, settings, AI pipeline, head-pose)
 - `src/attendance_system/repositories/` — CRUD per entity (inherits `BaseRepository`)
 - `src/attendance_system/models/entities.py` — `@dataclass(slots=True)` data classes
 - `src/attendance_system/ui/` — PyQt5 components (main window, camera threads, login/dashboard)
-- `src/attendance_system/utils/face_utils.py` — Shared `_crop_face` and `_create_face_detector`
+- `src/attendance_system/utils/` — `face_utils.py` (shared `_crop_face` / `_create_face_detector`), logging, time utils
 
 Installed entry points (from `pyproject.toml`):
 - `attendance-storage-init` → `attendance_system.core.bootstrap:main`
 - `attendance-app` → `main:main`
 
-Other instruction files:
-- `CLAUDE.md` — Karpathy-style behavioral guidelines (simplicity, surgical changes)
-- `.agents/` — OpenSpec workflow files (propose, explore, apply-change, archive-change, etc.)
+## DB
+
+- `PRAGMA journal_mode = WAL`, `PRAGMA synchronous = NORMAL`, `PRAGMA foreign_keys = ON`
+- `Database.session()` auto-commits on success, rollbacks on exception
+- `check_same_thread=False` — intentional for PyQt5 camera thread
+- Schema migrations via `ALTER TABLE ... ADD COLUMN` in `schema.py` (try/except on dup column)
+- `DatabaseConfig.__post_init__` rejects paths containing `..`
+
+## Testing
+
+- `tests/unit/` — fast, no camera or GUI (9 files)
+- `tests/integration/` — DB bootstrap, storage, offline behavior (9 files)
+- `tests/contract/` — exists but has no `.py` source files (only `__pycache__/` from prior runs)
+- `conftest.py` provides `database` fixture (tmp_path SQLite, full schema; auto-adds `src/` to `sys.path`)
+- Imports use `from attendance_system.*` prefix (not relative)
+- Opt-in soft dependency: `pytest.importorskip("cryptography.fernet")` + `monkeypatch.setenv`
+- `conftest.py` imports `onnxruntime` first (same DLL conflict guard as `main.py`)
+- No typechecker (mypy/pyright) configured
+
+## Issue Tracker
+
+GitHub issues via `gh` CLI:
+```bash
+gh issue create --title "..." --body "..."
+gh issue view <number> --comments
+gh issue edit <number> --add-label "bug,ready-for-agent"
+gh issue close <number> --comment "..."
+```
+
+Labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`, `bug`, `enhancement`
+
+Full conventions: `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md`
 
 ## OpenSpec Workflow
 
@@ -82,24 +112,6 @@ openspec archive-change <name>      # Archive a completed change
 ```
 
 Changes live in `openspec/changes/<name>/`. Archive completed changes to `openspec/changes/archive/YYYY-MM-DD-<name>/`.
-
-## DB
-
-- `PRAGMA journal_mode = WAL`, `PRAGMA synchronous = NORMAL`, `PRAGMA foreign_keys = ON`
-- `Database.session()` auto-commits on success, rollbacks on exception
-- `check_same_thread=False` — intentional for PyQt5 camera thread
-- Schema migrations via `ALTER TABLE ... ADD COLUMN` in `schema.py` (try/except on dup column)
-- `DatabaseConfig.__post_init__` rejects paths containing `..`
-
-## Testing
-
-- `tests/unit/` — fast, no camera or GUI (12 files)
-- `tests/integration/` — DB bootstrap, storage, offline behavior (7 files)
-- `conftest.py` provides `database` fixture (tmp_path SQLite, full schema; auto-adds `src/` to `sys.path`)
-- Imports use `from attendance_system.*` prefix (not relative)
-- Opt-in soft dependency: `pytest.importorskip("cryptography.fernet")` + `monkeypatch.setenv`
-- `conftest.py` imports `onnxruntime` first (same DLL conflict guard as `main.py`)
-- No typechecker (mypy/pyright) configured
 
 ## Gotchas
 
@@ -116,3 +128,4 @@ Changes live in `openspec/changes/<name>/`. Archive completed changes to `opensp
 - Head pose model missing → graceful fallback to legacy enrollment. `main.py:188-201`.
 - `main()` accepts optional `argv` list for testability — do not call `sys.argv` directly in tests.
 - **Test mock `_make_face()` in `test_head_pose_enrollment.py` uses `confidence=0`** — masks landmark-index bugs; use `confidence=0.99` and realistic landmarks in new tests.
+- No CI/CD — all verification is local (`ruff check` → `pytest`). No formatter, no typechecker.
