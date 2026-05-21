@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import cv2
@@ -24,6 +25,8 @@ from attendance_system.services.settings_service import SettingsService
 from attendance_system.ui.camera_thread import CameraThread
 from attendance_system.ui.constants import FONT_BODY, FONT_STATUS, FONT_TITLE
 from attendance_system.utils.time_utils import utc_now_iso
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_LIVENESS_THRESHOLD = 0.5
 _DEFAULT_SIMILARITY_THRESHOLD = 0.6
@@ -310,6 +313,7 @@ class UserModeView(QWidget):
         self._camera_thread.frame_ready.connect(self._update_camera_frame)
         self._camera_thread.recognition_result.connect(self._on_recognition_result)
         self._camera_thread.camera_error.connect(self._on_camera_error)
+        self._camera_thread.inference_warning.connect(self._on_inference_warning)
         self._camera_thread.start()
 
     def _end_session(self) -> None:
@@ -401,6 +405,13 @@ class UserModeView(QWidget):
                 self._session_id, now, details=f"liveness={liveness_score:.3f}"
             )
             self._show_result_unrecognized()
+
+    def _on_inference_warning(self, message: str) -> None:
+        """Show a temporary inference warning in the result label."""
+        logger.info("Inference warning: %s", message)
+        self._result_label.setText(f"⚠ {message}")
+        self._set_result_style("neutral")
+        # The next recognition_result or frame will overwrite this
 
     def _on_camera_error(self, message: str) -> None:
         QMessageBox.critical(self, "Lỗi Camera", message)

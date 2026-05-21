@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
@@ -13,6 +14,7 @@ from PyQt5.QtGui import QImage
 
 from pathlib import Path
 from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
+from attendance_system.services.exceptions import LivenessInferenceError
 from attendance_system.utils.face_utils import _crop_face, _create_face_detector
 
 _AI_FRAME_SKIP = 3       # run full pipeline every N frames (≈10 Hz at 30 fps)
@@ -26,6 +28,9 @@ _COLOR_UNKNOWN:   tuple[int, int, int] = (255, 255,   0)  # yellow– unknown / 
 _COLOR_LANDMARK:  tuple[int, int, int] = (0, 255, 255)    # cyan  – landmarks
 
 _RESULT_HOLD_FRAMES = 30  # keep result colour for this many display frames (~1 s at 30 fps)
+_MAX_CONSECUTIVE_FAILURES = 30  # kill thread if 30 frames in a row fail inference
+
+logger = logging.getLogger(__name__)
 
 
 class CameraThread(QThread):
@@ -45,6 +50,7 @@ class CameraThread(QThread):
     frame_ready = pyqtSignal(QImage)
     recognition_result = pyqtSignal(str, int, str, float, object)
     camera_error = pyqtSignal(str)
+    inference_warning = pyqtSignal(str)
 
     def __init__(
         self,
@@ -67,6 +73,7 @@ class CameraThread(QThread):
         self._camera_index = camera_index
         self._running = False
         self._last_recognized: dict[int, float] = {}  # user_id -> monotonic timestamp
+        self._consecutive_failures: int = 0
 
         # Initialize YuNet detector
         if detector is not None:
@@ -137,7 +144,7 @@ class CameraThread(QThread):
             # Run full AI pipeline every N frames (only when faces are present)
             frame_counter += 1
             if frame_counter % _AI_FRAME_SKIP == 0 and self._detected_faces is not None:
-                self._process_frame(frame, frame_rgb)
+                self._process_frame(frame, frame_rgb, frame_counter)
 
         cap.release()
 
@@ -173,7 +180,7 @@ class CameraThread(QThread):
         qimg = QImage(frame_rgb.tobytes(), w, h, ch * w, QImage.Format_RGB888)
         self.frame_ready.emit(qimg.copy())
 
-    def _process_frame(self, frame_bgr: np.ndarray, frame_rgb: np.ndarray) -> None:
+    def _process_frame(self, frame_bgr: np.ndarray, frame_rgb: np.ndarray, frame_counter: int = 0) -> None:
         """Run liveness -> recognize on the largest detected face."""
         if self._detected_faces is None or len(self._detected_faces) == 0:
             return
@@ -187,7 +194,29 @@ class CameraThread(QThread):
         face_crop = _crop_face(frame_rgb, (x, y, w, h))
 
         # Step 1 — Liveness (MiniFASNet ONNX)
-        liveness = self._liveness_checker.check(face_crop, self._liveness_threshold)
+        try:
+            liveness = self._liveness_checker.check(face_crop, self._liveness_threshold)
+        except LivenessInferenceError:
+            self._consecutive_failures += 1
+            logger.warning(
+                "[frame %d] Liveness inference error (%d/%d consecutive)",
+                frame_counter,
+                self._consecutive_failures,
+                _MAX_CONSECUTIVE_FAILURES,
+                exc_info=True,
+            )
+            if self._consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
+                self.camera_error.emit(
+                    f"Liveness model failed after {_MAX_CONSECUTIVE_FAILURES} "
+                    "consecutive errors. Vui lòng khởi động lại ứng dụng."
+                )
+                self._running = False
+                return
+            self.inference_warning.emit("Lỗi xử lý AI — đang thử lại...")
+            return
+
+        # Reset consecutive-failure counter on success
+        self._consecutive_failures = 0
         if not liveness.is_real:
             self._bbox_color = _COLOR_ALERT
             self._result_hold_counter = _RESULT_HOLD_FRAMES

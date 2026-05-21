@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -10,6 +11,7 @@ from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtGui import QImage, QPainter, QColor, QFont
 
 from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
+from attendance_system.services.exceptions import LivenessInferenceError, PoseInferenceError
 from attendance_system.services.head_pose import HeadPoseEstimator
 from attendance_system.utils.face_utils import _crop_face, _create_face_detector
 
@@ -25,6 +27,10 @@ class _PoseTarget(NamedTuple):
     pitch: float
     yaw: float
 
+_MAX_CONSECUTIVE_FAILURES = 30  # kill thread if 30 frames in a row fail inference
+
+logger = logging.getLogger(__name__)
+
 _POSE_SEQUENCE = [
     _PoseTarget("Chính diện", 0, 0),
     _PoseTarget("Nghiêng trái", 0, -30),  # Model outputs negative yaw when user turns left
@@ -38,6 +44,7 @@ class EnrollmentCameraThread(QThread):
     capture_progress = pyqtSignal(int, int, str, str, str, str)
     camera_error = pyqtSignal(str)
     enrollment_complete = pyqtSignal(np.ndarray)
+    inference_warning = pyqtSignal(str)
 
     def __init__(
         self,
@@ -72,6 +79,8 @@ class EnrollmentCameraThread(QThread):
         self._current_pose_index = 0
         self._pose_hold_counter = 0
         self._last_capture_time = 0.0
+        self._consecutive_failures: int = 0
+        self._frame_counter: int = 0
 
         self._status_text = "Đang khởi động..."
         self._angles_text = "-"
@@ -98,9 +107,12 @@ class EnrollmentCameraThread(QThread):
         self._current_pose_index = 0
         self._pose_hold_counter = 0
         self._last_capture_time = 0.0
+        self._consecutive_failures = 0
+        self._frame_counter = 0
         self._sync_progress()
 
         while self._running:
+            self._frame_counter += 1
             ret, frame = cap.read()
             if not ret:
                 self.camera_error.emit("Camera read failed.")
@@ -168,7 +180,32 @@ class EnrollmentCameraThread(QThread):
             and len(self._captured_embeddings) < self._target_count
         ):
             face_crop = _crop_face(frame_rgb, (x, y, w_face, h_face), scale=2.7)
-            liveness = self._liveness_checker.check(face_crop, self._liveness_threshold)
+            try:
+                liveness = self._liveness_checker.check(face_crop, self._liveness_threshold)
+            except LivenessInferenceError:
+                self._consecutive_failures += 1
+                logger.warning(
+                    "[frame %d] Liveness inference error in legacy path (%d/%d consecutive)",
+                    self._frame_counter,
+                    self._consecutive_failures,
+                    _MAX_CONSECUTIVE_FAILURES,
+                    exc_info=True,
+                )
+                if self._consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
+                    self.camera_error.emit(
+                        f"Mô hình AI gặp lỗi sau {_MAX_CONSECUTIVE_FAILURES} "
+                        "lần liên tiếp. Vui lòng khởi động lại ứng dụng."
+                    )
+                    self._running = False
+                    return
+                self.inference_warning.emit("Lỗi xử lý AI — đang thử lại...")
+                self._status_text = "Đang xử lý..."
+                self._angles_text = "-"
+                self._hold_text = ""
+                self._guidance_text = "Đưa khuôn mặt vào khung"
+                return
+
+            self._consecutive_failures = 0
 
             if liveness.is_real:
                 emb = self._face_recognizer.get_embedding(frame_bgr, face)
@@ -209,7 +246,34 @@ class EnrollmentCameraThread(QThread):
             self._guidance_text = f"Thực hiện: {target.name}"
             return _COLOR_ALERT
 
-        pitch, yaw, roll = self._head_pose_estimator.estimate(face_crop)
+        try:
+            pitch, yaw, roll = self._head_pose_estimator.estimate(face_crop)
+        except PoseInferenceError:
+            self._consecutive_failures += 1
+            logger.warning(
+                "[frame %d] Head-pose inference error (%d/%d consecutive)",
+                self._frame_counter,
+                self._consecutive_failures,
+                _MAX_CONSECUTIVE_FAILURES,
+                exc_info=True,
+            )
+            if self._consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
+                self.camera_error.emit(
+                    f"Mô hình AI gặp lỗi sau {_MAX_CONSECUTIVE_FAILURES} "
+                    "lần liên tiếp. Vui lòng khởi động lại ứng dụng."
+                )
+                self._running = False
+                return _COLOR_ALERT
+            self.inference_warning.emit("Lỗi xử lý AI — đang thử lại...")
+            self._status_text = "Đang xử lý..."
+            self._angles_text = "-"
+            self._hold_text = f"Giữ: {self._pose_hold_counter}/{_HOLD_FRAMES}"
+            self._guidance_text = f"Thực hiện: {target.name}"
+            return _COLOR_GUIDE
+
+        # Reset consecutive-failure counter on success
+        self._consecutive_failures = 0
+
         self._angles_text = (
             f"Pitch: {pitch:.1f}° | Yaw: {yaw:.1f}° | Roll: {roll:.1f}°"
         )

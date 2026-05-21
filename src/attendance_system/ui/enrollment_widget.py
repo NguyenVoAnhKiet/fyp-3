@@ -201,6 +201,7 @@ class EnrollmentWidget(QWidget):
         self._camera_thread.capture_progress.connect(self.set_progress)
         self._camera_thread.enrollment_complete.connect(self._handle_complete)
         self._camera_thread.camera_error.connect(self._handle_error)
+        self._camera_thread.inference_warning.connect(self._handle_inference_warning)
         
         self._camera_thread.start()
         
@@ -268,6 +269,12 @@ class EnrollmentWidget(QWidget):
         
         self._stop_enrollment()
         self.refresh_users()
+
+    @pyqtSlot(str)
+    def _handle_inference_warning(self, message: str) -> None:
+        """Show a temporary inference warning without stopping enrollment."""
+        self._guidance_label.setText(f"Hướng dẫn: {message}")
+        # Previous guidance will be overwritten by the next capture_progress signal
 
     @pyqtSlot(str)
     def _handle_error(self, message: str) -> None:

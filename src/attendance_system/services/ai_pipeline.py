@@ -13,6 +13,7 @@ import numpy as np
 import onnxruntime as ort
 
 from attendance_system.core.db import Database
+from attendance_system.services.exceptions import LivenessInferenceError
 from attendance_system.repositories.face_reference_repository import (
     FaceReferenceRepository,
 )
@@ -61,9 +62,11 @@ class LivenessChecker:
                 str(model_path)
             )
             self._input_name: str | None = self._session.get_inputs()[0].name
+            self._model_path: str = str(model_path)
         else:
             self._session = None
             self._input_name = None
+            self._model_path = ""
 
     @property
     def is_enabled(self) -> bool:
@@ -128,7 +131,14 @@ class LivenessChecker:
         # Step 2: Run ONNX inference
         #=======================================================================
         # Output shape: [1, 2]  (index 0 = real logit, index 1 = spoof logit)
-        raw = self._session.run(None, {self._input_name: arr})
+        try:
+            raw = self._session.run(None, {self._input_name: arr})
+        except Exception as exc:
+            raise LivenessInferenceError(
+                f"Liveness inference failed: {exc}",
+                input_shape=arr.shape,
+                model_path=self._model_path,
+            ) from exc
         output: np.ndarray = np.array(raw[0])
         logit_diff = float(output[0][0] - output[0][1])  # positive → real, negative → spoof
 
