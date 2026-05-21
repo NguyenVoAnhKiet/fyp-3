@@ -56,7 +56,7 @@ attendance-app                                # Installed: GUI app
 Single-package repo (`src/` maps to `attendance_system` namespace):
 - `src/main.py` — Entry point; parses CLI, loads `.env`, wires services, launches PyQt5
 - `src/attendance_system/core/` — `Database` (with `session()` ctx mgr), schema, bootstrap, storage manager
-- `src/attendance_system/services/` — Business logic (enrollment, attendance, settings, AI pipeline, head-pose)
+- `src/attendance_system/services/` — Business logic (enrollment, attendance, settings, AI pipeline, head-pose, exceptions.py)
 - `src/attendance_system/repositories/` — CRUD per entity (inherits `BaseRepository`)
 - `src/attendance_system/models/entities.py` — `@dataclass(slots=True)` data classes
 - `src/attendance_system/ui/` — PyQt5 components (main window, camera threads, login/dashboard)
@@ -78,12 +78,12 @@ Installed entry points (from `pyproject.toml`):
 
 - `tests/unit/` — fast, no camera or GUI (9 files)
 - `tests/integration/` — DB bootstrap, storage, offline behavior (9 files)
-- `tests/contract/` — exists but has no `.py` source files (only `__pycache__/` from prior runs)
 - `conftest.py` provides `database` fixture (tmp_path SQLite, full schema; auto-adds `src/` to `sys.path`)
 - Imports use `from attendance_system.*` prefix (not relative)
 - Opt-in soft dependency: `pytest.importorskip("cryptography.fernet")` + `monkeypatch.setenv`
 - `conftest.py` imports `onnxruntime` first (same DLL conflict guard as `main.py`)
-- No typechecker (mypy/pyright) configured
+- No typechecker (mypy/pyright) configured — `ruff check` only
+- pytest is **not** declared in `pyproject.toml` dependencies — install it manually or via `pip install pytest`
 
 ## Issue Tracker
 
@@ -93,15 +93,14 @@ Full conventions: `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md`
 ## OpenSpec Workflow
 
 ```bash
-openspec explore                    # Think through a problem before making changes
-openspec propose <name>             # Create a new change with full proposal
+openspec explore                    # Think through a problem
+openspec propose <name>             # Create a change proposal
 openspec apply-change <name>        # Implement tasks from a change
 openspec list                       # List active changes
-openspec status --change <name>     # Check change completion
 openspec archive-change <name>      # Archive a completed change
 ```
 
-Changes live in `openspec/changes/<name>/`. Archive completed changes to `openspec/changes/archive/YYYY-MM-DD-<name>/`.
+Changes live in `openspec/changes/<name>/`. Archive to `openspec/changes/archive/YYYY-MM-DD-<name>/`.
 
 ## Gotchas
 
@@ -114,8 +113,9 @@ Changes live in `openspec/changes/<name>/`. Archive completed changes to `opensp
 - Thresholds from `.env` seed the DB on first run only; subsequent changes go through the settings UI.
 - Anti-spoofing is optional — disabled by `FACE_ANTISPOOF_ENABLED=false`.
 - **`bootstrap.py` does NOT call `load_dotenv()`**, so `DATABASE_PATH` from `.env` is unseen when running `attendance-storage-init`. The CLI default is used instead.
-- **Enrollment camera frame flipped horizontally** (`cv2.flip(frame, 1)` in `enrollment_camera_thread.py:110`) — mirror-like UX for natural head turns. Main attendance camera does NOT flip.
+- **Enrollment camera frame flipped horizontally** (`cv2.flip(frame, 1)` in `enrollment_camera_thread.py:122`) — mirror-like UX for natural head turns. Main attendance camera does NOT flip.
 - Head pose model missing → graceful fallback to legacy enrollment. `main.py:188-201`.
+- **ONNX inference errors are caught and counted per thread** — `PoseInferenceError` / `LivenessInferenceError` (from `services/exceptions.py`) are caught in camera threads. After 30 consecutive failures the thread stops with `camera_error`. Below that, a transient `inference_warning` signal fires. Circuit breaker tradeoff documented in `docs/adr/0001-onnx-circuit-breaker.md`.
 - `main()` accepts optional `argv` list for testability — do not call `sys.argv` directly in tests.
 - **Test mock `_make_face()` in `tests/integration/test_head_pose_enrollment.py` uses `confidence=0`** — masks landmark-index bugs; use `confidence=0.99` and realistic landmarks in new tests.
 - No CI/CD — all verification is local (`ruff check` → `pytest`). No formatter, no typechecker.
