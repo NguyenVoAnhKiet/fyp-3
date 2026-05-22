@@ -28,6 +28,8 @@ class _PoseTarget(NamedTuple):
     yaw: float
 
 _MAX_CONSECUTIVE_FAILURES = 30  # kill thread if 30 frames in a row fail inference
+_READ_RETRY_DELAYS = [1.0, 2.0, 4.0]  # exponential backoff seconds between retries
+_MAX_READ_RETRIES = 3
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +93,31 @@ class EnrollmentCameraThread(QThread):
         self._running = False
         self.wait()
 
+    def _retry_read(self, cap: cv2.VideoCapture) -> tuple[bool, cv2.VideoCapture, np.ndarray | None]:
+        """Reconnect camera with exponential backoff.
+
+        Returns (success, cap, frame) where cap may be a new VideoCapture.
+        """
+        for attempt, delay in enumerate(_READ_RETRY_DELAYS, 1):
+            logger.warning(
+                "Camera read failed. Reconnecting in %ds (attempt %d/%d)...",
+                delay, attempt, _MAX_READ_RETRIES,
+            )
+            time.sleep(delay)
+            if not self._running:
+                return False, cap, None
+            cap.release()
+            cap = cv2.VideoCapture(self._camera_index)
+            if not cap.isOpened():
+                continue
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            self._detector.setInputSize((640, 480))
+            ret, frame = cap.read()
+            if ret:
+                return True, cap, frame
+        return False, cap, None
+
     def run(self) -> None:
         cap = cv2.VideoCapture(self._camera_index)
         if not cap.isOpened():
@@ -115,8 +142,13 @@ class EnrollmentCameraThread(QThread):
             self._frame_counter += 1
             ret, frame = cap.read()
             if not ret:
-                self.camera_error.emit("Camera read failed.")
-                break
+                success, cap, frame = self._retry_read(cap)
+                if not success:
+                    self.camera_error.emit(
+                        f"Camera read failed after {_MAX_READ_RETRIES} attempts."
+                    )
+                    break
+                # Reconnected successfully — continue processing this frame
 
             # Mirror horizontally so user sees themselves like in a mirror
             frame = cv2.flip(frame, 1)
