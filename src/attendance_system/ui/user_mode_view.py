@@ -57,7 +57,6 @@ class UserModeView(QWidget):
         face_recognizer: FaceRecognizer,
         camera_index: int = 0,
         detector_model_path: Path | None = None,
-        detector: cv2.FaceDetectorYN | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -67,7 +66,6 @@ class UserModeView(QWidget):
         self._face_recognizer = face_recognizer
         self._camera_index = camera_index
         self._detector_model_path = detector_model_path
-        self._detector = detector
         self._session_id: int | None = None
         self._camera_thread: CameraThread | None = None
 
@@ -307,7 +305,6 @@ class UserModeView(QWidget):
             face_recognizer=self._face_recognizer,
             camera_index=active_camera,
             detector_model_path=self._detector_model_path,
-            detector=self._detector,
             parent=self,
         )
         self._camera_thread.frame_ready.connect(self._update_camera_frame)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import queue
 import time
 from typing import Any
 
@@ -34,6 +35,142 @@ _MAX_READ_RETRIES = 3
 
 logger = logging.getLogger(__name__)
 
+_SENTINEL = object()
+
+
+class AIWorker(QThread):
+    """
+    Worker QThread that performs anti-spoofing and face recognition on a background thread.
+    Uses a queue of size 1 for backpressure.
+    """
+    recognition_result = pyqtSignal(str, int, str, float, object)
+    inference_warning = pyqtSignal(str)
+    camera_error = pyqtSignal(str)
+
+    def __init__(
+        self,
+        liveness_threshold: float,
+        similarity_threshold: float,
+        liveness_checker: LivenessChecker,
+        face_recognizer: FaceRecognizer,
+        parent: Any = None,
+    ) -> None:
+        super().__init__(parent)
+        self._liveness_threshold = liveness_threshold
+        self._similarity_threshold = similarity_threshold
+        self._liveness_checker = liveness_checker
+        self._face_recognizer = face_recognizer
+        self._queue: queue.Queue[Any] = queue.Queue(maxsize=1)
+        self._running = False
+        self._consecutive_failures = 0
+        self._last_recognized: dict[int, float] = {}  # user_id -> monotonic timestamp
+
+    def submit_task(
+        self,
+        frame_bgr: np.ndarray,
+        frame_rgb: np.ndarray,
+        face_row: np.ndarray,
+        frame_counter: int,
+    ) -> bool:
+        """
+        Submit a task to the worker queue.
+        Numpy arrays MUST be copied to avoid frame buffer overwriting.
+        Returns True if submitted, False if queue is full.
+        """
+        try:
+            self._queue.put_nowait((frame_bgr.copy(), frame_rgb.copy(), face_row.copy(), frame_counter))
+            return True
+        except queue.Full:
+            return False
+
+    def run(self) -> None:
+        self._running = True
+        self._consecutive_failures = 0
+        
+        while self._running:
+            try:
+                task = self._queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            if task is _SENTINEL:
+                break
+
+            frame_bgr, frame_rgb, face_row, frame_counter = task
+
+            # Extract bbox for liveness
+            x, y, w, h = face_row[:4].astype(int)
+            face_crop = _crop_face(frame_rgb, (x, y, w, h), scale=2.7)
+
+            # Step 1 — Liveness (MiniFASNet ONNX)
+            try:
+                liveness = self._liveness_checker.check(face_crop, self._liveness_threshold)
+            except LivenessInferenceError:
+                self._consecutive_failures += 1
+                logger.warning(
+                    "[AIWorker frame %d] Liveness inference error (%d/%d consecutive)",
+                    frame_counter,
+                    self._consecutive_failures,
+                    _MAX_CONSECUTIVE_FAILURES,
+                    exc_info=True,
+                )
+                if self._consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
+                    self.camera_error.emit(
+                        f"Liveness model failed after {_MAX_CONSECUTIVE_FAILURES} "
+                        "consecutive errors. Vui lòng khởi động lại ứng dụng."
+                    )
+                    self._running = False
+                    break
+                self.inference_warning.emit("Lỗi xử lý AI — đang thử lại...")
+                continue
+
+            # Reset consecutive-failure counter on success
+            self._consecutive_failures = 0
+
+            if not liveness.is_real:
+                self.recognition_result.emit("spoof", 0, "", liveness.score, None)
+                continue
+
+            # Step 2 — Recognition (SFace)
+            match = self._face_recognizer.identify(frame_bgr, face_row, self._similarity_threshold)
+            if match is None:
+                self.recognition_result.emit("unrecognized", 0, "", liveness.score, 0.0)
+                continue
+
+            # Per-user cooldown to avoid flooding the DB
+            now = time.monotonic()
+            if now - self._last_recognized.get(match.user_id, 0.0) < _COOLDOWN_SECONDS:
+                continue
+            self._last_recognized[match.user_id] = now
+
+            self.recognition_result.emit(
+                "success", match.user_id, match.full_name, liveness.score, match.similarity
+            )
+
+    def stop(self) -> None:
+        self._running = False
+        # Drain the queue to release references to frames
+        while not self._queue.empty():
+            try:
+                self._queue.get_nowait()
+            except queue.Empty:
+                pass
+
+        # Push sentinel to unblock queue.get()
+        try:
+            self._queue.put_nowait(_SENTINEL)
+        except queue.Full:
+            try:
+                self._queue.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self._queue.put_nowait(_SENTINEL)
+            except queue.Full:
+                pass
+
+        self.wait(3000)
+
 
 class CameraThread(QThread):
     """
@@ -63,7 +200,6 @@ class CameraThread(QThread):
         face_recognizer: FaceRecognizer,
         camera_index: int = 0,
         detector_model_path: Path | str | None = None,
-        detector: Any | None = None,
         parent: Any = None,
     ) -> None:
         super().__init__(parent)
@@ -74,21 +210,28 @@ class CameraThread(QThread):
         self._face_recognizer = face_recognizer
         self._camera_index = camera_index
         self._running = False
-        self._last_recognized: dict[int, float] = {}  # user_id -> monotonic timestamp
-        self._consecutive_failures: int = 0
 
         # Initialize YuNet detector
-        if detector is not None:
-            self._detector = detector
-        else:
-            if detector_model_path is None:
-                detector_model_path = Path("models") / "face_detection" / "face_detection_yunet_2023mar.onnx"
-            self._detector = _create_face_detector(detector_model_path, (640, 480))
+        if detector_model_path is None:
+            detector_model_path = Path("models") / "face_detection" / "face_detection_yunet_2023mar.onnx"
+        self._detector = _create_face_detector(detector_model_path, (640, 480))
 
         # Bounding-box display state (updated by AI frames, used by every display frame)
         self._detected_faces: np.ndarray | None = None  # YuNet format: [N, 15]
         self._bbox_color: tuple[int, int, int] = _COLOR_DETECTING
         self._result_hold_counter: int = 0
+
+        # Initialize AI worker thread
+        self._ai_worker = AIWorker(
+            liveness_threshold=self._liveness_threshold,
+            similarity_threshold=self._similarity_threshold,
+            liveness_checker=self._liveness_checker,
+            face_recognizer=self._face_recognizer,
+            parent=self,
+        )
+        self._ai_worker.recognition_result.connect(self._on_recognition_result)
+        self._ai_worker.inference_warning.connect(self.inference_warning.emit)
+        self._ai_worker.camera_error.connect(self._on_ai_worker_camera_error)
 
     # ------------------------------------------------------------------
     # Public control
@@ -97,6 +240,13 @@ class CameraThread(QThread):
     def stop(self) -> None:
         """Signal the thread to exit and block until it finishes."""
         self._running = False
+        try:
+            self._ai_worker.recognition_result.disconnect()
+            self._ai_worker.inference_warning.disconnect()
+            self._ai_worker.camera_error.disconnect()
+        except TypeError:
+            pass
+        self._ai_worker.stop()
         self.wait()
 
     def _retry_read(self, cap: cv2.VideoCapture) -> tuple[bool, cv2.VideoCapture, np.ndarray | None]:
@@ -141,6 +291,9 @@ class CameraThread(QThread):
         # Update detector input size to match camera
         self._detector.setInputSize((w, h))
 
+        # Start AI worker thread
+        self._ai_worker.start()
+
         self._running = True
         frame_counter = 0
 
@@ -156,7 +309,6 @@ class CameraThread(QThread):
                 # Reconnected successfully — continue processing this frame
 
             # YuNet expects BGR for detection, but we want RGB for display
-            # Actually FaceDetectorYN expects BGR by default
             faces = self._detect_faces(frame)
             self._detected_faces = faces
 
@@ -172,10 +324,12 @@ class CameraThread(QThread):
             annotated = self._draw_bboxes(frame_rgb)
             self._emit_display_frame(annotated)
 
-            # Run full AI pipeline every N frames (only when faces are present)
+            # Run full AI pipeline asynchronously every N frames (only when faces are present)
             frame_counter += 1
-            if frame_counter % _AI_FRAME_SKIP == 0 and self._detected_faces is not None:
-                self._process_frame(frame, frame_rgb, frame_counter)
+            if frame_counter % _AI_FRAME_SKIP == 0 and self._detected_faces is not None and len(self._detected_faces) > 0:
+                idx = int(np.argmax(self._detected_faces[:, 2] * self._detected_faces[:, 3]))
+                face_row = self._detected_faces[idx]
+                self._ai_worker.submit_task(frame, frame_rgb, face_row, frame_counter)
 
         cap.release()
 
@@ -211,65 +365,32 @@ class CameraThread(QThread):
         qimg = QImage(frame_rgb.tobytes(), w, h, ch * w, QImage.Format_RGB888)
         self.frame_ready.emit(qimg.copy())
 
-    def _process_frame(self, frame_bgr: np.ndarray, frame_rgb: np.ndarray, frame_counter: int = 0) -> None:
-        """Run liveness -> recognize on the largest detected face."""
-        if self._detected_faces is None or len(self._detected_faces) == 0:
-            return
-
-        # Find largest face by area
-        idx = int(np.argmax(self._detected_faces[:, 2] * self._detected_faces[:, 3]))
-        face_row = self._detected_faces[idx]
-        
-        # Extract bbox for liveness (MiniFASNet still uses unaligned crop)
-        x, y, w, h = face_row[:4].astype(int)
-        face_crop = _crop_face(frame_rgb, (x, y, w, h), scale=2.7)
-
-        # Step 1 — Liveness (MiniFASNet ONNX)
+    def _on_ai_worker_camera_error(self, message: str) -> None:
+        self.camera_error.emit(message)
+        self._running = False
+        # Disconnect worker signals to prevent late emits during cleanup
         try:
-            liveness = self._liveness_checker.check(face_crop, self._liveness_threshold)
-        except LivenessInferenceError:
-            self._consecutive_failures += 1
-            logger.warning(
-                "[frame %d] Liveness inference error (%d/%d consecutive)",
-                frame_counter,
-                self._consecutive_failures,
-                _MAX_CONSECUTIVE_FAILURES,
-                exc_info=True,
-            )
-            if self._consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
-                self.camera_error.emit(
-                    f"Liveness model failed after {_MAX_CONSECUTIVE_FAILURES} "
-                    "consecutive errors. Vui lòng khởi động lại ứng dụng."
-                )
-                self._running = False
-                return
-            self.inference_warning.emit("Lỗi xử lý AI — đang thử lại...")
-            return
+            self._ai_worker.recognition_result.disconnect()
+            self._ai_worker.inference_warning.disconnect()
+            self._ai_worker.camera_error.disconnect()
+        except TypeError:
+            pass
+        self._ai_worker.stop()
 
-        # Reset consecutive-failure counter on success
-        self._consecutive_failures = 0
-        if not liveness.is_real:
+    def _on_recognition_result(
+        self,
+        result_type: str,
+        user_id: int,
+        full_name: str,
+        liveness_score: float,
+        similarity_score: Any,
+    ) -> None:
+        if result_type == "success":
+            self._bbox_color = _COLOR_SUCCESS
+        elif result_type == "spoof":
             self._bbox_color = _COLOR_ALERT
-            self._result_hold_counter = _RESULT_HOLD_FRAMES
-            self.recognition_result.emit("spoof", 0, "", liveness.score, None)
-            return
-
-        # Step 2 — Recognition (SFace uses alignment)
-        match = self._face_recognizer.identify(frame_bgr, face_row, self._similarity_threshold)
-        if match is None:
+        elif result_type == "unrecognized":
             self._bbox_color = _COLOR_UNKNOWN
-            self._result_hold_counter = _RESULT_HOLD_FRAMES
-            self.recognition_result.emit("unrecognized", 0, "", liveness.score, 0.0)
-            return
-
-        # Per-user cooldown to avoid flooding the DB
-        now = time.monotonic()
-        if now - self._last_recognized.get(match.user_id, 0.0) < _COOLDOWN_SECONDS:
-            return
-        self._last_recognized[match.user_id] = now
-
-        self._bbox_color = _COLOR_SUCCESS
+        
         self._result_hold_counter = _RESULT_HOLD_FRAMES
-        self.recognition_result.emit(
-            "success", match.user_id, match.full_name, liveness.score, match.similarity
-        )
+        self.recognition_result.emit(result_type, user_id, full_name, liveness_score, similarity_score)

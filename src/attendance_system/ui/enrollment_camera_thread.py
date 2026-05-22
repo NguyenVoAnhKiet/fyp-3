@@ -57,18 +57,14 @@ class EnrollmentCameraThread(QThread):
         detector_model_path: Path | str | None = None,
         head_pose_estimator: HeadPoseEstimator | None = None,
         target_count: int = 5,
-        detector: Any | None = None,
         capture_cooldown: float = _CAPTURE_COOLDOWN,
         parent: Any = None,
     ) -> None:
         super().__init__(parent)
         self._camera_index = camera_index
-        if detector is not None:
-            self._detector = detector
-        else:
-            if detector_model_path is None:
-                detector_model_path = Path("models") / "face_detection" / "face_detection_yunet_2023mar.onnx"
-            self._detector = _create_face_detector(detector_model_path, (640, 480))
+        if detector_model_path is None:
+            detector_model_path = Path("models") / "face_detection" / "face_detection_yunet_2023mar.onnx"
+        self._detector = _create_face_detector(detector_model_path, (640, 480))
         self._face_recognizer = face_recognizer
         self._liveness_checker = liveness_checker
         self._head_pose_estimator = head_pose_estimator

@@ -30,7 +30,6 @@ from attendance_system.services.head_pose import HeadPoseEstimator
 from attendance_system.services.attendance_service import AttendanceService
 from attendance_system.services.authentication_service import AuthenticationService
 from attendance_system.services.settings_service import SettingsService
-from attendance_system.utils.face_utils import _create_face_detector
 from attendance_system.ui.main_window import MainWindow
 
 # ---------------------------------------------------------------------------
@@ -201,8 +200,6 @@ def main(argv: list[str] | None = None) -> int:
                     "Enrollment will continue in legacy mode."
                 )
 
-    # Create face detector (centralized, shared across camera threads)
-    detector = _create_face_detector(detector_model_path, (640, 480))
 
     # --- Phase 5: Wire up services & launch UI --------------------------------
     db = Database(DatabaseConfig(path=database_path))
@@ -236,7 +233,6 @@ def main(argv: list[str] | None = None) -> int:
         database=db,
         camera_index=camera_index,
         detector_model_path=detector_model_path,
-        detector=detector,
     )
     window.show()
     return app.exec_()

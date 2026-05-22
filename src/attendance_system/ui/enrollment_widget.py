@@ -50,7 +50,6 @@ class EnrollmentWidget(QWidget):
         settings_service: SettingsService,
         head_pose_estimator: HeadPoseEstimator | None,
         detector_model_path: Path | None = None,
-        detector: cv2.FaceDetectorYN | None = None,
         parent: QWidget | None = None
     ) -> None:
         super().__init__(parent)
@@ -60,7 +59,6 @@ class EnrollmentWidget(QWidget):
         self._settings_service = settings_service
         self._head_pose_estimator = head_pose_estimator
         self._detector_model_path = detector_model_path
-        self._detector = detector
         
         self._user_repo = UserRepository(database)
         self._enroll_service = EnrollmentService(database)
@@ -194,7 +192,6 @@ class EnrollmentWidget(QWidget):
             head_pose_estimator=self._head_pose_estimator,
             liveness_threshold=liveness_thresh,
             detector_model_path=self._detector_model_path,
-            detector=self._detector,
             parent=self
         )
         self._camera_thread.frame_ready.connect(self.update_frame)
