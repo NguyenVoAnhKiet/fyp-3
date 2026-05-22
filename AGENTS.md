@@ -88,14 +88,15 @@ OpenSpec workflow: `openspec explore|propose|apply-change|list|archive-change`. 
 - **`cryptography` is a soft dependency** (lazy import in `face_reference_repository.py:_get_fernet`). Only needed when `FACE_EMBEDDING_FERNET_KEY` is set.
 - **Initial admin from env**: `storage_manager.py:_seed_admin` reads `ADMIN_USERNAME`/`ADMIN_PASSWORD` with fallback `"admin"`/`"admin"`.
 - `CAMERA_INDEX=` (empty string) must be handled as missing — `_resolve_camera_index` in `main.py`.
-- **`_crop_face` scale: attendance + enrollment liveness use `scale=2.7`**, head-pose uses `1.5` (default). Attendance `camera_thread.py:194`, enrollment paths at `enrollment_camera_thread.py:182,325`. Wrong scale silently rejects real users.
+- **`_crop_face` scale: attendance + enrollment liveness use `scale=2.7`**, head-pose uses `1.5` (default). Attendance `camera_thread.py:225`, enrollment paths at `enrollment_camera_thread.py:214,357`. Wrong scale silently rejects real users.
 - **Enrollment completion checks `_target_count`**, not `len(_POSE_SEQUENCE)`.
 - Thresholds from `.env` seed the DB on first run only; subsequent changes go through settings UI.
 - Anti-spoofing is optional — `FACE_ANTISPOOF_ENABLED=false`.
 - **`bootstrap.py` does NOT call `load_dotenv()`** — `DATABASE_PATH` from `.env` is unseen when running `attendance-storage-init`. The CLI default or a `--database-path` arg is used instead.
 - **Enrollment camera frame flipped horizontally** (`cv2.flip(frame, 1)` in `enrollment_camera_thread.py`) — mirror-like UX. Main attendance camera does NOT flip.
-- Head pose model missing → graceful fallback to legacy enrollment (`main.py`, around line 188).
+- **Head pose model missing → graceful fallback to legacy enrollment** (`main.py:188`).
 - **ONNX inference circuit breaker**: `PoseInferenceError` / `LivenessInferenceError` caught per thread. After 30 consecutive failures the thread stops with `camera_error`. Below 30, `inference_warning` fires. ADR at `docs/adr/0001-onnx-circuit-breaker.md`.
 - `main()` accepts optional `argv` list for testability — do not call `sys.argv` directly in tests.
-- **Test mock `_make_face()` in `tests/integration/test_head_pose_enrollment.py` uses `confidence=0`** — masks landmark-index bugs; use `confidence=0.99` and realistic landmarks in new tests.
+- **Test mock `_make_face()` in `tests/integration/test_head_pose_enrollment.py:16` uses `confidence=0`** — masks landmark-index bugs; use `confidence=0.99` and realistic landmarks in new tests.
+- **Camera read failure retries**: Both `CameraThread` and `EnrollmentCameraThread` retry with exponential backoff (1s, 2s, 4s, max 3). Thread does not exit on single glitch. After 3 failures, `camera_error` is emitted and the thread stops.
 
