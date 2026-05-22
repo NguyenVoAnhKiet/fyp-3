@@ -191,7 +191,7 @@ class CameraThread(QThread):
         
         # Extract bbox for liveness (MiniFASNet still uses unaligned crop)
         x, y, w, h = face_row[:4].astype(int)
-        face_crop = _crop_face(frame_rgb, (x, y, w, h))
+        face_crop = _crop_face(frame_rgb, (x, y, w, h), scale=2.7)
 
         # Step 1 — Liveness (MiniFASNet ONNX)
         try:
