@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import cv2
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QKeyEvent

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 
-import cv2
 import numpy as np
 from pathlib import Path
 from typing import TYPE_CHECKING

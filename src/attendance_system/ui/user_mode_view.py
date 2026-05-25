@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-import cv2
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QKeyEvent, QPixmap

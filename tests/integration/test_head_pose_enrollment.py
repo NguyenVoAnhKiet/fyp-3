@@ -27,10 +27,8 @@ def test_pose_sequence_advances_on_success(mock_detector_create) -> None:
     mock_detector_create.return_value = detector
 
     head_pose = MagicMock()
-    head_pose.estimate.return_value = (0.0, 0.0, 0.0)
     liveness = MagicMock()
     recognizer = MagicMock()
-    recognizer.get_embedding.return_value = np.ones(128, dtype=np.float32)
     recognizer.average_embeddings.return_value = np.ones(128, dtype=np.float32)
 
     thread = EnrollmentCameraThread(
@@ -40,16 +38,15 @@ def test_pose_sequence_advances_on_success(mock_detector_create) -> None:
         head_pose_estimator=head_pose,
         detector_model_path=Path("fake.onnx"),
     )
-    thread._pose_hold_counter = 4
     thread._current_pose_index = 0
-    thread._attempt_pose_capture = MagicMock(return_value=True)
+    thread._captured_embeddings = [np.ones(128, dtype=np.float32)] * 4  # 4 of 5 done
 
-    frame = np.zeros((480, 640, 3), dtype=np.uint8)
-    color = thread._handle_pose_frame(frame, _make_face(), 100, 100, 160, 160)
+    # Call the signal handler directly (simulates EnrollmentAIWorker completing capture)
+    emb = np.ones(128, dtype=np.float32)
+    thread._on_capture_complete(True, emb, 0.95)
 
     assert thread._current_pose_index == 1
-    assert thread._pose_hold_counter == 0
-    assert color == (0, 255, 0)
+    assert thread._capture_in_progress is False
 
 
 @patch("cv2.FaceDetectorYN.create")
@@ -59,7 +56,6 @@ def test_pose_hold_resets_on_mismatch(mock_detector_create) -> None:
     mock_detector_create.return_value = detector
 
     head_pose = MagicMock()
-    head_pose.estimate.return_value = (25.0, 25.0, 0.0)
     liveness = MagicMock()
     recognizer = MagicMock()
 
@@ -71,14 +67,13 @@ def test_pose_hold_resets_on_mismatch(mock_detector_create) -> None:
         detector_model_path=Path("fake.onnx"),
     )
     thread._pose_hold_counter = 3
-    thread._current_pose_index = 0
+    thread._current_pose_index = 0  # Target: (0, 0)
 
-    frame = np.zeros((480, 640, 3), dtype=np.uint8)
-    color = thread._handle_pose_frame(frame, _make_face(), 100, 100, 160, 160)
+    # Call signal handler with non-matching pose (25, 25) — far from target (0, 0)
+    thread._on_pose_estimated(25.0, 25.0, 0.0)
 
     assert thread._current_pose_index == 0
-    assert thread._pose_hold_counter == 0
-    assert color == (255, 0, 0)
+    assert thread._pose_hold_counter == 0  # Reset because pose doesn't match
 
 
 @patch("cv2.FaceDetectorYN.create")
@@ -110,13 +105,12 @@ def test_legacy_fallback_keeps_old_flow(mock_detector_create) -> None:
 
 @patch("cv2.FaceDetectorYN.create")
 def test_pose_hold_resets_on_capture_failure(mock_detector_create) -> None:
-    """Counter phải reset về 0 khi _attempt_pose_capture thất bại (liveness/embedding fail)."""
+    """Counter phải reset về 0 khi capture thất bại (liveness/embedding fail)."""
     detector = MagicMock()
     detector.setInputSize.return_value = None
     mock_detector_create.return_value = detector
 
     head_pose = MagicMock()
-    head_pose.estimate.return_value = (0.0, 0.0, 0.0)
     liveness = MagicMock()
     recognizer = MagicMock()
 
@@ -129,13 +123,13 @@ def test_pose_hold_resets_on_capture_failure(mock_detector_create) -> None:
     )
     thread._pose_hold_counter = 4
     thread._current_pose_index = 0
-    thread._attempt_pose_capture = MagicMock(return_value=False)
 
-    frame = np.zeros((480, 640, 3), dtype=np.uint8)
-    thread._handle_pose_frame(frame, _make_face(), 100, 100, 160, 160)
+    # Simulate capture failure
+    thread._on_capture_complete(False, None, 0.0)
 
     assert thread._pose_hold_counter == 0
     assert thread._current_pose_index == 0
+    assert thread._capture_in_progress is False
 
 
 @patch("cv2.FaceDetectorYN.create")
@@ -146,10 +140,8 @@ def test_pose_hold_counter_capped_at_hold_frames(mock_detector_create) -> None:
     mock_detector_create.return_value = detector
 
     head_pose = MagicMock()
-    head_pose.estimate.return_value = (0.0, 0.0, 0.0)
     liveness = MagicMock()
     recognizer = MagicMock()
-    recognizer.get_embedding.return_value = None
 
     thread = EnrollmentCameraThread(
         camera_index=0,
@@ -158,13 +150,10 @@ def test_pose_hold_counter_capped_at_hold_frames(mock_detector_create) -> None:
         head_pose_estimator=head_pose,
         detector_model_path=Path("fake.onnx"),
     )
-    thread._current_pose_index = 0
-
-    frame = np.zeros((480, 640, 3), dtype=np.uint8)
-    face = _make_face()
+    thread._current_pose_index = 0  # Target: (0, 0)
 
     for _ in range(20):
-        thread._handle_pose_frame(frame, face, 100, 100, 160, 160)
+        thread._on_pose_estimated(0.0, 0.0, 0.0)
 
     assert thread._pose_hold_counter <= _HOLD_FRAMES
 
@@ -177,14 +166,10 @@ def test_enrollment_succeeds_without_liveness(mock_detector_create) -> None:
     mock_detector_create.return_value = detector
 
     head_pose = MagicMock()
-    head_pose.estimate.return_value = (0.0, -30.0, 0.0)  # Nghiêng trái (negative yaw = left turn)
     liveness = MagicMock()
-    liveness.check.return_value = MagicMock(is_real=False)  # Would normally fail
     recognizer = MagicMock()
-    recognizer.get_embedding.return_value = np.ones(128, dtype=np.float32)
     recognizer.average_embeddings.return_value = np.ones(128, dtype=np.float32)
 
-    # Use LivenessChecker(None) which bypasses liveness
     bypass_liveness = LivenessChecker(None)
 
     thread = EnrollmentCameraThread(
@@ -194,14 +179,13 @@ def test_enrollment_succeeds_without_liveness(mock_detector_create) -> None:
         head_pose_estimator=head_pose,
         detector_model_path=Path("fake.onnx"),
     )
-    thread._pose_hold_counter = 4
-    # Set index to 1 ("Nghiêng trái", yaw=-30) to match the mocked head pose
-    thread._current_pose_index = 1
+    thread._current_pose_index = 1  # "Nghiêng trái"
 
-    frame = np.zeros((480, 640, 3), dtype=np.uint8)
-    thread._handle_pose_frame(frame, _make_face(), 100, 100, 160, 160)
+    # Simulate capture completing successfully (liveness bypass means is_real=True always)
+    emb = np.ones(128, dtype=np.float32)
+    thread._on_capture_complete(True, emb, 1.0)
 
-    # Should advance to next pose because liveness is bypassed
+    # Should advance to next pose
     assert thread._current_pose_index == 2
     assert len(thread._captured_embeddings) == 1
 
@@ -214,11 +198,9 @@ def test_enrollment_liveness_bypass_still_checks_embedding(mock_detector_create)
     mock_detector_create.return_value = detector
 
     head_pose = MagicMock()
-    head_pose.estimate.return_value = (0.0, 0.0, 0.0)
     liveness = MagicMock()
     bypass_liveness = LivenessChecker(None)
     recognizer = MagicMock()
-    recognizer.get_embedding.return_value = None  # Embedding extraction fails
 
     thread = EnrollmentCameraThread(
         camera_index=0,
@@ -227,13 +209,11 @@ def test_enrollment_liveness_bypass_still_checks_embedding(mock_detector_create)
         head_pose_estimator=head_pose,
         detector_model_path=Path("fake.onnx"),
     )
-    thread._pose_hold_counter = 4
     thread._current_pose_index = 0
 
-    frame = np.zeros((480, 640, 3), dtype=np.uint8)
-    thread._handle_pose_frame(frame, _make_face(), 100, 100, 160, 160)
+    # Simulate capture failure (embedding extraction failed in worker)
+    thread._on_capture_complete(False, None, 1.0)
 
-    # Should NOT advance - embedding extraction failed
     assert thread._current_pose_index == 0
     assert len(thread._captured_embeddings) == 0
 
@@ -260,12 +240,9 @@ def test_enrollment_accepts_correct_yaw_direction(mock_detector_create) -> None:
     detector.setInputSize.return_value = None
     mock_detector_create.return_value = detector
 
-    # When user turns LEFT, the head pose model outputs NEGATIVE yaw
     head_pose = MagicMock()
-    head_pose.estimate.return_value = (0.0, -30.0, 0.0)  # Negative yaw = left turn
     liveness = LivenessChecker(None)
     recognizer = MagicMock()
-    recognizer.get_embedding.return_value = np.ones(128, dtype=np.float32)
     recognizer.average_embeddings.return_value = np.ones(128, dtype=np.float32)
 
     thread = EnrollmentCameraThread(
@@ -275,13 +252,15 @@ def test_enrollment_accepts_correct_yaw_direction(mock_detector_create) -> None:
         head_pose_estimator=head_pose,
         detector_model_path=Path("fake.onnx"),
     )
-    thread._current_pose_index = 1  # "Nghiêng trái"
-    thread._pose_hold_counter = 4
+    thread._current_pose_index = 1  # "Nghiêng trái" (yaw=-30)
 
-    frame = np.zeros((480, 640, 3), dtype=np.uint8)
-    thread._handle_pose_frame(frame, _make_face(), 100, 100, 160, 160)
+    # Step 1: pose estimated with matching yaw (-30)
+    thread._on_pose_estimated(0.0, -30.0, 0.0)
+    assert thread._pose_hold_counter == 1  # hold starts building
 
-    # Should advance because user's left turn matches "Nghiêng trái" (yaw=-30)
+    # After enough hold frames, capture succeeds
+    emb = np.ones(128, dtype=np.float32)
+    thread._on_capture_complete(True, emb, 1.0)
     assert thread._current_pose_index == 2
 
 
@@ -292,9 +271,7 @@ def test_enrollment_rejects_opposite_yaw_direction(mock_detector_create) -> None
     detector.setInputSize.return_value = None
     mock_detector_create.return_value = detector
 
-    # When user turns RIGHT, model outputs POSITIVE yaw
     head_pose = MagicMock()
-    head_pose.estimate.return_value = (0.0, 30.0, 0.0)  # Positive yaw = right turn
     liveness = LivenessChecker(None)
     recognizer = MagicMock()
 
@@ -308,12 +285,11 @@ def test_enrollment_rejects_opposite_yaw_direction(mock_detector_create) -> None
     thread._current_pose_index = 1  # "Nghiêng trái" requires yaw=-30
     thread._pose_hold_counter = 4
 
-    frame = np.zeros((480, 640, 3), dtype=np.uint8)
-    thread._handle_pose_frame(frame, _make_face(), 100, 100, 160, 160)
+    # Pose estimated with OPPOSITE yaw (+30, right turn instead of left)
+    thread._on_pose_estimated(0.0, 30.0, 0.0)
 
-    # Should NOT advance because user's right turn (yaw=+30) doesn't match "Nghiêng trái" (yaw=-30)
     assert thread._current_pose_index == 1
-    assert thread._pose_hold_counter == 0  # Reset because pose doesn't match
+    assert thread._pose_hold_counter == 0
 
 
 @patch("cv2.FaceDetectorYN.create")
