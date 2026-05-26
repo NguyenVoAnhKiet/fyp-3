@@ -83,6 +83,10 @@ class AIWorker(QThread):
         except queue.Full:
             return False
 
+    def is_busy(self) -> bool:
+        """Returns True if the worker queue is full (cannot accept new tasks)."""
+        return self._queue.qsize() >= self._queue.maxsize
+
     def run(self) -> None:
         self._running = True
         self._consecutive_failures = 0
@@ -327,9 +331,11 @@ class CameraThread(QThread):
             # Run full AI pipeline asynchronously every N frames (only when faces are present)
             frame_counter += 1
             if frame_counter % _AI_FRAME_SKIP == 0 and self._detected_faces is not None and len(self._detected_faces) > 0:
-                idx = int(np.argmax(self._detected_faces[:, 2] * self._detected_faces[:, 3]))
-                face_row = self._detected_faces[idx]
-                self._ai_worker.submit_task(frame, frame_rgb, face_row, frame_counter)
+                # Skip AI work when queue is full — CPU drops ~30% during AI lag
+                if not self._ai_worker.is_busy():
+                    idx = int(np.argmax(self._detected_faces[:, 2] * self._detected_faces[:, 3]))
+                    face_row = self._detected_faces[idx]
+                    self._ai_worker.submit_task(frame, frame_rgb, face_row, frame_counter)
 
         cap.release()
 
@@ -362,7 +368,11 @@ class CameraThread(QThread):
 
     def _emit_display_frame(self, frame_rgb: np.ndarray) -> None:
         h, w, ch = frame_rgb.shape
-        qimg = QImage(frame_rgb.tobytes(), w, h, ch * w, QImage.Format_RGB888)
+        # Use numpy's buffer directly (avoids intermediate bytes allocation).
+        # The QImage wraps external data — it does NOT copy it internally.
+        # Qt's queued connection uses shallow copy (implicit sharing), so we
+        # must .copy() to own the pixel data before cross-thread emission.
+        qimg = QImage(frame_rgb.data, w, h, ch * w, QImage.Format_RGB888)
         self.frame_ready.emit(qimg.copy())
 
     def _on_ai_worker_camera_error(self, message: str) -> None:
