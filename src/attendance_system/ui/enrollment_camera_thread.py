@@ -86,7 +86,20 @@ class EnrollmentCameraThread(QThread):
         self._hold_text = ""
         self._guidance_text = ""
 
-        self._enrollment_ai_worker: EnrollmentAIWorker | None = None
+        if self._head_pose_estimator is not None:
+            self._enrollment_ai_worker = EnrollmentAIWorker(
+                head_pose_estimator=self._head_pose_estimator,
+                liveness_checker=self._liveness_checker,
+                face_recognizer=self._face_recognizer,
+                liveness_threshold=self._liveness_threshold,
+                parent=None,
+            )
+            self._enrollment_ai_worker.pose_estimated.connect(self._on_pose_estimated)
+            self._enrollment_ai_worker.capture_complete.connect(self._on_capture_complete)
+            self._enrollment_ai_worker.inference_warning.connect(self.inference_warning.emit)
+            self._enrollment_ai_worker.camera_error.connect(self._on_ai_worker_camera_error)
+        else:
+            self._enrollment_ai_worker = None
         self._capture_in_progress: bool = False
 
     def stop(self) -> None:
@@ -149,19 +162,8 @@ class EnrollmentCameraThread(QThread):
         self._frame_counter = 0
         self._sync_progress()
 
-        # Create and start EnrollmentAIWorker
-        if self._head_pose_estimator is not None:
-            self._enrollment_ai_worker = EnrollmentAIWorker(
-                head_pose_estimator=self._head_pose_estimator,
-                liveness_checker=self._liveness_checker,
-                face_recognizer=self._face_recognizer,
-                liveness_threshold=self._liveness_threshold,
-                parent=self,
-            )
-            self._enrollment_ai_worker.pose_estimated.connect(self._on_pose_estimated)
-            self._enrollment_ai_worker.capture_complete.connect(self._on_capture_complete)
-            self._enrollment_ai_worker.inference_warning.connect(self.inference_warning.emit)
-            self._enrollment_ai_worker.camera_error.connect(self._on_ai_worker_camera_error)
+        # Start EnrollmentAIWorker (created in __init__)
+        if self._enrollment_ai_worker is not None:
             self._enrollment_ai_worker.start()
 
         while self._running:
