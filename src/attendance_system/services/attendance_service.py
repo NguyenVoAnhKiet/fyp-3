@@ -154,8 +154,8 @@ class AttendanceService:
         records = self.get_session_records(session_id)
         df = pd.DataFrame([dict(r) for r in records])
         if not df.empty:
-            df = df[["student_id", "full_name", "status", "recorded_at"]]
-            df.columns = ["Student ID", "Full Name", "Status", "Time"]
+            df = df[["student_id", "full_name", "subject_name", "class_name", "status", "recorded_at"]]
+            df.columns = ["Student ID", "Full Name", "Subject Name", "Class Name", "Status", "Time"]
 
         if format == "csv":
             df.to_csv(file_path, index=False)
