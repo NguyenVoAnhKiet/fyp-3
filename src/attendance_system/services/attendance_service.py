@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 
 from attendance_system.core.db import Database
+from attendance_system.utils.time_utils import utc_to_local
 
 from attendance_system.repositories.attendance_repository import AttendanceRepository
 from attendance_system.repositories.recognition_event_repository import RecognitionEventRepository
@@ -143,6 +145,15 @@ class AttendanceService:
     def get_unique_subjects(self):
         return [row["subject_name"] for row in self.sessions.list_unique_subjects()]
 
+    @staticmethod
+    def _format_export_time(iso_str: str) -> str:
+        """Convert ISO-8601 string to ``yyyy-mm-dd-hh-mm-ss`` format."""
+        try:
+            dt = datetime.fromisoformat(iso_str)
+            return dt.strftime("%Y-%m-%d-%H-%M-%S")
+        except (ValueError, TypeError):
+            return iso_str
+
     def _export_session(self, session_id: int, file_path: str, format: str) -> None:
         try:
             import pandas as pd
@@ -154,8 +165,10 @@ class AttendanceService:
         records = self.get_session_records(session_id)
         df = pd.DataFrame([dict(r) for r in records])
         if not df.empty:
+            # Convert recorded_at from UTC to local timezone, then format for export
+            df["recorded_at"] = df["recorded_at"].apply(utc_to_local).apply(self._format_export_time)
             df = df[["student_id", "full_name", "subject_name", "class_name", "status", "recorded_at"]]
-            df.columns = ["Student ID", "Full Name", "Subject Name", "Class Name", "Status", "Time"]
+            df.columns = ["Student ID", "Full Name", "Subject Name", "Class Name", "Status", "recorded_at"]
 
         if format == "csv":
             df.to_csv(file_path, index=False)

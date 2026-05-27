@@ -30,6 +30,7 @@ from attendance_system.services.head_pose import HeadPoseEstimator
 from attendance_system.services.attendance_service import AttendanceService
 from attendance_system.services.authentication_service import AuthenticationService
 from attendance_system.services.settings_service import SettingsService
+from attendance_system.utils.time_utils import set_timezone_config
 from attendance_system.ui.main_window import MainWindow
 
 # ---------------------------------------------------------------------------
@@ -78,6 +79,15 @@ def build_parser() -> argparse.ArgumentParser:
 def _resolve_path(cli_value: str | None, env_key: str, default: Path) -> Path:
     """Return the first non-empty value from CLI arg, env var, or default."""
     return Path(cli_value or os.getenv(env_key) or str(default))
+
+
+def _resolve_timezone() -> None:
+    """Read ``TIMEZONE`` from env and configure ``time_utils``.
+
+    Must be called **after** ``load_dotenv()`` and **before** any time display.
+    Falls back to UTC when the env var is unset or invalid.
+    """
+    set_timezone_config(os.getenv("TIMEZONE"))
 
 
 def _resolve_camera_index(cli_value: int | None) -> int:
@@ -135,6 +145,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     # --- Phase 2: Resolve configuration (CLI > env > default) -----------------
+    _resolve_timezone()  # must run before any time display/conversion
+
     database_path = _resolve_path(
         args.database_path, "DATABASE_PATH", DEFAULT_DATABASE_PATH,
     )
