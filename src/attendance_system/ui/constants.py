@@ -1,14 +1,71 @@
-from PyQt5.QtGui import QFont
+from attendance_system.ui.styles import (
+    ACCENT_HOVER,
+    ACCENT_LIGHT,
+    ACCENT_PRIMARY,
+    BG_CARD,
+    BG_HOVER,
+    BG_INPUT,
+    BG_SIDEBAR,
+    BG_WINDOW,
+    BORDER,
+    BORDER_FOCUS,
+    CARD_SHADOW,
+    FONT_BODY,
+    FONT_BUTTON,
+    FONT_H1,
+    FONT_H2,
+    FONT_H3,
+    FONT_SMALL,
+    FONT_STATS,
+    FONT_TAB,
+    GLOBAL_QSS,
+    STATUS_ERROR,
+    STATUS_INFO,
+    STATUS_SUCCESS,
+    STATUS_WARNING,
+    TEXT_MUTED,
+    TEXT_ON_DARK,
+    TEXT_ON_DARK_MUTED,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+    _make_font,
+)
+
+__all__ = [
+    "ACCENT_HOVER",
+    "ACCENT_LIGHT",
+    "ACCENT_PRIMARY",
+    "BG_CARD",
+    "BG_HOVER",
+    "BG_INPUT",
+    "BG_SIDEBAR",
+    "BG_WINDOW",
+    "BORDER",
+    "BORDER_FOCUS",
+    "CARD_SHADOW",
+    "FONT_BODY",
+    "FONT_BUTTON",
+    "FONT_H1",
+    "FONT_H2",
+    "FONT_H3",
+    "FONT_SMALL",
+    "FONT_STATS",
+    "FONT_TAB",
+    "GLOBAL_QSS",
+    "STATUS_ERROR",
+    "STATUS_INFO",
+    "STATUS_SUCCESS",
+    "STATUS_WARNING",
+    "TEXT_MUTED",
+    "TEXT_ON_DARK",
+    "TEXT_ON_DARK_MUTED",
+    "TEXT_PRIMARY",
+    "TEXT_SECONDARY",
+    "_make_font",
+    "FONT_TITLE",
+    "FONT_STATUS",
+]
 
 
-def _make_font(size: int, weight: int = QFont.Weight.Normal) -> QFont:
-    font = QFont()
-    font.setFamily("JetBrains Mono")
-    font.setPointSize(size)
-    font.setWeight(weight)
-    return font
-
-
-FONT_TITLE = _make_font(20, QFont.Weight.Bold)
-FONT_STATUS = _make_font(16, QFont.Weight.Bold)
-FONT_BODY = _make_font(14)
+FONT_TITLE = FONT_H1
+FONT_STATUS = FONT_H2

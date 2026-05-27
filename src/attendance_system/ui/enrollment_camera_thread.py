@@ -459,13 +459,13 @@ class EnrollmentCameraThread(QThread):
             if is_final:
                 # Green tint overlay + big completion text
                 painter.fillRect(0, 0, w, h, QColor(0, 255, 0, 25))
-                font_big = QFont("Arial", 36, QFont.Bold)
+                font_big = QFont("Arial", 38, QFont.Bold)
                 painter.setFont(font_big)
                 painter.setPen(QColor(0, 255, 0))
                 painter.drawText(0, 0, w, h, Qt.AlignmentFlag.AlignCenter, "🎉 Hoàn tất!")
             else:
                 # Green checkmark at top-right of face bbox
-                check_size = int(48 * min(1.0, elapsed / 0.2))  # scale 0→1 over 200ms
+                check_size = int(50 * min(1.0, elapsed / 0.2))  # scale 0→1 over 200ms
                 font_check = QFont("Arial", max(1, check_size), QFont.Bold)
                 painter.setFont(font_check)
                 painter.setPen(QColor(0, 255, 0))
@@ -487,16 +487,16 @@ class EnrollmentCameraThread(QThread):
             painter.drawText(x, y, text)
 
         if self._status_text:
-            draw_text_with_shadow(self._status_text, 20, 40, 18, True)
+            draw_text_with_shadow(self._status_text, 20, 40, 20, True)
 
         if self._angles_text and self._angles_text != "-":
-            draw_text_with_shadow(self._angles_text, 20, 70, 14)
+            draw_text_with_shadow(self._angles_text, 20, 70, 16)
 
         if self._hold_text:
-            draw_text_with_shadow(self._hold_text, 20, 100, 14)
+            draw_text_with_shadow(self._hold_text, 20, 100, 16)
 
         if self._guidance_text:
-            draw_text_with_shadow(self._guidance_text, 20, 130, 14)
+            draw_text_with_shadow(self._guidance_text, 20, 130, 16)
 
         painter.end()
         return qimg

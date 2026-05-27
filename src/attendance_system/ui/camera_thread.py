@@ -225,6 +225,11 @@ class CameraThread(QThread):
         self._bbox_color: tuple[int, int, int] = _COLOR_DETECTING
         self._result_hold_counter: int = 0
 
+        # Recognition result overlay state (for Vietnamese text via QPainter)
+        self._current_result_type: str | None = None  # "success", "spoof", "unrecognized", None
+        self._current_result_name: str = ""
+        self._current_result_score: float = 0.0
+
         # Initialize AI worker thread
         self._ai_worker = AIWorker(
             liveness_threshold=self._liveness_threshold,
@@ -373,7 +378,60 @@ class CameraThread(QThread):
         # Qt's queued connection uses shallow copy (implicit sharing), so we
         # must .copy() to own the pixel data before cross-thread emission.
         qimg = QImage(frame_rgb.data, w, h, ch * w, QImage.Format_RGB888)
-        self.frame_ready.emit(qimg.copy())
+
+        # Draw text labels with QPainter (supports Vietnamese Unicode)
+        annotated = self._annotate_frame(qimg)
+
+        self.frame_ready.emit(annotated.copy())
+
+    def _annotate_frame(self, qimg: QImage) -> QImage:
+        """Draw result text labels on the QImage using QPainter (supports Vietnamese)."""
+        from PyQt5.QtGui import QPainter, QColor, QFont
+
+        painter = QPainter(qimg)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+
+        if self._detected_faces is not None and self._current_result_type is not None:
+            for face in self._detected_faces:
+                x, y, w, h = face[:4].astype(int)
+
+                # Background pill behind text
+                painter.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+
+                if self._current_result_type == "success" and self._current_result_name:
+                    label = f"{self._current_result_name} ({self._current_result_score:.2f})"
+                    painter.setPen(QColor(22, 163, 74))  # green
+                    # Draw text background
+                    text_rect = painter.fontMetrics().boundingRect(label)
+                    text_x, text_y = x, max(y - 8, 0)
+                    painter.fillRect(text_x, text_y - text_rect.height() - 4,
+                                     text_rect.width() + 12, text_rect.height() + 6,
+                                     QColor(255, 255, 255, 200))
+                    # Draw text
+                    painter.drawText(text_x + 6, text_y - 4, label)
+
+                elif self._current_result_type == "spoof":
+                    label = "\U0001f6ab Gi\u1ea3 m\u1ea1o"
+                    painter.setPen(QColor(220, 0, 0))  # red
+                    text_rect = painter.fontMetrics().boundingRect(label)
+                    text_x, text_y = x, max(y - 8, 0)
+                    painter.fillRect(text_x, text_y - text_rect.height() - 4,
+                                     text_rect.width() + 12, text_rect.height() + 6,
+                                     QColor(255, 255, 255, 200))
+                    painter.drawText(text_x + 6, text_y - 4, label)
+
+                elif self._current_result_type == "unrecognized":
+                    label = "\u274c Kh\u00f4ng nh\u1eadn di\u1ec7n \u0111\u01b0\u1ee3c"
+                    painter.setPen(QColor(234, 179, 8))  # yellow/amber
+                    text_rect = painter.fontMetrics().boundingRect(label)
+                    text_x, text_y = x, max(y - 8, 0)
+                    painter.fillRect(text_x, text_y - text_rect.height() - 4,
+                                     text_rect.width() + 12, text_rect.height() + 6,
+                                     QColor(255, 255, 255, 200))
+                    painter.drawText(text_x + 6, text_y - 4, label)
+
+        painter.end()
+        return qimg
 
     def _on_ai_worker_camera_error(self, message: str) -> None:
         self.camera_error.emit(message)
@@ -395,12 +453,17 @@ class CameraThread(QThread):
         liveness_score: float,
         similarity_score: Any,
     ) -> None:
+        self._current_result_type = result_type
+        self._current_result_name = full_name
         if result_type == "success":
+            self._current_result_score = float(similarity_score or 0.0)
             self._bbox_color = _COLOR_SUCCESS
         elif result_type == "spoof":
+            self._current_result_score = liveness_score
             self._bbox_color = _COLOR_ALERT
         elif result_type == "unrecognized":
+            self._current_result_score = liveness_score
             self._bbox_color = _COLOR_UNKNOWN
-        
+
         self._result_hold_counter = _RESULT_HOLD_FRAMES
         self.recognition_result.emit(result_type, user_id, full_name, liveness_score, similarity_score)

@@ -6,6 +6,7 @@ from pathlib import Path
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QKeyEvent
 from PyQt5.QtWidgets import (
+    QLabel,
     QMainWindow,
     QMessageBox,
     QStackedWidget,
@@ -19,6 +20,7 @@ from attendance_system.services.authentication_service import AuthenticationServ
 from attendance_system.services.settings_service import SettingsService
 from attendance_system.ui.admin_dashboard_view import AdminDashboardView
 from attendance_system.ui.login_widget import LoginWidget
+from attendance_system.ui.styles import BG_WINDOW, GLOBAL_QSS
 from attendance_system.ui.user_mode_view import UserModeView
 
 # Master stack indices
@@ -53,9 +55,12 @@ class MainWindow(QMainWindow):
     ) -> None:
         super().__init__()
         self._auth = authentication_service
+        self._database = database
+        self._camera_index = camera_index
 
         self.setWindowTitle("Hệ Thống Điểm Danh Khuôn Mặt")
-        self.setMinimumSize(800, 560)
+        self.setMinimumSize(1024, 720)
+        self.setStyleSheet(f"QMainWindow {{ background-color: {BG_WINDOW}; }}\n{GLOBAL_QSS}")
 
         # --- Build views ---
         self._user_mode = UserModeView(
@@ -86,11 +91,51 @@ class MainWindow(QMainWindow):
         self._stack.setCurrentIndex(_IDX_USER_MODE)
         self.setCentralWidget(self._stack)
 
+        # --- Status bar ---
+        self._setup_status_bar()
+
         # --- Wire signals ---
         self._user_mode.login_requested.connect(self._show_login)
         self._login_widget.cancel_requested.connect(self._show_user_mode)
         self._login_widget.login_requested.connect(self._handle_login)
         self._admin_dashboard.logout_requested.connect(self._handle_logout)
+
+    # ------------------------------------------------------------------
+    # Status bar
+    # ------------------------------------------------------------------
+
+    def _setup_status_bar(self) -> None:
+        sb = self.statusBar()
+        sb.setStyleSheet("""
+            QStatusBar {
+                background-color: #ffffff;
+                border-top: 1px solid #e2e8f0;
+                font-size: 13px;
+                color: #64748b;
+            }
+        """)
+
+        db_path_str = str(self._database.config.path)
+        self._status_camera = QLabel(f"📷 Camera: {self._camera_index}")
+        self._status_db = QLabel(f"💾 DB: {db_path_str}")
+        self._status_session = QLabel("⏸ IDLE")
+
+        for widget in [self._status_camera, self._status_db, self._status_session]:
+            widget.setContentsMargins(8, 2, 8, 2)
+            sb.addPermanentWidget(widget)
+
+    def update_status_bar(
+        self,
+        camera_index: int | None = None,
+        db_path: str | None = None,
+        session_info: str | None = None,
+    ) -> None:
+        if camera_index is not None:
+            self._status_camera.setText(f"📷 Camera: {camera_index}")
+        if db_path is not None:
+            self._status_db.setText(f"💾 DB: {db_path}")
+        if session_info is not None:
+            self._status_session.setText(session_info)
 
     # ------------------------------------------------------------------
     # Routing helpers
