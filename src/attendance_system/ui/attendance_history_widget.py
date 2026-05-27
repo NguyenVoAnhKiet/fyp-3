@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
 from attendance_system.core.db import Database
 from attendance_system.services.attendance_service import AttendanceService
 from attendance_system.ui.constants import FONT_TITLE
+from attendance_system.utils.time_utils import local_to_utc, utc_to_local
 
 
 class AttendanceHistoryWidget(QWidget):
@@ -136,8 +137,9 @@ class AttendanceHistoryWidget(QWidget):
             self.subject_filter.addItem(s, s)
 
     def search_sessions(self):
-        start_date = self.from_date.date().toString(Qt.ISODate) + "T00:00:00"
-        end_date = self.to_date.date().toString(Qt.ISODate) + "T23:59:59"
+        # Convert UI date filter (local timezone) to UTC for DB query
+        start_date = local_to_utc(self.from_date.date().toString(Qt.ISODate) + "T00:00:00")
+        end_date = local_to_utc(self.to_date.date().toString(Qt.ISODate) + "T23:59:59")
         class_name = self.class_filter.currentData() or None
         subject_name = self.subject_filter.currentData() or None
 
@@ -148,7 +150,7 @@ class AttendanceHistoryWidget(QWidget):
         self.session_table.setRowCount(len(sessions))
         for i, session in enumerate(sessions):
             self.session_table.setItem(i, 0, QTableWidgetItem(str(session["id"])))
-            self.session_table.setItem(i, 1, QTableWidgetItem(session["start_time"][:10]))
+            self.session_table.setItem(i, 1, QTableWidgetItem(utc_to_local(session["start_time"])[:10]))
             self.session_table.setItem(i, 2, QTableWidgetItem(session["class_name"]))
             self.session_table.setItem(i, 3, QTableWidgetItem(session["subject_name"]))
 
@@ -169,7 +171,7 @@ class AttendanceHistoryWidget(QWidget):
             self.records_table.setItem(i, 0, QTableWidgetItem(rec["student_id"]))
             self.records_table.setItem(i, 1, QTableWidgetItem(rec["full_name"]))
             self.records_table.setItem(i, 2, QTableWidgetItem(rec["status"]))
-            self.records_table.setItem(i, 3, QTableWidgetItem(rec["recorded_at"].split("T")[-1][:8]))
+            self.records_table.setItem(i, 3, QTableWidgetItem(utc_to_local(rec["recorded_at"]).split("T")[-1][:8]))
 
         self.export_excel_button.setEnabled(True)
         self.export_csv_button.setEnabled(True)

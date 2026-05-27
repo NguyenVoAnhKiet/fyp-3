@@ -23,7 +23,7 @@ from attendance_system.services.attendance_service import AttendanceService
 from attendance_system.services.settings_service import SettingsService
 from attendance_system.ui.camera_thread import CameraThread
 from attendance_system.ui.constants import FONT_BODY, FONT_STATUS, FONT_TITLE
-from attendance_system.utils.time_utils import utc_now_iso
+from attendance_system.utils.time_utils import utc_now_iso, utc_to_local
 
 logger = logging.getLogger(__name__)
 
@@ -348,13 +348,13 @@ class UserModeView(QWidget):
 
     def _add_to_sidebar(self, name: str, time_str: str) -> None:
         """Prepend a check-in record to the sidebar list."""
-        # time_str is usually ISO, but we want HH:mm:ss for display
-        # If it's 2026-05-12T14:30:05.123Z, we take 11:19
-        display_time = time_str
-        if "T" in time_str:
+        # Convert UTC ISO to local timezone before displaying
+        local_time = utc_to_local(time_str)
+        display_time = local_time
+        if "T" in local_time:
             try:
-                # Simple extraction of HH:mm:ss from ISO
-                display_time = time_str.split("T")[1].split(".")[0]
+                # Extract HH:mm:ss from ISO
+                display_time = local_time.split("T")[1].split(".")[0]
             except Exception:
                 pass
         
