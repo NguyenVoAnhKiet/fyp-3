@@ -43,13 +43,15 @@ PYTHONPATH=src python src/main.py  # dev run without install
 
 ## Architecture
 
-Single package: `src/` → `attendance_system` namespace.
+Single package: `src/` → `attendance_system`.
 - `services/` — AI pipeline (liveness + recognition), attendance, auth, enrollment, settings
 - `repositories/` — CRUD per entity, inherit `BaseRepository`. `FaceReferenceRepository` has class-level `_cache_all` keyed by DB path — **must call `_invalidate_cache()` on write**.
 - `ui/` — PyQt5 QThread-based camera threads, AIWorker, login, dashboard, settings
+- `core/` — DB connection, schema migrations, storage bootstrap
 - `models/entities.py` — `@dataclass(slots=True)`
+- `utils/` — face processing helpers (`face_utils.py`), time utilities
 
-Entry points: `attendance-storage-init` → `bootstrap:main`, `attendance-app` → `main:main`
+Entry points: `attendance-storage-init` → `attendance_system.core.bootstrap:main`, `attendance-app` → `main:main`
 
 All AI inference runs on background `QThreads`:
 - **CameraThread**: frame-skip 3 (~10 Hz). AIWorker on separate `QThread` with `maxsize=1` queue + `is_busy()` guard. Numpy arrays MUST be `.copy()`'d before queuing.
