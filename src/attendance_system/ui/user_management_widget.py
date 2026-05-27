@@ -15,6 +15,7 @@ class UserDialog(QDialog):
     def __init__(self, parent=None, user_data=None):
         super().__init__(parent)
         self.user_data = user_data
+        self.is_edit_mode = user_data is not None
         self.setWindowTitle("Edit User" if user_data else "Add User")
         self.setMinimumWidth(400)
         
@@ -25,11 +26,13 @@ class UserDialog(QDialog):
         self.full_name_input = QLineEdit()
         
         if user_data:
+            # Edit mode: show student_id as read-only
             self.student_id_input.setText(user_data["student_id"])
-            self.student_id_input.setEnabled(False)  # Student ID should be immutable
+            self.student_id_input.setEnabled(False)
             self.full_name_input.setText(user_data["full_name"])
-            
-        self.form_layout.addRow("Student ID:", self.student_id_input)
+            self.form_layout.addRow("Student ID:", self.student_id_input)
+        
+        # Full name is always shown and editable
         self.form_layout.addRow("Full Name:", self.full_name_input)
         
         self.layout.addLayout(self.form_layout)
@@ -47,7 +50,7 @@ class UserDialog(QDialog):
 
     def get_data(self):
         return {
-            "student_id": self.student_id_input.text().strip(),
+            "student_id": self.student_id_input.text().strip() if self.is_edit_mode else None,
             "full_name": self.full_name_input.text().strip(),
         }
 
@@ -102,15 +105,32 @@ class UserManagementWidget(QWidget):
             self.table.setItem(i, 1, QTableWidgetItem(user["student_id"]))
             self.table.setItem(i, 2, QTableWidgetItem(user["full_name"]))
 
+    def _generate_student_id(self) -> str:
+        """Generate next student_id as STU + (MAX(id) + 1)."""
+        with self.database.session() as conn:
+            result = conn.execute(
+                "SELECT MAX(id) as max_id FROM users"
+            ).fetchone()
+            max_id = result["max_id"] if result["max_id"] is not None else 0
+            next_id = max_id + 1
+            return f"STU{next_id}"
+
     def add_user(self):
         dialog = UserDialog(self)
         if dialog.exec_() == QDialog.Accepted:
             data = dialog.get_data()
-            if not data["student_id"] or not data["full_name"]:
-                QMessageBox.warning(self, "Validation Error", "All fields are required.")
+            if not data["full_name"]:
+                QMessageBox.warning(self, "Validation Error", "Full name is required.")
                 return
             try:
-                self.user_repo.create(data["student_id"], data["full_name"])
+                # Auto-generate student_id: STU + (MAX(id) + 1)
+                student_id = self._generate_student_id()
+                self.user_repo.create(student_id, data["full_name"])
+                QMessageBox.information(
+                    self, 
+                    "Success", 
+                    f"User created successfully!\n\nStudent ID: {student_id}\nName: {data['full_name']}"
+                )
                 self.load_users()
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to add user: {str(e)}")

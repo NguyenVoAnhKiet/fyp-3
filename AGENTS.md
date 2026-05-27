@@ -31,6 +31,8 @@ If architecture still unclear: `camera_thread.py` (AIWorker + pipeline), `enroll
 
 Prefer executable sources over prose. If docs conflict with code, trust the code.
 
+Agent engineering conventions (for specific engineering skills) live in `docs/agents/`.
+
 ## Commands
 
 ```bash
@@ -65,6 +67,7 @@ All AI inference runs on background `QThreads`:
 - `check_same_thread=False` — intentional for PyQt5 camera thread access
 - Schema migrations: `ALTER TABLE ... ADD COLUMN` in `schema.py` (try/except on dup column)
 - `DatabaseConfig.__post_init__` rejects paths containing `..`
+- **attendance_records.user_id is nullable with ON DELETE SET NULL** (migrated from NOT NULL CASCADE). Records survive user deletion with `user_id = NULL`. Do not assume `user_id` is always populated.
 
 ## Testing
 
@@ -88,6 +91,7 @@ All AI inference runs on background `QThreads`:
 **Threading & data safety:**
 - **QImage cross-thread emit needs `.copy()`**: `QImage` from external buffer is non-owning. Qt queued connections use shallow copy (implicit sharing). Always `.copy()` before emitting across threads.
 - **submit_task() array ownership differs**: `AIWorker.submit_task()` expects pre-copied arrays. `EnrollmentAIWorker.submit_task()` copies arrays internally.
+- **Worker QThreads: create in `__init__`, start in `run()`**: Creating a `QThread` child with `parent=self` inside another thread's `run()` causes "Cannot create children for a parent that is in a different thread". The `QThread` object lives in the thread where it was **constructed** (usually main thread), not where `run()` executes. Always construct worker QThreads in `__init__()` and only `.start()` them in `run()`.
 - **Enrollment frame is flipped** (`cv2.flip`), attendance frame is not.
 - **Circuit breaker**: 30 consecutive ONNX failures → `camera_error` signal → thread terminates. Counter resets on success. ADR at `docs/adr/0001-onnx-circuit-breaker.md`.
 - **Camera retries**: exponential backoff (1s, 2s, 4s, max 3). After 3 failures, `camera_error` emitted and thread stops.
