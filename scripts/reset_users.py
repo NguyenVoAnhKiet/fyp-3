@@ -45,7 +45,7 @@ def main():
     
     # Connect to database
     try:
-        config = DatabaseConfig(path=db_path)
+        config = DatabaseConfig(path=Path(db_path))
         db = Database(config)
         
         with db.session() as conn:
