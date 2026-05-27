@@ -10,11 +10,13 @@ Python desktop face attendance system with anti-spoofing. 100% offline, single-p
 
 ```bash
 cp .env.example .env
-pip install -e .
+.venv\Scripts\python.exe -m pip install -e .
 pip install pytest                 # not in pyproject.toml deps
 attendance-storage-init            # bootstrap DB schema
 attendance-app
 ```
+
+Venv at `.venv\` (gitignored).
 
 Models (`models/**/*.onnx`) are gitignored — download separately.
 
@@ -29,6 +31,8 @@ High-value sources (read in order):
 
 If architecture still unclear: `camera_thread.py` (AIWorker + pipeline), `enrollment_camera_thread.py`, `enrollment_ai_worker.py`, `face_utils.py`.
 
+Reference docs at `docs/` — `architecture.md` (layers, threading, startup), `ai-pipeline.md` (models, enrollment flow, circuit breaker), `database.md` (schema, ERD, encryption). `docs/modules.md` lists every Python file with responsibilities.
+
 Prefer executable sources over prose. If docs conflict with code, trust the code.
 
 Agent engineering conventions (for specific engineering skills) live in `docs/agents/`.
@@ -40,7 +44,8 @@ ruff check src/
 pytest tests/unit/ -v              # fast, no camera/GUI (11 files)
 pytest tests/integration/ -v       # DB/storage/offline (9 files)
 pytest tests/unit/test_camera_thread.py -v
-PYTHONPATH=src python src/main.py  # dev run without install
+PYTHONPATH=src python src/main.py  # dev run without install (Unix)
+$env:PYTHONPATH='src'; python src/main.py  # dev run (Windows PowerShell)
 ```
 
 ## Architecture
@@ -103,6 +108,7 @@ All AI inference runs on background `QThreads`:
 
 **Other:**
 - `cryptography` is soft-dep: lazy import in `face_reference_repository.py:_get_fernet`. Only needed when `FACE_EMBEDDING_FERNET_KEY` is set.
+- `pandas` + `openpyxl` are soft-deps for Excel export (`attendance_service.py:export_session_to_excel`). Install with `pip install pandas openpyxl`.
 - Initial admin from env: `ADMIN_USERNAME` / `ADMIN_PASSWORD`, fallback `"admin"`/`"admin"`.
 - Thresholds from `.env` seed DB on first run only; subsequent changes go through settings UI.
 - Anti-spoofing is optional (`FACE_ANTISPOOF_ENABLED=false`).
