@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import cv2
+import logging
+
 import numpy as np
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -30,6 +31,8 @@ if TYPE_CHECKING:
     from attendance_system.services.head_pose import HeadPoseEstimator
     from attendance_system.services.settings_service import SettingsService
 
+logger = logging.getLogger(__name__)
+
 _TARGET_CAPTURE_COUNT = 5
 
 class EnrollmentWidget(QWidget):
@@ -46,7 +49,6 @@ class EnrollmentWidget(QWidget):
         settings_service: SettingsService,
         head_pose_estimator: HeadPoseEstimator | None,
         detector_model_path: Path | None = None,
-        detector: cv2.FaceDetectorYN | None = None,
         parent: QWidget | None = None
     ) -> None:
         super().__init__(parent)
@@ -56,7 +58,6 @@ class EnrollmentWidget(QWidget):
         self._settings_service = settings_service
         self._head_pose_estimator = head_pose_estimator
         self._detector_model_path = detector_model_path
-        self._detector = detector
         
         self._user_repo = UserRepository(database)
         self._enroll_service = EnrollmentService(database)
@@ -163,8 +164,23 @@ class EnrollmentWidget(QWidget):
         cam_idx = int(self._settings_service.get("camera_index") or 0)
         liveness_thresh = float(self._settings_service.get("liveness_threshold") or 0.5)
 
-        # Disable liveness during enrollment — liveness model fails on angled faces
-        # due to crop misalignment (scale=2.7 from incomplete bbox at yaw/pitch extremes)
+        # Liveness check is intentionally bypassed during enrollment.
+        # Multi-pose face capture (yaw/pitch/roll) already provides strong
+        # implicit anti-spoofing — a static photo cannot complete the pose
+        # sequence. Additionally, the enrollment crop scale (2.7) differs
+        # from MiniFASNet's expected scale (1.5), causing false rejects
+        # on angled faces.
+        if self._liveness_checker.is_enabled:
+            logger.info(
+                "Enrollment: liveness check available but intentionally "
+                "bypassed (multi-pose sequence provides anti-spoofing)"
+            )
+        else:
+            logger.info(
+                "Enrollment: liveness check disabled "
+                "(FACE_ANTISPOOF_ENABLED=false)"
+            )
+
         enrollment_liveness = LivenessChecker(model_path=None)
 
         # Start thread
@@ -175,13 +191,13 @@ class EnrollmentWidget(QWidget):
             head_pose_estimator=self._head_pose_estimator,
             liveness_threshold=liveness_thresh,
             detector_model_path=self._detector_model_path,
-            detector=self._detector,
             parent=self
         )
         self._camera_thread.frame_ready.connect(self.update_frame)
         self._camera_thread.capture_progress.connect(self.set_progress)
         self._camera_thread.enrollment_complete.connect(self._handle_complete)
         self._camera_thread.camera_error.connect(self._handle_error)
+        self._camera_thread.inference_warning.connect(self._handle_inference_warning)
         
         self._camera_thread.start()
         
@@ -249,6 +265,12 @@ class EnrollmentWidget(QWidget):
         
         self._stop_enrollment()
         self.refresh_users()
+
+    @pyqtSlot(str)
+    def _handle_inference_warning(self, message: str) -> None:
+        """Show a temporary inference warning without stopping enrollment."""
+        self._guidance_label.setText(f"Hướng dẫn: {message}")
+        # Previous guidance will be overwritten by the next capture_progress signal
 
     @pyqtSlot(str)
     def _handle_error(self, message: str) -> None:

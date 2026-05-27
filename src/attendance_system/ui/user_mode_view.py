@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
-import cv2
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QKeyEvent, QPixmap
@@ -24,6 +24,8 @@ from attendance_system.services.settings_service import SettingsService
 from attendance_system.ui.camera_thread import CameraThread
 from attendance_system.ui.constants import FONT_BODY, FONT_STATUS, FONT_TITLE
 from attendance_system.utils.time_utils import utc_now_iso
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_LIVENESS_THRESHOLD = 0.5
 _DEFAULT_SIMILARITY_THRESHOLD = 0.6
@@ -54,7 +56,6 @@ class UserModeView(QWidget):
         face_recognizer: FaceRecognizer,
         camera_index: int = 0,
         detector_model_path: Path | None = None,
-        detector: cv2.FaceDetectorYN | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -64,7 +65,6 @@ class UserModeView(QWidget):
         self._face_recognizer = face_recognizer
         self._camera_index = camera_index
         self._detector_model_path = detector_model_path
-        self._detector = detector
         self._session_id: int | None = None
         self._camera_thread: CameraThread | None = None
 
@@ -304,12 +304,12 @@ class UserModeView(QWidget):
             face_recognizer=self._face_recognizer,
             camera_index=active_camera,
             detector_model_path=self._detector_model_path,
-            detector=self._detector,
             parent=self,
         )
         self._camera_thread.frame_ready.connect(self._update_camera_frame)
         self._camera_thread.recognition_result.connect(self._on_recognition_result)
         self._camera_thread.camera_error.connect(self._on_camera_error)
+        self._camera_thread.inference_warning.connect(self._on_inference_warning)
         self._camera_thread.start()
 
     def _end_session(self) -> None:
@@ -401,6 +401,13 @@ class UserModeView(QWidget):
                 self._session_id, now, details=f"liveness={liveness_score:.3f}"
             )
             self._show_result_unrecognized()
+
+    def _on_inference_warning(self, message: str) -> None:
+        """Show a temporary inference warning in the result label."""
+        logger.info("Inference warning: %s", message)
+        self._result_label.setText(f"⚠ {message}")
+        self._set_result_style("neutral")
+        # The next recognition_result or frame will overwrite this
 
     def _on_camera_error(self, message: str) -> None:
         QMessageBox.critical(self, "Lỗi Camera", message)

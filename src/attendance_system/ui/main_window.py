@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import cv2
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QKeyEvent
@@ -51,7 +50,6 @@ class MainWindow(QMainWindow):
         database: Database,
         camera_index: int = 0,
         detector_model_path: Path | None = None,
-        detector: cv2.FaceDetectorYN | None = None,
     ) -> None:
         super().__init__()
         self._auth = authentication_service
@@ -67,7 +65,6 @@ class MainWindow(QMainWindow):
             face_recognizer=face_recognizer,
             camera_index=camera_index,
             detector_model_path=detector_model_path,
-            detector=detector,
             parent=self,
         )
         self._login_widget = LoginWidget(parent=self)
@@ -78,7 +75,6 @@ class MainWindow(QMainWindow):
             face_recognizer=face_recognizer,
             head_pose_estimator=head_pose_estimator,
             detector_model_path=detector_model_path,
-            detector=detector,
             parent=self,
         )
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -10,7 +11,9 @@ from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtGui import QImage, QPainter, QColor, QFont
 
 from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
+from attendance_system.services.exceptions import LivenessInferenceError
 from attendance_system.services.head_pose import HeadPoseEstimator
+from attendance_system.ui.enrollment_ai_worker import EnrollmentAIWorker
 from attendance_system.utils.face_utils import _crop_face, _create_face_detector
 
 _COLOR_GUIDE: tuple[int, int, int] = (255, 255, 0)  # Yellow
@@ -25,6 +28,12 @@ class _PoseTarget(NamedTuple):
     pitch: float
     yaw: float
 
+_MAX_CONSECUTIVE_FAILURES = 30  # kill thread if 30 frames in a row fail inference
+_READ_RETRY_DELAYS = [1.0, 2.0, 4.0]  # exponential backoff seconds between retries
+_MAX_READ_RETRIES = 3
+
+logger = logging.getLogger(__name__)
+
 _POSE_SEQUENCE = [
     _PoseTarget("Chính diện", 0, 0),
     _PoseTarget("Nghiêng trái", 0, -30),  # Model outputs negative yaw when user turns left
@@ -38,6 +47,7 @@ class EnrollmentCameraThread(QThread):
     capture_progress = pyqtSignal(int, int, str, str, str, str)
     camera_error = pyqtSignal(str)
     enrollment_complete = pyqtSignal(np.ndarray)
+    inference_warning = pyqtSignal(str)
 
     def __init__(
         self,
@@ -48,18 +58,14 @@ class EnrollmentCameraThread(QThread):
         detector_model_path: Path | str | None = None,
         head_pose_estimator: HeadPoseEstimator | None = None,
         target_count: int = 5,
-        detector: Any | None = None,
         capture_cooldown: float = _CAPTURE_COOLDOWN,
         parent: Any = None,
     ) -> None:
         super().__init__(parent)
         self._camera_index = camera_index
-        if detector is not None:
-            self._detector = detector
-        else:
-            if detector_model_path is None:
-                detector_model_path = Path("models") / "face_detection" / "face_detection_yunet_2023mar.onnx"
-            self._detector = _create_face_detector(detector_model_path, (640, 480))
+        if detector_model_path is None:
+            detector_model_path = Path("models") / "face_detection" / "face_detection_yunet_2023mar.onnx"
+        self._detector = _create_face_detector(detector_model_path, (640, 480))
         self._face_recognizer = face_recognizer
         self._liveness_checker = liveness_checker
         self._head_pose_estimator = head_pose_estimator
@@ -72,15 +78,55 @@ class EnrollmentCameraThread(QThread):
         self._current_pose_index = 0
         self._pose_hold_counter = 0
         self._last_capture_time = 0.0
+        self._consecutive_failures: int = 0
+        self._frame_counter: int = 0
 
         self._status_text = "Đang khởi động..."
         self._angles_text = "-"
         self._hold_text = ""
         self._guidance_text = ""
 
+        self._enrollment_ai_worker: EnrollmentAIWorker | None = None
+        self._capture_in_progress: bool = False
+
     def stop(self) -> None:
         self._running = False
+        if self._enrollment_ai_worker is not None:
+            try:
+                self._enrollment_ai_worker.pose_estimated.disconnect()
+                self._enrollment_ai_worker.capture_complete.disconnect()
+                self._enrollment_ai_worker.inference_warning.disconnect()
+                self._enrollment_ai_worker.camera_error.disconnect()
+            except TypeError:
+                pass
+            self._enrollment_ai_worker.stop()
+            self._enrollment_ai_worker = None
         self.wait()
+
+    def _retry_read(self, cap: cv2.VideoCapture) -> tuple[bool, cv2.VideoCapture, np.ndarray | None]:
+        """Reconnect camera with exponential backoff.
+
+        Returns (success, cap, frame) where cap may be a new VideoCapture.
+        """
+        for attempt, delay in enumerate(_READ_RETRY_DELAYS, 1):
+            logger.warning(
+                "Camera read failed. Reconnecting in %ds (attempt %d/%d)...",
+                delay, attempt, _MAX_READ_RETRIES,
+            )
+            time.sleep(delay)
+            if not self._running:
+                return False, cap, None
+            cap.release()
+            cap = cv2.VideoCapture(self._camera_index)
+            if not cap.isOpened():
+                continue
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            self._detector.setInputSize((640, 480))
+            ret, frame = cap.read()
+            if ret:
+                return True, cap, frame
+        return False, cap, None
 
     def run(self) -> None:
         cap = cv2.VideoCapture(self._camera_index)
@@ -98,13 +144,37 @@ class EnrollmentCameraThread(QThread):
         self._current_pose_index = 0
         self._pose_hold_counter = 0
         self._last_capture_time = 0.0
+        self._capture_in_progress = False
+        self._consecutive_failures = 0
+        self._frame_counter = 0
         self._sync_progress()
 
+        # Create and start EnrollmentAIWorker
+        if self._head_pose_estimator is not None:
+            self._enrollment_ai_worker = EnrollmentAIWorker(
+                head_pose_estimator=self._head_pose_estimator,
+                liveness_checker=self._liveness_checker,
+                face_recognizer=self._face_recognizer,
+                liveness_threshold=self._liveness_threshold,
+                parent=self,
+            )
+            self._enrollment_ai_worker.pose_estimated.connect(self._on_pose_estimated)
+            self._enrollment_ai_worker.capture_complete.connect(self._on_capture_complete)
+            self._enrollment_ai_worker.inference_warning.connect(self.inference_warning.emit)
+            self._enrollment_ai_worker.camera_error.connect(self._on_ai_worker_camera_error)
+            self._enrollment_ai_worker.start()
+
         while self._running:
+            self._frame_counter += 1
             ret, frame = cap.read()
             if not ret:
-                self.camera_error.emit("Camera read failed.")
-                break
+                success, cap, frame = self._retry_read(cap)
+                if not success:
+                    self.camera_error.emit(
+                        f"Camera read failed after {_MAX_READ_RETRIES} attempts."
+                    )
+                    break
+                # Reconnected successfully — continue processing this frame
 
             # Mirror horizontally so user sees themselves like in a mirror
             frame = cv2.flip(frame, 1)
@@ -168,7 +238,32 @@ class EnrollmentCameraThread(QThread):
             and len(self._captured_embeddings) < self._target_count
         ):
             face_crop = _crop_face(frame_rgb, (x, y, w_face, h_face), scale=2.7)
-            liveness = self._liveness_checker.check(face_crop, self._liveness_threshold)
+            try:
+                liveness = self._liveness_checker.check(face_crop, self._liveness_threshold)
+            except LivenessInferenceError:
+                self._consecutive_failures += 1
+                logger.warning(
+                    "[frame %d] Liveness inference error in legacy path (%d/%d consecutive)",
+                    self._frame_counter,
+                    self._consecutive_failures,
+                    _MAX_CONSECUTIVE_FAILURES,
+                    exc_info=True,
+                )
+                if self._consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
+                    self.camera_error.emit(
+                        f"Mô hình AI gặp lỗi sau {_MAX_CONSECUTIVE_FAILURES} "
+                        "lần liên tiếp. Vui lòng khởi động lại ứng dụng."
+                    )
+                    self._running = False
+                    return
+                self.inference_warning.emit("Lỗi xử lý AI — đang thử lại...")
+                self._status_text = "Đang xử lý..."
+                self._angles_text = "-"
+                self._hold_text = ""
+                self._guidance_text = "Đưa khuôn mặt vào khung"
+                return
+
+            self._consecutive_failures = 0
 
             if liveness.is_real:
                 emb = self._face_recognizer.get_embedding(frame_bgr, face)
@@ -200,16 +295,39 @@ class EnrollmentCameraThread(QThread):
         w_face: int,
         h_face: int,
     ) -> tuple[int, int, int]:
-        target = _POSE_SEQUENCE[self._current_pose_index % len(_POSE_SEQUENCE)]
-        face_crop = _crop_face(frame_bgr, (x, y, w_face, h_face))
-        if face_crop.size == 0:
-            self._status_text = "Không thể đọc khuôn mặt"
-            self._angles_text = "-"
-            self._hold_text = f"Giữ: {self._pose_hold_counter}/{_HOLD_FRAMES}"
-            self._guidance_text = f"Thực hiện: {target.name}"
-            return _COLOR_ALERT
+        """Submit frame to EnrollmentAIWorker for async pose estimation.
+        Does NOT block — returns guide color based on current state."""
+        if self._enrollment_ai_worker is None:
+            return _COLOR_GUIDE
 
-        pitch, yaw, roll = self._head_pose_estimator.estimate(face_crop)
+        # Decide if we should attempt capture this frame
+        now = time.monotonic()
+        should_capture = (
+            self._pose_hold_counter >= _HOLD_FRAMES
+            and now - self._last_capture_time >= self._capture_cooldown
+            and not self._capture_in_progress
+        )
+
+        if should_capture:
+            self._capture_in_progress = True
+
+        # Submit task to worker (non-blocking, returns False if queue full)
+        submitted = self._enrollment_ai_worker.submit_task(
+            frame_bgr, face, do_capture=should_capture,
+        )
+        if not submitted and should_capture:
+            # Frame dropped due to backpressure — release capture lock
+            self._capture_in_progress = False
+
+        return self._frame_color_from_status()
+
+    def _on_pose_estimated(self, pitch: float, yaw: float, roll: float) -> None:
+        """Handle pose estimation result from worker. Updates state machine."""
+        if self._current_pose_index >= len(_POSE_SEQUENCE):
+            return
+
+        target = _POSE_SEQUENCE[self._current_pose_index]
+
         self._angles_text = (
             f"Pitch: {pitch:.1f}° | Yaw: {yaw:.1f}° | Roll: {roll:.1f}°"
         )
@@ -227,55 +345,48 @@ class EnrollmentCameraThread(QThread):
             self._guidance_text = self._pose_guidance(target, pitch, yaw)
             self._status_text = self._guidance_text
 
-        if is_matched and self._pose_hold_counter >= _HOLD_FRAMES:
-            now = time.monotonic()
-            if now - self._last_capture_time >= self._capture_cooldown:
-                self._last_capture_time = now
-                success = self._attempt_pose_capture(frame_bgr, face, target)
-                if success:
-                    self._current_pose_index += 1
-                    self._pose_hold_counter = 0
-                    self._last_capture_time = now
-                    if len(self._captured_embeddings) >= self._target_count:
-                        self._status_text = "Hoàn tất!"
-                        self._hold_text = f"Giữ: {_HOLD_FRAMES}/{_HOLD_FRAMES}"
-                        self._guidance_text = "Đã hoàn tất chuỗi tư thế"
-                        return _COLOR_SUCCESS
-                    self._status_text = "Đã chụp!"
-                    self._guidance_text = f"Tiếp theo: {_POSE_SEQUENCE[self._current_pose_index % len(_POSE_SEQUENCE)].name}"
-                    self._hold_text = f"Giữ: 0/{_HOLD_FRAMES}"
-                    return _COLOR_SUCCESS
-                self._pose_hold_counter = 0
+    def _on_capture_complete(self, success: bool, embedding: object, liveness_score: float) -> None:
+        """Handle capture result from worker. Advances state machine on success."""
+        self._capture_in_progress = False
+        target = _POSE_SEQUENCE[self._current_pose_index % len(_POSE_SEQUENCE)]
+
+        if success and embedding is not None:
+            self._captured_embeddings.append(embedding)
+            self._last_capture_time = time.monotonic()
+            self._current_pose_index += 1
+            self._pose_hold_counter = 0
+
+            if len(self._captured_embeddings) >= self._target_count:
+                avg_emb = self._face_recognizer.average_embeddings(self._captured_embeddings)
+                self.enrollment_complete.emit(avg_emb)
+                self._status_text = "Hoàn tất!"
+                self._hold_text = f"Giữ: {_HOLD_FRAMES}/{_HOLD_FRAMES}"
+                self._guidance_text = "Đã hoàn tất chuỗi tư thế"
+            else:
+                self._status_text = "Đã chụp!"
+                next_target = _POSE_SEQUENCE[self._current_pose_index % len(_POSE_SEQUENCE)]
+                self._guidance_text = f"Tiếp theo: {next_target.name}"
                 self._hold_text = f"Giữ: 0/{_HOLD_FRAMES}"
-                self._status_text = "Không thể đọc khuôn mặt, thử lại"
-                self._guidance_text = f"Giữ tư thế {target.name} và thử lại"
-
-        return _COLOR_SUCCESS if is_matched else _COLOR_ALERT
-
-    def _attempt_pose_capture(
-        self,
-        frame_bgr: np.ndarray,
-        face: np.ndarray,
-        target: _PoseTarget,
-    ) -> bool:
-        face_crop = _crop_face(frame_bgr, face[:4].astype(int), scale=2.7)
-        liveness = self._liveness_checker.check(face_crop, self._liveness_threshold)
-        if not liveness.is_real:
-            self._status_text = "Cảnh báo: Liveness failed"
+        else:
+            self._pose_hold_counter = 0
+            self._hold_text = f"Giữ: 0/{_HOLD_FRAMES}"
+            self._status_text = "Không thể đọc khuôn mặt, thử lại"
             self._guidance_text = f"Giữ tư thế {target.name} và thử lại"
-            return False
 
-        emb = self._face_recognizer.get_embedding(frame_bgr, face)
-        if emb is None:
-            self._status_text = "Cảnh báo: Không trích xuất được embedding"
-            self._guidance_text = f"Giữ tư thế {target.name} và thử lại"
-            return False
-
-        self._captured_embeddings.append(emb)
-        if len(self._captured_embeddings) >= self._target_count:
-            avg_emb = self._face_recognizer.average_embeddings(self._captured_embeddings)
-            self.enrollment_complete.emit(avg_emb)
-        return True
+    def _on_ai_worker_camera_error(self, message: str) -> None:
+        """Circuit breaker tripped — stop the entire thread."""
+        self.camera_error.emit(message)
+        self._running = False
+        if self._enrollment_ai_worker is not None:
+            try:
+                self._enrollment_ai_worker.pose_estimated.disconnect()
+                self._enrollment_ai_worker.capture_complete.disconnect()
+                self._enrollment_ai_worker.inference_warning.disconnect()
+                self._enrollment_ai_worker.camera_error.disconnect()
+            except TypeError:
+                pass
+            self._enrollment_ai_worker.stop()
+            self._enrollment_ai_worker = None
 
     def _pose_matches(self, target: _PoseTarget, pitch: float, yaw: float) -> bool:
         return (

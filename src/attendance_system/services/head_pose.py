@@ -8,6 +8,8 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 
+from attendance_system.services.exceptions import PoseInferenceError
+
 __all__ = ["HeadPoseEstimator", "PoseAngles"]
 
 _INPUT_SIZE: Final[tuple[int, int]] = (224, 224)
@@ -40,7 +42,14 @@ class HeadPoseEstimator:
     def estimate(self, face_crop_bgr: np.ndarray) -> tuple[float, float, float]:
         """Return pitch, yaw, and roll in degrees for a BGR face crop."""
         tensor = self._preprocess(face_crop_bgr)
-        raw_output = self._session.run(None, {self._input_name: tensor})[0]
+        try:
+            raw_output = self._session.run(None, {self._input_name: tensor})[0]
+        except Exception as exc:
+            raise PoseInferenceError(
+                f"Head pose inference failed: {exc}",
+                input_shape=tensor.shape,
+                model_path=str(self._model_path),
+            ) from exc
         rotation_matrix = self._rotation_matrix(raw_output)
         return self._matrix_to_euler(rotation_matrix)
 

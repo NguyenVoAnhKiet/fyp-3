@@ -1,118 +1,104 @@
 # AGENTS.md
 
-## Project
+Python desktop face attendance system with anti-spoofing. 100% offline, single-process PyQt5 app.
 
-Python desktop face attendance system with anti-spoofing.
-
-**Stack**: Python 3.11+, SQLite3 (WAL mode), bcrypt, PyQt5, ONNX Runtime
-**Package**: `database-storage-core` (`package-dir = {"" = "src"}`)
-**AI Models**: YuNet (detection), SFace (recognition), MiniFASNet quantized (liveness), MobileNetV2 (head-pose)
+**Stack**: Python 3.11+, SQLite3 (WAL), bcrypt, PyQt5, ONNX Runtime
+**Build**: `pip install -e .` (setuptools). `uv.lock` exists but unused.
+**Verification**: `ruff check src/` → `pytest tests/`. No formatter/typechecker.
 
 ## Setup
 
 ```bash
 cp .env.example .env
-# Fernet key (only needed if FACE_EMBEDDING_FERNET_KEY is set):
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+pip install -e .
+pip install pytest                 # not in pyproject.toml deps
+attendance-storage-init            # bootstrap DB schema
+attendance-app
 ```
 
 Models (`models/**/*.onnx`) are gitignored — download separately.
 
 ## How to Investigate
 
-Read the highest-value sources first:
-1. `pyproject.toml` — package name, entry points, dependencies, pytest config
-2. `src/main.py` — entry point, config resolution order (CLI > .env > defaults), AI pipeline wiring
-3. `src/attendance_system/core/db.py` — `Database` class, `DatabaseConfig` with path validation, `check_same_thread=False`
-4. `src/attendance_system/core/bootstrap.py` — does NOT call `load_dotenv()` (see Gotchas)
-5. `.env.example` — all config keys with descriptions and seed behavior
+High-value sources (read in order):
+1. `pyproject.toml` — entry points, deps, package layout
+2. `src/main.py` — config resolution (CLI > `.env` > defaults), import order
+3. `src/attendance_system/core/db.py` — `Database` + `session()` ctx mgr, WAL, `check_same_thread=False`
+4. `src/attendance_system/core/bootstrap.py` — standalone CLI, does **NOT** call `load_dotenv()`
+5. `.env.example` — all config keys
 
-If architecture is unclear after reading the above, inspect:
-- `src/attendance_system/ui/camera_thread.py` + `enrollment_camera_thread.py` — how camera + AI pipeline is wired
-- `src/attendance_system/utils/face_utils.py` — shared `_crop_face` and `_create_face_detector`
+If architecture still unclear: `camera_thread.py` (AIWorker + pipeline), `enrollment_camera_thread.py`, `enrollment_ai_worker.py`, `face_utils.py`.
 
-Prefer executable sources of truth (`.py` config, entry points) over prose.
+Prefer executable sources over prose. If docs conflict with code, trust the code.
 
 ## Commands
 
 ```bash
-pip install -e .                              # Editable install (first time + after deps change)
-ruff check src/                               # Lint only (no formatter/typechecker)
-pytest tests/                                 # All tests
-pytest tests/unit/ -v                         # Unit tests only
-pytest tests/integration/ -v                  # Integration tests only
-pytest tests/unit/test_attendance_service.py -v  # Single test file
-pytest tests/unit/test_*.py -v               # Single file via glob
-$env:PYTHONPATH='src'; python src/main.py    # Dev run without install (PowerShell)
-attendance-storage-init                       # Installed: DB bootstrap
-attendance-app                                # Installed: GUI app
+ruff check src/
+pytest tests/unit/ -v              # fast, no camera/GUI (11 files)
+pytest tests/integration/ -v       # DB/storage/offline (9 files)
+pytest tests/unit/test_camera_thread.py -v
+PYTHONPATH=src python src/main.py  # dev run without install
 ```
-
-**Pre-commit order (no hooks)**: `ruff check` → `pytest`
-
-**Config priority**: CLI args > `.env` > code defaults (resolved in `main.py` after `load_dotenv()`).
 
 ## Architecture
 
-- `src/main.py` — Entry point; parses CLI, loads `.env`, wires services, launches PyQt5
-- `src/attendance_system/core/` — `Database` (with `session()` ctx mgr), schema, bootstrap, storage manager
-- `src/attendance_system/services/` — Business logic (enrollment, attendance, settings, AI pipeline, head-pose)
-- `src/attendance_system/repositories/` — CRUD per entity (inherits `BaseRepository`)
-- `src/attendance_system/models/entities.py` — `@dataclass(slots=True)` data classes
-- `src/attendance_system/ui/` — PyQt5 components (main window, camera threads, login/dashboard)
-- `src/attendance_system/utils/face_utils.py` — Shared `_crop_face` and `_create_face_detector`
+Single package: `src/` → `attendance_system`.
+- `services/` — AI pipeline (liveness + recognition), attendance, auth, enrollment, settings
+- `repositories/` — CRUD per entity, inherit `BaseRepository`. `FaceReferenceRepository` has class-level `_cache_all` keyed by DB path — **must call `_invalidate_cache()` on write**.
+- `ui/` — PyQt5 QThread-based camera threads, AIWorker, login, dashboard, settings
+- `core/` — DB connection, schema migrations, storage bootstrap
+- `models/entities.py` — `@dataclass(slots=True)`
+- `utils/` — face processing helpers (`face_utils.py`), time utilities
 
-Installed entry points (from `pyproject.toml`):
-- `attendance-storage-init` → `attendance_system.core.bootstrap:main`
-- `attendance-app` → `main:main`
+Entry points: `attendance-storage-init` → `attendance_system.core.bootstrap:main`, `attendance-app` → `main:main`
 
-Other instruction files:
-- `CLAUDE.md` — Karpathy-style behavioral guidelines (simplicity, surgical changes)
-- `.agents/` — OpenSpec workflow files (propose, explore, apply-change, archive-change, etc.)
-
-## OpenSpec Workflow
-
-```bash
-openspec explore                    # Think through a problem before making changes
-openspec propose <name>             # Create a new change with full proposal
-openspec apply-change <name>        # Implement tasks from a change
-openspec list                       # List active changes
-openspec status --change <name>     # Check change completion
-openspec archive-change <name>      # Archive a completed change
-```
-
-Changes live in `openspec/changes/<name>/`. Archive completed changes to `openspec/changes/archive/YYYY-MM-DD-<name>/`.
+All AI inference runs on background `QThreads`:
+- **CameraThread**: frame-skip 3 (~10 Hz). AIWorker on separate `QThread` with `maxsize=1` queue + `is_busy()` guard. Numpy arrays MUST be `.copy()`'d before queuing.
+- **EnrollmentCameraThread**: horizontally mirrored (`cv2.flip(frame, 1)`). Pose-guided sequence (5 targets, 5 holds) or legacy fallback.
+- **Detector isolation**: each camera thread creates own `FaceDetectorYN` via `_create_face_detector()` — avoids `setInputSize()` races.
 
 ## DB
 
-- `PRAGMA journal_mode = WAL`, `PRAGMA synchronous = NORMAL`, `PRAGMA foreign_keys = ON`
+- `PRAGMA journal_mode = WAL`, `synchronous = NORMAL`, `foreign_keys = ON`
 - `Database.session()` auto-commits on success, rollbacks on exception
-- `check_same_thread=False` — intentional for PyQt5 camera thread
-- Schema migrations via `ALTER TABLE ... ADD COLUMN` in `schema.py` (try/except on dup column)
+- `check_same_thread=False` — intentional for PyQt5 camera thread access
+- Schema migrations: `ALTER TABLE ... ADD COLUMN` in `schema.py` (try/except on dup column)
 - `DatabaseConfig.__post_init__` rejects paths containing `..`
 
 ## Testing
 
-- `tests/unit/` — fast, no camera or GUI (12 files)
-- `tests/integration/` — DB bootstrap, storage, offline behavior (7 files)
-- `conftest.py` provides `database` fixture (tmp_path SQLite, full schema; auto-adds `src/` to `sys.path`)
-- Imports use `from attendance_system.*` prefix (not relative)
-- Opt-in soft dependency: `pytest.importorskip("cryptography.fernet")` + `monkeypatch.setenv`
-- `conftest.py` imports `onnxruntime` first (same DLL conflict guard as `main.py`)
-- No typechecker (mypy/pyright) configured
+- Unit tests (`tests/unit/`, 11 files) — fast, no camera/GUI
+- Integration tests (`tests/integration/`, 9 files) — DB, storage, offline
+- `tests/contract/` — empty, reserved
+- `conftest.py`: tmp_path SQLite + full schema; adds `src/` to `sys.path`; imports onnxruntime first (DLL guard)
+- Imports use `from attendance_system.*` (not relative)
+- Soft dep: `pytest.importorskip("cryptography.fernet")` + `monkeypatch.setenv`
 
 ## Gotchas
 
-- **`onnxruntime` must be imported BEFORE `PyQt5`** (main.py:17-20, conftest.py:7-10). On Windows, both load conflicting native DLLs.
-- **`cryptography` is a soft dependency** (lazy import in `face_reference_repository.py:21`, not in `pyproject.toml`). Only needed when `FACE_EMBEDDING_FERNET_KEY` is set.
-- **Initial admin from env**: `storage_manager.py:23-24` reads `ADMIN_USERNAME`/`ADMIN_PASSWORD` with fallback `"admin"`/`"admin"`.
-- `CAMERA_INDEX=` (empty string) must be handled as missing — `_resolve_camera_index` at `main.py:79`.
-- **`_crop_face` scale varies by use case** — enrollment uses `scale=2.7` (liveness), head-pose uses `scale=1.5` (default). Wrong scale silently rejects real users.
-- **Enrollment completion checks `_target_count`**, not `len(_POSE_SEQUENCE)` — controls how many embeddings to capture before enrollment completes.
-- Thresholds from `.env` seed the DB on first run only; subsequent changes go through the settings UI.
-- Anti-spoofing is optional — disabled by `FACE_ANTISPOOF_ENABLED=false`.
-- **`bootstrap.py` does NOT call `load_dotenv()`**, so `DATABASE_PATH` from `.env` is unseen when running `attendance-storage-init`. The CLI default is used instead.
-- Camera frame flipped horizontally (`cv2.flip(frame, 1)`) — mirror-like UX for natural head turns.
-- Head pose model missing → graceful fallback to legacy enrollment. `main.py:188-201`.
-- `main()` accepts optional `argv` list for testability — do not call `sys.argv` directly in tests.
-- **Test mock `_make_face()` in `test_head_pose_enrollment.py` uses `confidence=0`** — masks landmark-index bugs; use `confidence=0.99` and realistic landmarks in new tests.
+**Critical (agent will miss these):**
+- **onnxruntime must be imported BEFORE PyQt5**: both `main.py` and `conftest.py` order this first. On Windows both load conflicting native DLLs.
+- **`cv2.data` must be explicitly imported**: `import cv2.data` in `camera_thread.py:11` — not auto-loaded on all platforms.
+- **`bootstrap.py` does NOT call `load_dotenv()`**: `DATABASE_PATH` from `.env` is invisible. Use `--database-path` CLI arg or `os.getenv("DATABASE_PATH")` fallback in `bootstrap.py:25` instead.
+- **`CAMERA_INDEX=` empty string** must be treated as missing — `_resolve_camera_index` in `main.py`.
+- **FaceReferenceRepository._cache_all**: class-level `dict[str, list[dict]]` keyed by DB path. `get_all()` reads cache; `upsert()` and `delete_by_user_id()` call `_invalidate_cache()`. Any new write path must invalidate or cache returns stale rows.
+- **`_crop_face` scale**: attendance/enrollment liveness uses `scale=2.7`, head-pose uses `1.5` (default). Wrong scale silently rejects real users.
+
+**Threading & data safety:**
+- **QImage cross-thread emit needs `.copy()`**: `QImage` from external buffer is non-owning. Qt queued connections use shallow copy (implicit sharing). Always `.copy()` before emitting across threads.
+- **submit_task() array ownership differs**: `AIWorker.submit_task()` expects pre-copied arrays. `EnrollmentAIWorker.submit_task()` copies arrays internally.
+- **Enrollment frame is flipped** (`cv2.flip`), attendance frame is not.
+- **Circuit breaker**: 30 consecutive ONNX failures → `camera_error` signal → thread terminates. Counter resets on success. ADR at `docs/adr/0001-onnx-circuit-breaker.md`.
+- **Camera retries**: exponential backoff (1s, 2s, 4s, max 3). After 3 failures, `camera_error` emitted and thread stops.
+
+**Enrollment-specific:**
+- **Head pose model missing** → graceful fallback to legacy enrollment (`_handle_legacy_frame` in `enrollment_camera_thread.py`).
+- **Enrollment completion** checks `_target_count` (5 embeddings), not `len(_POSE_SEQUENCE)`.
+- **Test mock `_make_face()`** in `test_head_pose_enrollment.py` uses `confidence=0` (index 4 of 15-element row) — masks landmark-index bugs. Use `confidence=0.99` + realistic landmarks in new tests.
+
+**Other:**
+- `cryptography` is soft-dep: lazy import in `face_reference_repository.py:_get_fernet`. Only needed when `FACE_EMBEDDING_FERNET_KEY` is set.
+- Initial admin from env: `ADMIN_USERNAME` / `ADMIN_PASSWORD`, fallback `"admin"`/`"admin"`.
+- Thresholds from `.env` seed DB on first run only; subsequent changes go through settings UI.
+- Anti-spoofing is optional (`FACE_ANTISPOOF_ENABLED=false`).

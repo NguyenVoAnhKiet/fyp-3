@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import cv2
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
@@ -54,7 +53,6 @@ class AdminDashboardView(QWidget):
         face_recognizer: FaceRecognizer,
         head_pose_estimator: HeadPoseEstimator | None,
         detector_model_path: Path | None = None,
-        detector: cv2.FaceDetectorYN | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -64,7 +62,6 @@ class AdminDashboardView(QWidget):
         self._face_recognizer = face_recognizer
         self._head_pose_estimator = head_pose_estimator
         self._detector_model_path = detector_model_path
-        self._detector = detector
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -187,7 +184,6 @@ class AdminDashboardView(QWidget):
             settings_service=self._settings_service,
             head_pose_estimator=self._head_pose_estimator,
             detector_model_path=self._detector_model_path,
-            detector=self._detector,
             parent=self
         )
         enrollment_layout.addWidget(self._enrollment_widget)
