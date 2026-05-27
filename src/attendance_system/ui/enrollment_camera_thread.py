@@ -7,7 +7,7 @@ from typing import Any, NamedTuple
 
 import cv2
 import numpy as np
-from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtCore import QThread, Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPainter, QColor, QFont
 
 from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
@@ -48,6 +48,7 @@ class EnrollmentCameraThread(QThread):
     camera_error = pyqtSignal(str)
     enrollment_complete = pyqtSignal(np.ndarray)
     inference_warning = pyqtSignal(str)
+    sample_captured = pyqtSignal(int)  # current count after capture
 
     def __init__(
         self,
@@ -85,6 +86,8 @@ class EnrollmentCameraThread(QThread):
         self._angles_text = "-"
         self._hold_text = ""
         self._guidance_text = ""
+        self._last_success_time: float = 0.0
+        self._current_face_bbox: tuple[int, int, int, int] | None = None
 
         if self._head_pose_estimator is not None:
             self._enrollment_ai_worker = EnrollmentAIWorker(
@@ -160,6 +163,8 @@ class EnrollmentCameraThread(QThread):
         self._capture_in_progress = False
         self._consecutive_failures = 0
         self._frame_counter = 0
+        self._last_success_time = 0.0
+        self._current_face_bbox = None
         self._sync_progress()
 
         # Start EnrollmentAIWorker (created in __init__)
@@ -189,6 +194,7 @@ class EnrollmentCameraThread(QThread):
                 idx = int(np.argmax(faces[:, 2] * faces[:, 3]))
                 face = faces[idx]
                 x, y, w_face, h_face = face[:4].astype(int)
+                self._current_face_bbox = (x, y, w_face, h_face)
 
                 if self._head_pose_estimator is None:
                     self._handle_legacy_frame(frame, frame_rgb, face, x, y, w_face, h_face)
@@ -202,6 +208,7 @@ class EnrollmentCameraThread(QThread):
                 self._angles_text = "-"
                 self._hold_text = ""
                 self._guidance_text = "Đưa khuôn mặt vào khung"
+                self._current_face_bbox = None
 
             qimg = self._draw_status(frame_rgb)
             self._emit_frame(qimg)
@@ -271,6 +278,8 @@ class EnrollmentCameraThread(QThread):
                 emb = self._face_recognizer.get_embedding(frame_bgr, face)
                 if emb is not None:
                     self._captured_embeddings.append(emb)
+                    self._last_success_time = time.monotonic()
+                    self.sample_captured.emit(len(self._captured_embeddings))
                     self._last_capture_time = now
                     self._status_text = "Đã chụp!"
                     self._angles_text = "-"
@@ -354,6 +363,8 @@ class EnrollmentCameraThread(QThread):
 
         if success and embedding is not None:
             self._captured_embeddings.append(embedding)
+            self._last_success_time = time.monotonic()
+            self.sample_captured.emit(len(self._captured_embeddings))
             self._last_capture_time = time.monotonic()
             self._current_pose_index += 1
             self._pose_hold_counter = 0
@@ -431,7 +442,36 @@ class EnrollmentCameraThread(QThread):
         painter = QPainter(qimg)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.TextAntialiasing)
-        
+
+        # --- Success effects ---
+        elapsed = time.monotonic() - self._last_success_time
+        is_final = len(self._captured_embeddings) >= self._target_count
+
+        # Flash effect: white overlay with decaying alpha over 200ms
+        if 0 < elapsed <= 0.2:
+            flash_alpha = int(255 * 0.4 * (1.0 - elapsed / 0.2))
+            painter.fillRect(0, 0, w, h, QColor(255, 255, 255, flash_alpha))
+
+        # Checkmark / final effect: lasts 800ms
+        if 0 < elapsed <= 0.8 and self._current_face_bbox is not None:
+            x, y, fw, fh = self._current_face_bbox
+
+            if is_final:
+                # Green tint overlay + big completion text
+                painter.fillRect(0, 0, w, h, QColor(0, 255, 0, 25))
+                font_big = QFont("Arial", 36, QFont.Bold)
+                painter.setFont(font_big)
+                painter.setPen(QColor(0, 255, 0))
+                painter.drawText(0, 0, w, h, Qt.AlignmentFlag.AlignCenter, "🎉 Hoàn tất!")
+            else:
+                # Green checkmark at top-right of face bbox
+                check_size = int(48 * min(1.0, elapsed / 0.2))  # scale 0→1 over 200ms
+                font_check = QFont("Arial", max(1, check_size), QFont.Bold)
+                painter.setFont(font_check)
+                painter.setPen(QColor(0, 255, 0))
+                painter.drawText(x + fw - check_size, y - 8, "✓")
+
+        # --- Status text ---
         def draw_text_with_shadow(text, x, y, size, bold=False):
             font = QFont("Arial", size)
             if bold:

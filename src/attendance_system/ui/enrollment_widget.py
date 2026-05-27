@@ -19,6 +19,9 @@ from PyQt5.QtWidgets import (
     QMessageBox,
 )
 
+from PyQt5.QtCore import QPropertyAnimation, QTimer
+from PyQt5.QtWidgets import QGraphicsOpacityEffect
+
 from attendance_system.ui.constants import FONT_BODY, FONT_TITLE
 from attendance_system.repositories.user_repository import UserRepository
 from attendance_system.services.enrollment_service import EnrollmentService
@@ -98,11 +101,18 @@ class EnrollmentWidget(QWidget):
         self._camera_label.setStyleSheet("background-color: black; color: white; border-radius: 8px;")
         layout.addWidget(self._camera_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        # Progress Bar for capture
+        # Progress dots
         progress_layout = QVBoxLayout()
-        self._progress_label = QLabel(f"Tiến trình: 0/{_TARGET_CAPTURE_COUNT} ảnh")
-        self._progress_label.setFont(FONT_BODY)
-        progress_layout.addWidget(self._progress_label)
+        self._dots_layout = QHBoxLayout()
+        self._dots_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._progress_dots: list[QLabel] = []
+        for _ in range(_TARGET_CAPTURE_COUNT):
+            dot = QLabel()
+            dot.setFixedSize(24, 24)
+            dot.setStyleSheet("background-color: #D0D0D0; border-radius: 12px;")
+            self._progress_dots.append(dot)
+            self._dots_layout.addWidget(dot)
+        progress_layout.addLayout(self._dots_layout)
 
         self._angles_label = QLabel("Góc: -")
         self._angles_label.setFont(FONT_BODY)
@@ -118,6 +128,26 @@ class EnrollmentWidget(QWidget):
         self._progress_bar.setTextVisible(False)
         self._progress_bar.setFixedHeight(10)
         progress_layout.addWidget(self._progress_bar)
+
+        # Notification label (hidden by default)
+        self._notification_label = QLabel()
+        self._notification_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._notification_label.setStyleSheet(
+            "background-color: #27AE60; color: white; border-radius: 8px; "
+            "font-weight: bold; padding: 6px;"
+        )
+        self._opacity_effect = QGraphicsOpacityEffect()
+        self._opacity_effect.setOpacity(0.0)
+        self._notification_label.setGraphicsEffect(self._opacity_effect)
+        self._notification_label.setFixedHeight(32)
+        self._notification_label.hide()
+        progress_layout.addWidget(self._notification_label)
+
+        # Fade animation
+        self._notif_anim = QPropertyAnimation(self._opacity_effect, b"opacity")
+        self._notif_anim.setDuration(200)
+        self._notif_timer: QTimer | None = None
+
         layout.addLayout(progress_layout)
 
         # Controls
@@ -198,6 +228,8 @@ class EnrollmentWidget(QWidget):
         self._camera_thread.enrollment_complete.connect(self._handle_complete)
         self._camera_thread.camera_error.connect(self._handle_error)
         self._camera_thread.inference_warning.connect(self._handle_inference_warning)
+        self._camera_thread.sample_captured.connect(self._on_sample_captured)
+        self._reset_dots()
         
         self._camera_thread.start()
         
@@ -215,6 +247,7 @@ class EnrollmentWidget(QWidget):
         self._camera_label.clear()
         self._camera_label.setText("Camera Feed")
         self.set_progress(0)
+        self._reset_dots()
         
         # Reset UI state
         self._start_btn.setEnabled(True)
@@ -240,19 +273,38 @@ class EnrollmentWidget(QWidget):
         if total > 0:
             self._progress_bar.setMaximum(total)
         self._progress_bar.setValue(current)
-        if pose_label:
-            self._progress_label.setText(f"Tiến trình: {current}/{total} ảnh - {pose_label}")
-        else:
-            self._progress_label.setText(f"Tiến trình: {current}/{total} ảnh")
         self._angles_label.setText(f"Góc: {angles_text or '-'}")
         guidance = guidance_text or hold_text or "-"
         self._guidance_label.setText(f"Hướng dẫn: {guidance}")
 
+    def _reset_dots(self) -> None:
+        """Reset all progress dots to gray."""
+        for dot in self._progress_dots:
+            dot.setStyleSheet("background-color: #D0D0D0; border-radius: 12px;")
+        self._notification_label.hide()
+
+    def _fade_notification(self) -> None:
+        """Fade out the notification label."""
+        self._notif_anim.setDuration(300)
+        self._notif_anim.setStartValue(1.0)
+        self._notif_anim.setEndValue(0.0)
+        try:
+            self._notif_anim.finished.disconnect()
+        except TypeError:
+            pass
+        self._notif_anim.finished.connect(self._notification_label.hide)
+        self._notif_anim.start()
+
     @pyqtSlot(np.ndarray)
     def _handle_complete(self, avg_embedding: np.ndarray) -> None:
+        """Finalize enrollment after success effect plays."""
         user_id = self._user_dropdown.currentData()
+        # Delay final save + dialog by 1.5s so success effect is visible
+        QTimer.singleShot(1500, lambda: self._finalize_enrollment(user_id, avg_embedding))
+
+    def _finalize_enrollment(self, user_id: int, avg_embedding: np.ndarray) -> None:
+        """Save embedding and show result (called after success effect)."""
         try:
-            # Save embedding
             self._enroll_service.save_face_reference(
                 user_id=user_id,
                 embedding=avg_embedding.tobytes(),
@@ -271,6 +323,47 @@ class EnrollmentWidget(QWidget):
         """Show a temporary inference warning without stopping enrollment."""
         self._guidance_label.setText(f"Hướng dẫn: {message}")
         # Previous guidance will be overwritten by the next capture_progress signal
+
+    @pyqtSlot(int)
+    def _on_sample_captured(self, count: int) -> None:
+        """Animate dot and notification on successful capture."""
+        # Cancel pending fade timer from previous sample
+        if self._notif_timer is not None:
+            self._notif_timer.stop()
+            self._notif_timer = None
+        try:
+            self._notif_anim.finished.disconnect()
+        except TypeError:
+            pass
+
+        idx = count - 1  # 0-based index
+        if 0 <= idx < len(self._progress_dots):
+            # Update dot to green
+            self._progress_dots[idx].setStyleSheet(
+                "background-color: #2ECC71; border-radius: 12px;"
+            )
+
+        # Update notification
+        self._notification_label.show()
+        self._opacity_effect.setOpacity(0.0)
+
+        if count >= _TARGET_CAPTURE_COUNT:
+            self._notification_label.setText("🎉 Hoàn tất! 5/5 ảnh")
+            self._notif_anim.setDuration(400)
+            self._notif_anim.setStartValue(0.0)
+            self._notif_anim.setEndValue(1.0)
+            self._notif_anim.start()
+        else:
+            self._notification_label.setText(f"📸 Mẫu {count}/{_TARGET_CAPTURE_COUNT} thành công!")
+            self._notif_anim.setDuration(200)
+            self._notif_anim.setStartValue(0.0)
+            self._notif_anim.setEndValue(1.0)
+            self._notif_anim.start()
+            # Auto-hide after 1.5s
+            self._notif_timer = QTimer(self)
+            self._notif_timer.setSingleShot(True)
+            self._notif_timer.timeout.connect(self._fade_notification)
+            self._notif_timer.start(1500)
 
     @pyqtSlot(str)
     def _handle_error(self, message: str) -> None:
