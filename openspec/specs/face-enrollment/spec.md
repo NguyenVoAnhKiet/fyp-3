@@ -17,20 +17,20 @@ The system SHALL display visual guidance on the camera feed during enrollment to
 
 #### Scenario: User is capturing face
 - **WHEN** the enrollment camera is active
-- **THEN** text overlays like "Nhìn thẳng" or "Xoay nhẹ trái/phải" are displayed
+- **THEN** text overlays like "Chính diện", "Quay phải", "Quay trái", "Ngửa lên", and "Cúi xuống" are displayed in the required order
 
-### Requirement: Auto-capture High Quality Faces
-The system SHALL automatically capture frames only when the face passes the liveness check and meets a detection confidence threshold. It MUST buffer 3-5 such frames.
+### Requirement: Pose-specific capture for enrollment
+The system SHALL collect five pose-specific face embeddings per user and store them separately rather than averaging them into a single embedding.
 
-#### Scenario: Face is steady and passes liveness
-- **WHEN** the user's face is steady and passes the MiniFASNet liveness detection
-- **THEN** the system automatically captures a frame until 3-5 frames are buffered
+#### Scenario: All required poses are captured
+- **WHEN** the required five pose captures complete successfully
+- **THEN** the system persists one embedding per pose label
+- **AND** the user is marked as enrolled only after all five pose references are saved
 
-### Requirement: Generate and Save Average Embedding
-The system SHALL compute an average embedding from the buffered frames and save it to the database, marking the user as enrolled.
+### Requirement: Replace full pose set on re-enrollment
+The system SHALL replace all existing face references for a user when re-enrollment succeeds.
 
-#### Scenario: Buffering complete
-- **WHEN** the required number of high-quality frames (3-5) are captured
-- **THEN** the system calculates the average embedding
-- **AND** the embedding is saved via `EnrollmentService`
-- **AND** the `face_registered` column is set to `1` in the `users` table
+#### Scenario: Re-enrollment completes
+- **WHEN** the admin re-enrolls a user and all five pose captures succeed
+- **THEN** the system deletes the previous pose references for that user
+- **AND** stores the new five pose references in a single transaction

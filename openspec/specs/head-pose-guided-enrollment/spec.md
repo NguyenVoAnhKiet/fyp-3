@@ -1,7 +1,7 @@
 ## Requirements
 
 ### Requirement: Pose-guided enrollment sequence
-When head pose guidance is enabled, the enrollment flow SHALL require the user to complete five poses in order before enrollment can finish: frontal, left tilt, right tilt, tilt up, and tilt down.
+When head pose guidance is enabled, the enrollment flow SHALL require the user to complete five poses in order before enrollment can finish: frontal, right turn, left turn, tilt up, and tilt down.
 
 #### Scenario: Sequence starts at frontal pose
 - **WHEN** an admin starts a new enrollment session with head pose guidance enabled
@@ -43,6 +43,17 @@ Even when pose hold criteria are met, the system MUST only accept a capture if e
 #### Scenario: Pose matched but embedding extraction fails
 - **WHEN** the pose hold requirement is satisfied but embedding extraction fails
 - **THEN** the system rejects the capture and keeps the session on the same required pose
+
+### Requirement: Real-time enrollment guidance
+The enrollment UI SHALL display the active required pose, current pose progress, and directional guidance derived from angle error while head pose guidance is enabled.
+
+#### Scenario: Guidance shown for incorrect pose
+- **WHEN** current yaw/pitch indicates the user is not in the required pose
+- **THEN** the system shows corrective guidance indicating the adjustment direction
+
+#### Scenario: Holding feedback shown for correct pose
+- **WHEN** current yaw/pitch matches the required pose
+- **THEN** the system shows hold progress feedback until capture is attempted
 
 ### Requirement: Real-time enrollment guidance
 The enrollment UI SHALL display the active required pose, current pose progress, and directional guidance derived from angle error while head pose guidance is enabled.
