@@ -318,7 +318,7 @@ class UserModeView(QWidget):
     def _make_stat_card(self, label: str, colour: str) -> QFrame:
         card = QFrame()
         card.setStyleSheet(
-            f"background: {BG_CARD}; border: 1px solid {BORDER}; border-radius: 10px;"
+            f"background: {BG_CARD}; border: none; border-radius: 10px;"
         )
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(12, 10, 12, 10)

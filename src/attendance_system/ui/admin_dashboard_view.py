@@ -289,7 +289,6 @@ class AdminDashboardView(QWidget):
             f"""
             QFrame {{
                 background-color: {BG_CARD};
-                border: 1px solid rgba(226, 232, 240, 0.9);
                 border-radius: 12px;
             }}
             """
