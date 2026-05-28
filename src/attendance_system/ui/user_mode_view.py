@@ -229,12 +229,6 @@ class UserModeView(QWidget):
         title.setStyleSheet(f"color: {TEXT_PRIMARY};")
         top_row.addWidget(title)
         top_row.addStretch(1)
-
-        self._active_badge = QLabel("⏺ ACTIVE")
-        self._active_badge.setStyleSheet(
-            f"background: {STATUS_SUCCESS}; color: white; border-radius: 999px; padding: 4px 12px; font-weight: 700;"
-        )
-        top_row.addWidget(self._active_badge)
         header_layout.addLayout(top_row)
 
         self._session_info_label = QLabel("")
