@@ -43,7 +43,7 @@ class AIWorker(QThread):
     Worker QThread that performs anti-spoofing and face recognition on a background thread.
     Uses a queue of size 1 for backpressure.
     """
-    recognition_result = pyqtSignal(str, int, str, float, object)
+    recognition_result = pyqtSignal(str, int, str, float, object, str)
     inference_warning = pyqtSignal(str)
     camera_error = pyqtSignal(str)
 
@@ -132,13 +132,13 @@ class AIWorker(QThread):
             self._consecutive_failures = 0
 
             if not liveness.is_real:
-                self.recognition_result.emit("spoof", 0, "", liveness.score, None)
+                self.recognition_result.emit("spoof", 0, "", liveness.score, None, "")
                 continue
 
             # Step 2 — Recognition (SFace)
             match = self._face_recognizer.identify(frame_bgr, face_row, self._similarity_threshold)
             if match is None:
-                self.recognition_result.emit("unrecognized", 0, "", liveness.score, 0.0)
+                self.recognition_result.emit("unrecognized", 0, "", liveness.score, 0.0, "")
                 continue
 
             # Per-user cooldown to avoid flooding the DB
@@ -148,7 +148,8 @@ class AIWorker(QThread):
             self._last_recognized[match.user_id] = now
 
             self.recognition_result.emit(
-                "success", match.user_id, match.full_name, liveness.score, match.similarity
+                "success", match.user_id, match.full_name, liveness.score, match.similarity,
+                match.matched_pose_label,
             )
 
     def stop(self) -> None:
@@ -191,7 +192,7 @@ class CameraThread(QThread):
     """
 
     frame_ready = pyqtSignal(QImage)
-    recognition_result = pyqtSignal(str, int, str, float, object)
+    recognition_result = pyqtSignal(str, int, str, float, object, str)
     camera_error = pyqtSignal(str)
     inference_warning = pyqtSignal(str)
 
@@ -452,6 +453,7 @@ class CameraThread(QThread):
         full_name: str,
         liveness_score: float,
         similarity_score: Any,
+        matched_pose_label: str = "",
     ) -> None:
         self._current_result_type = result_type
         self._current_result_name = full_name
@@ -466,4 +468,4 @@ class CameraThread(QThread):
             self._bbox_color = _COLOR_UNKNOWN
 
         self._result_hold_counter = _RESULT_HOLD_FRAMES
-        self.recognition_result.emit(result_type, user_id, full_name, liveness_score, similarity_score)
+        self.recognition_result.emit(result_type, user_id, full_name, liveness_score, similarity_score, matched_pose_label)

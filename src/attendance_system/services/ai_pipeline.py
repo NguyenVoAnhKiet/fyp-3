@@ -32,6 +32,7 @@ class RecognitionResult(NamedTuple):
     full_name: str
     student_id: str
     similarity: float
+    matched_pose_label: str = ""
 
 
 class LivenessChecker:
@@ -285,9 +286,12 @@ class FaceRecognizer:
         if user is None:
             return None
 
+        matched_pose_label = str(best_ref.get("pose_label", ""))
+
         return RecognitionResult(
             user_id=int(best_ref["user_id"]),
             full_name=str(user["full_name"]),
             student_id=str(user["student_id"]),
             similarity=best_sim,
+            matched_pose_label=matched_pose_label,
         )

@@ -517,6 +517,7 @@ class UserModeView(QWidget):
         full_name: str,
         liveness_score: float,
         similarity_score: float | None,
+        matched_pose_label: str = "",
     ) -> None:
         if self._session_id is None:
             return
@@ -524,6 +525,7 @@ class UserModeView(QWidget):
         now = utc_now_iso()
 
         if result_type == "success":
+            details = f"matched_pose={matched_pose_label}" if matched_pose_label else None
             try:
                 self._attendance.record_success(
                     session_id=self._session_id,
@@ -531,11 +533,12 @@ class UserModeView(QWidget):
                     event_time=now,
                     liveness_score=liveness_score,
                     similarity_score=similarity_score,
+                    details=details,
                 )
                 self._add_to_sidebar(full_name, now)
                 self._stats_success += 1
             except Exception:
-                self._attendance.record_duplicate(self._session_id, user_id, now)
+                self._attendance.record_duplicate(self._session_id, user_id, now, details=details)
 
         elif result_type == "spoof":
             self._attendance.record_spoof_warning(

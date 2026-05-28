@@ -27,6 +27,7 @@ class _PoseTarget(NamedTuple):
     name: str
     pitch: float
     yaw: float
+    storage_label: str
 
 _MAX_CONSECUTIVE_FAILURES = 30  # kill thread if 30 frames in a row fail inference
 _READ_RETRY_DELAYS = [1.0, 2.0, 4.0]  # exponential backoff seconds between retries
@@ -34,19 +35,21 @@ _MAX_READ_RETRIES = 3
 
 logger = logging.getLogger(__name__)
 
+# Outside-world pose order: center (frontal), right, left, up, down.
+# storage_label matches the DB pose_label values.
 _POSE_SEQUENCE = [
-    _PoseTarget("Chính diện", 0, 0),
-    _PoseTarget("Nghiêng trái", 0, -30),  # Model outputs negative yaw when user turns left
-    _PoseTarget("Nghiêng phải", 0, 30),   # Model outputs positive yaw when user turns right
-    _PoseTarget("Ngửa lên", 20, 0),
-    _PoseTarget("Cúi xuống", -20, 0),
+    _PoseTarget("Chính diện", 0, 0, "center"),
+    _PoseTarget("Nghiêng phải", 0, 30, "right"),
+    _PoseTarget("Nghiêng trái", 0, -30, "left"),
+    _PoseTarget("Ngửa lên", 20, 0, "up"),
+    _PoseTarget("Cúi xuống", -20, 0, "down"),
 ]
 
 class EnrollmentCameraThread(QThread):
     frame_ready = pyqtSignal(QImage)
     capture_progress = pyqtSignal(int, int, str, str, str, str)
     camera_error = pyqtSignal(str)
-    enrollment_complete = pyqtSignal(np.ndarray)
+    enrollment_complete = pyqtSignal(dict)  # dict[str, np.ndarray] — pose_label -> embedding
     inference_warning = pyqtSignal(str)
     sample_captured = pyqtSignal(int)  # current count after capture
 
@@ -75,7 +78,7 @@ class EnrollmentCameraThread(QThread):
         self._capture_cooldown = capture_cooldown
 
         self._running = False
-        self._captured_embeddings: list[np.ndarray] = []
+        self._captured_embeddings_by_pose: dict[str, np.ndarray] = {}
         self._current_pose_index = 0
         self._pose_hold_counter = 0
         self._last_capture_time = 0.0
@@ -156,7 +159,7 @@ class EnrollmentCameraThread(QThread):
         self._detector.setInputSize((w, h))
 
         self._running = True
-        self._captured_embeddings = []
+        self._captured_embeddings_by_pose = {}
         self._current_pose_index = 0
         self._pose_hold_counter = 0
         self._last_capture_time = 0.0
@@ -244,7 +247,7 @@ class EnrollmentCameraThread(QThread):
         now = time.monotonic()
         if (
             now - self._last_capture_time > self._capture_cooldown
-            and len(self._captured_embeddings) < self._target_count
+            and len(self._captured_embeddings_by_pose) < self._target_count
         ):
             face_crop = _crop_face(frame_rgb, (x, y, w_face, h_face), scale=2.7)
             try:
@@ -277,17 +280,17 @@ class EnrollmentCameraThread(QThread):
             if liveness.is_real:
                 emb = self._face_recognizer.get_embedding(frame_bgr, face)
                 if emb is not None:
-                    self._captured_embeddings.append(emb)
+                    pose_label = _POSE_SEQUENCE[len(self._captured_embeddings_by_pose) % len(_POSE_SEQUENCE)].storage_label
+                    self._captured_embeddings_by_pose[pose_label] = emb
                     self._last_success_time = time.monotonic()
-                    self.sample_captured.emit(len(self._captured_embeddings))
+                    self.sample_captured.emit(len(self._captured_embeddings_by_pose))
                     self._last_capture_time = now
                     self._status_text = "Đã chụp!"
                     self._angles_text = "-"
                     self._hold_text = ""
                     self._guidance_text = "Tiếp tục giữ khuôn mặt ổn định"
-                    if len(self._captured_embeddings) >= self._target_count:
-                        avg_emb = self._face_recognizer.average_embeddings(self._captured_embeddings)
-                        self.enrollment_complete.emit(avg_emb)
+                    if len(self._captured_embeddings_by_pose) >= self._target_count:
+                        self.enrollment_complete.emit(self._captured_embeddings_by_pose)
                         self._status_text = "Hoàn tất!"
                 else:
                     self._status_text = "Cảnh báo: Không trích xuất được embedding"
@@ -362,16 +365,16 @@ class EnrollmentCameraThread(QThread):
         target = _POSE_SEQUENCE[self._current_pose_index % len(_POSE_SEQUENCE)]
 
         if success and embedding is not None:
-            self._captured_embeddings.append(embedding)
+            pose_label = target.storage_label
+            self._captured_embeddings_by_pose[pose_label] = embedding
             self._last_success_time = time.monotonic()
-            self.sample_captured.emit(len(self._captured_embeddings))
+            self.sample_captured.emit(len(self._captured_embeddings_by_pose))
             self._last_capture_time = time.monotonic()
             self._current_pose_index += 1
             self._pose_hold_counter = 0
 
-            if len(self._captured_embeddings) >= self._target_count:
-                avg_emb = self._face_recognizer.average_embeddings(self._captured_embeddings)
-                self.enrollment_complete.emit(avg_emb)
+            if len(self._captured_embeddings_by_pose) >= self._target_count:
+                self.enrollment_complete.emit(self._captured_embeddings_by_pose)
                 self._status_text = "Hoàn tất!"
                 self._hold_text = f"Giữ: {_HOLD_FRAMES}/{_HOLD_FRAMES}"
                 self._guidance_text = "Đã hoàn tất chuỗi tư thế"
@@ -427,7 +430,7 @@ class EnrollmentCameraThread(QThread):
 
     def _sync_progress(self) -> None:
         self.capture_progress.emit(
-            len(self._captured_embeddings),
+            len(self._captured_embeddings_by_pose),
             self._target_count,
             self._status_text,
             self._angles_text,
@@ -445,7 +448,7 @@ class EnrollmentCameraThread(QThread):
 
         # --- Success effects ---
         elapsed = time.monotonic() - self._last_success_time
-        is_final = len(self._captured_embeddings) >= self._target_count
+        is_final = len(self._captured_embeddings_by_pose) >= self._target_count
 
         # Flash effect: white overlay with decaying alpha over 200ms
         if 0 < elapsed <= 0.2:

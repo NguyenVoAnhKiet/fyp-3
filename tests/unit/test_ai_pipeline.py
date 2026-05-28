@@ -153,19 +153,20 @@ def test_identify_no_refs(mock_sface_create, database):
 
 @patch("cv2.FaceRecognizerSF.create")
 def test_identify_match_success(mock_sface_create, database):
-    """identify() should return RecognitionResult on match."""
-    # 1. Setup DB: user + face reference
+    """identify() should return RecognitionResult on match with pose label."""
+    # 1. Setup DB: user + pose-specific face references
     from attendance_system.repositories.user_repository import UserRepository
-    from attendance_system.repositories.face_reference_repository import FaceReferenceRepository
+    from attendance_system.repositories.face_reference_repository import FaceReferenceRepository, POSE_LABELS
     
     user_repo = UserRepository(database)
     u_id = user_repo.create("S001", "Alice")
     
     face_repo = FaceReferenceRepository(database)
-    # Embedding: [1, 0, 0, ...]
+    # Embedding: [1, 0, 0, ...] for all poses
     emb = np.zeros(128, dtype=np.float32)
     emb[0] = 1.0
-    face_repo.upsert(u_id, emb.tobytes(), "SFace", 128)
+    pose_embeddings = {pose: emb.tobytes() for pose in POSE_LABELS}
+    face_repo.replace_all(u_id, pose_embeddings, "SFace", 128)
     
     # 2. Mock SFace
     mock_sface = MagicMock()
@@ -183,19 +184,21 @@ def test_identify_match_success(mock_sface_create, database):
     assert result.user_id == u_id
     assert result.full_name == "Alice"
     assert result.similarity == 1.0
+    assert result.matched_pose_label in POSE_LABELS
 
 
 @patch("cv2.FaceRecognizerSF.create")
 def test_identify_below_threshold(mock_sface_create, database):
     """identify() should return None if similarity < threshold."""
     from attendance_system.repositories.user_repository import UserRepository
-    from attendance_system.repositories.face_reference_repository import FaceReferenceRepository
+    from attendance_system.repositories.face_reference_repository import FaceReferenceRepository, POSE_LABELS
     
     u_id = UserRepository(database).create("S001", "Alice")
     # Stored: [1, 0, 0, ...]
     stored_emb = np.zeros(128, dtype=np.float32)
     stored_emb[0] = 1.0
-    FaceReferenceRepository(database).upsert(u_id, stored_emb.tobytes(), "SFace", 128)
+    pose_embeddings = {pose: stored_emb.tobytes() for pose in POSE_LABELS}
+    FaceReferenceRepository(database).replace_all(u_id, pose_embeddings, "SFace", 128)
     
     # Mock live embedding: [0, 1, 0, ...] (similarity = 0.0)
     live_emb = np.zeros(128, dtype=np.float32)

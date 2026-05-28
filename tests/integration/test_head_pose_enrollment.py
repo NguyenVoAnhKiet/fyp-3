@@ -29,7 +29,6 @@ def test_pose_sequence_advances_on_success(mock_detector_create) -> None:
     head_pose = MagicMock()
     liveness = MagicMock()
     recognizer = MagicMock()
-    recognizer.average_embeddings.return_value = np.ones(128, dtype=np.float32)
 
     thread = EnrollmentCameraThread(
         camera_index=0,
@@ -39,7 +38,11 @@ def test_pose_sequence_advances_on_success(mock_detector_create) -> None:
         detector_model_path=Path("fake.onnx"),
     )
     thread._current_pose_index = 0
-    thread._captured_embeddings = [np.ones(128, dtype=np.float32)] * 4  # 4 of 5 done
+    from attendance_system.ui.enrollment_camera_thread import _POSE_SEQUENCE
+    thread._captured_embeddings_by_pose = {
+        _POSE_SEQUENCE[i].storage_label: np.ones(128, dtype=np.float32)
+        for i in range(4)
+    }
 
     # Call the signal handler directly (simulates EnrollmentAIWorker completing capture)
     emb = np.ones(128, dtype=np.float32)
@@ -99,7 +102,7 @@ def test_legacy_fallback_keeps_old_flow(mock_detector_create) -> None:
 
     thread._handle_legacy_frame(frame, frame_rgb, _make_face(), 100, 100, 160, 160)
 
-    assert len(thread._captured_embeddings) == 1
+    assert len(thread._captured_embeddings_by_pose) == 1
     assert thread._current_pose_index == 0
 
 
@@ -168,7 +171,6 @@ def test_enrollment_succeeds_without_liveness(mock_detector_create) -> None:
     head_pose = MagicMock()
     liveness = MagicMock()
     recognizer = MagicMock()
-    recognizer.average_embeddings.return_value = np.ones(128, dtype=np.float32)
 
     bypass_liveness = LivenessChecker(None)
 
@@ -179,7 +181,7 @@ def test_enrollment_succeeds_without_liveness(mock_detector_create) -> None:
         head_pose_estimator=head_pose,
         detector_model_path=Path("fake.onnx"),
     )
-    thread._current_pose_index = 1  # "Nghiêng trái"
+    thread._current_pose_index = 1  # "Nghiêng phải"
 
     # Simulate capture completing successfully (liveness bypass means is_real=True always)
     emb = np.ones(128, dtype=np.float32)
@@ -187,7 +189,7 @@ def test_enrollment_succeeds_without_liveness(mock_detector_create) -> None:
 
     # Should advance to next pose
     assert thread._current_pose_index == 2
-    assert len(thread._captured_embeddings) == 1
+    assert len(thread._captured_embeddings_by_pose) == 1
 
 
 @patch("cv2.FaceDetectorYN.create")
@@ -215,7 +217,7 @@ def test_enrollment_liveness_bypass_still_checks_embedding(mock_detector_create)
     thread._on_capture_complete(False, None, 1.0)
 
     assert thread._current_pose_index == 0
-    assert len(thread._captured_embeddings) == 0
+    assert len(thread._captured_embeddings_by_pose) == 0
 
 
 @patch("cv2.FaceDetectorYN.create")
@@ -235,7 +237,7 @@ def test_pose_sequence_yaw_sign_convention(mock_detector_create) -> None:
 
 @patch("cv2.FaceDetectorYN.create")
 def test_enrollment_accepts_correct_yaw_direction(mock_detector_create) -> None:
-    """Enrollment should accept user turning left when asked to turn left (negative yaw)."""
+    """Enrollment should accept user turning right when asked to turn right (positive yaw)."""
     detector = MagicMock()
     detector.setInputSize.return_value = None
     mock_detector_create.return_value = detector
@@ -243,7 +245,6 @@ def test_enrollment_accepts_correct_yaw_direction(mock_detector_create) -> None:
     head_pose = MagicMock()
     liveness = LivenessChecker(None)
     recognizer = MagicMock()
-    recognizer.average_embeddings.return_value = np.ones(128, dtype=np.float32)
 
     thread = EnrollmentCameraThread(
         camera_index=0,
@@ -252,10 +253,10 @@ def test_enrollment_accepts_correct_yaw_direction(mock_detector_create) -> None:
         head_pose_estimator=head_pose,
         detector_model_path=Path("fake.onnx"),
     )
-    thread._current_pose_index = 1  # "Nghiêng trái" (yaw=-30)
+    thread._current_pose_index = 1  # "Nghiêng phải" (yaw=30)
 
-    # Step 1: pose estimated with matching yaw (-30)
-    thread._on_pose_estimated(0.0, -30.0, 0.0)
+    # Step 1: pose estimated with matching yaw (30)
+    thread._on_pose_estimated(0.0, 30.0, 0.0)
     assert thread._pose_hold_counter == 1  # hold starts building
 
     # After enough hold frames, capture succeeds
@@ -282,11 +283,11 @@ def test_enrollment_rejects_opposite_yaw_direction(mock_detector_create) -> None
         head_pose_estimator=head_pose,
         detector_model_path=Path("fake.onnx"),
     )
-    thread._current_pose_index = 1  # "Nghiêng trái" requires yaw=-30
+    thread._current_pose_index = 1  # "Nghiêng phải" requires yaw=30
     thread._pose_hold_counter = 4
 
-    # Pose estimated with OPPOSITE yaw (+30, right turn instead of left)
-    thread._on_pose_estimated(0.0, 30.0, 0.0)
+    # Pose estimated with OPPOSITE yaw (-30, left turn instead of right)
+    thread._on_pose_estimated(0.0, -30.0, 0.0)
 
     assert thread._current_pose_index == 1
     assert thread._pose_hold_counter == 0

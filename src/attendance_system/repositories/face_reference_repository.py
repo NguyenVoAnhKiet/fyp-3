@@ -10,6 +10,9 @@ from attendance_system.utils.time_utils import utc_now_iso
 from .base_repository import BaseRepository
 
 
+POSE_LABELS: tuple[str, ...] = ("center", "right", "left", "up", "down")
+
+
 class FaceReferenceRepository(BaseRepository):
     # Class-level cache for get_all(), keyed by database path.
     # Invalidated on upsert/delete so that every repository instance
@@ -55,46 +58,104 @@ class FaceReferenceRepository(BaseRepository):
             ).fetchone()
 
     def upsert(
-        self, user_id: int, embedding: bytes, model_name: str, vector_length: int
+        self, user_id: int, embedding: bytes, model_name: str, vector_length: int,
+        pose_label: str = "center",
     ) -> int:
         self.require_positive_int(user_id, "user_id")
         if not isinstance(embedding, bytes) or len(embedding) == 0:
             raise ValueError("embedding must be non-empty bytes")
         self.require_non_empty_text(model_name, "model_name")
         self.require_positive_int(vector_length, "vector_length")
+        if pose_label not in POSE_LABELS:
+            raise ValueError(f"pose_label must be one of {POSE_LABELS}, got {pose_label!r}")
         timestamp = utc_now_iso()
         encrypted_embedding = self._encrypt_embedding(embedding)
         result = self.execute(
             """
-            INSERT INTO face_references(user_id, embedding, model_name, vector_length, created_at)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET
+            INSERT INTO face_references(user_id, embedding, model_name, vector_length, pose_label, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, pose_label) DO UPDATE SET
                 embedding = excluded.embedding,
                 model_name = excluded.model_name,
                 vector_length = excluded.vector_length,
                 created_at = excluded.created_at
             """,
-            (user_id, encrypted_embedding, model_name, vector_length, timestamp),
+            (user_id, encrypted_embedding, model_name, vector_length, pose_label, timestamp),
         )
         self._invalidate_cache(str(self.database.config.path))
         return result
 
-    def get_by_user_id(self, user_id: int) -> sqlite3.Row | None:
+    def get_by_user_id(self, user_id: int) -> list[dict[str, Any]]:
+        """Return all face reference rows for the given user (list of dicts)."""
         self.require_positive_int(user_id, "user_id")
+        rows = self.fetch_all(
+            "SELECT * FROM face_references WHERE user_id = ? ORDER BY pose_label",
+            (user_id,),
+        )
+        if not rows:
+            return []
+        if not self._fernet_key:
+            return [dict(r) for r in rows]
+        result = []
+        for row in rows:
+            decrypted = self._decrypt_embedding(row["embedding"])
+            result.append({**dict(row), "embedding": decrypted})
+        return result
+
+    def get_by_user_id_and_pose(self, user_id: int, pose_label: str) -> sqlite3.Row | None:
+        """Return a single face reference for the given user and pose label."""
+        self.require_positive_int(user_id, "user_id")
+        if pose_label not in POSE_LABELS:
+            raise ValueError(f"pose_label must be one of {POSE_LABELS}, got {pose_label!r}")
         row = self.fetch_one(
-            "SELECT * FROM face_references WHERE user_id = ?", (user_id,)
+            "SELECT * FROM face_references WHERE user_id = ? AND pose_label = ?",
+            (user_id, pose_label),
         )
         if row is None or not self._fernet_key:
             return row
         decrypted_embedding = self._decrypt_embedding(row["embedding"])
         return self._dict_to_row({**dict(row), "embedding": decrypted_embedding})
 
+    def replace_all(
+        self,
+        user_id: int,
+        pose_embeddings: dict[str, bytes],
+        model_name: str,
+        vector_length: int,
+    ) -> None:
+        """Atomically delete all existing references for a user and insert the five pose rows."""
+        self.require_positive_int(user_id, "user_id")
+        self.require_non_empty_text(model_name, "model_name")
+        self.require_positive_int(vector_length, "vector_length")
+        if set(pose_embeddings.keys()) != set(POSE_LABELS):
+            raise ValueError(
+                f"pose_embeddings must contain exactly all five pose labels: {POSE_LABELS}. "
+                f"Got: {set(pose_embeddings.keys())}"
+            )
+        for pose, emb in pose_embeddings.items():
+            if not isinstance(emb, bytes) or len(emb) == 0:
+                raise ValueError(f"embedding for pose {pose!r} must be non-empty bytes")
+
+        timestamp = utc_now_iso()
+        with self.connection() as conn:
+            conn.execute("DELETE FROM face_references WHERE user_id = ?", (user_id,))
+            for pose_label in POSE_LABELS:
+                encrypted = self._encrypt_embedding(pose_embeddings[pose_label])
+                conn.execute(
+                    """
+                    INSERT INTO face_references(user_id, embedding, model_name, vector_length, pose_label, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (user_id, encrypted, model_name, vector_length, pose_label, timestamp),
+                )
+        self._invalidate_cache(str(self.database.config.path))
+
     def get_all(self) -> list[dict[str, Any]]:
         """Return all face references, using a class-level cache.
 
         Cache is keyed by database path so that different databases
         (e.g. per-test tmp directories) do not interfere.
-        Invalidated automatically by upsert() and delete_by_user_id().
+        Invalidated automatically by upsert(), replace_all(), and delete_by_user_id().
         """
         cache_key = str(self.database.config.path)
         cached = type(self)._cache_all.get(cache_key)
