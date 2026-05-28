@@ -1,18 +1,23 @@
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 
 
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import QTimer, Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QKeyEvent, QPixmap
 from PyQt5.QtWidgets import (
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QGridLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QMessageBox,
     QPushButton,
     QStackedWidget,
+    QSizePolicy,
     QVBoxLayout,
     QHBoxLayout,
     QWidget,
@@ -22,7 +27,25 @@ from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessCheck
 from attendance_system.services.attendance_service import AttendanceService
 from attendance_system.services.settings_service import SettingsService
 from attendance_system.ui.camera_thread import CameraThread
-from attendance_system.ui.constants import FONT_BODY, FONT_STATUS, FONT_TITLE
+from attendance_system.ui.styles import (
+    ACCENT_HOVER,
+    ACCENT_PRIMARY,
+    BG_CARD,
+    BG_INPUT,
+    BORDER,
+    FONT_BODY,
+    FONT_BUTTON,
+    FONT_H1,
+    FONT_H2,
+    FONT_SMALL,
+    FONT_STATS,
+    STATUS_ERROR,
+    STATUS_INFO,
+    STATUS_SUCCESS,
+    TEXT_MUTED,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+)
 from attendance_system.utils.time_utils import utc_now_iso, utc_to_local
 
 logger = logging.getLogger(__name__)
@@ -67,8 +90,19 @@ class UserModeView(QWidget):
         self._detector_model_path = detector_model_path
         self._session_id: int | None = None
         self._camera_thread: CameraThread | None = None
+        self._session_started_monotonic: float | None = None
+
+
+
+        self._stats_total: int = 0
+        self._stats_success: int = 0
+        self._stats_spoof: int = 0
+        self._stats_unrecognized: int = 0
 
         self._build_ui()
+        self._stats_timer = QTimer(self)
+        self._stats_timer.setInterval(1000)
+        self._stats_timer.timeout.connect(self._refresh_stats_display)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -76,7 +110,8 @@ class UserModeView(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(0)
 
         self._stack = QStackedWidget()
         layout.addWidget(self._stack)
@@ -87,130 +122,241 @@ class UserModeView(QWidget):
 
     def _build_idle_panel(self) -> QWidget:
         panel = QWidget()
-        layout = QVBoxLayout(panel)
-        layout.setSpacing(14)
-        layout.setContentsMargins(48, 40, 48, 40)
+        outer = QVBoxLayout(panel)
+        outer.setContentsMargins(24, 24, 24, 24)
+        outer.setSpacing(0)
+
+        outer.addStretch(1)
 
         title = QLabel("Hệ Thống Điểm Danh Khuôn Mặt")
-        title.setFont(FONT_TITLE)
+        title.setFont(FONT_H1)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
+        title.setStyleSheet(f"color: {TEXT_PRIMARY};")
+        outer.addWidget(title)
 
-        status = QLabel("Trạng thái: CHỜ  (IDLE)")
-        status.setFont(FONT_STATUS)
-        status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        status.setStyleSheet("color: #7f8c8d;")
-        layout.addWidget(status)
+        outer.addSpacing(18)
 
-        layout.addSpacing(12)
+        card = QFrame()
+        card.setObjectName("idleCard")
+        card.setFixedWidth(480)
+        card.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Maximum)
+        card.setStyleSheet(
+            f"QFrame#idleCard {{ background: {BG_CARD}; border: 1px solid {BORDER}; border-radius: 12px; }}"
+        )
+        shadow = QGraphicsDropShadowEffect(card)
+        shadow.setBlurRadius(28)
+        shadow.setXOffset(0)
+        shadow.setYOffset(8)
+        shadow.setColor(Qt.GlobalColor.black)
+        card.setGraphicsEffect(shadow)
 
-        subject_lbl = QLabel("Tên Môn Học:")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(28, 28, 28, 24)
+        card_layout.setSpacing(14)
+
+        subject_lbl = QLabel("Tên Môn Học")
         subject_lbl.setFont(FONT_BODY)
-        layout.addWidget(subject_lbl)
+        subject_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; font-weight: 600;")
+        card_layout.addWidget(subject_lbl)
 
         self._subject_input = QLineEdit()
         self._subject_input.setFont(FONT_BODY)
-        self._subject_input.setPlaceholderText("Ví dụ: Trí Tuệ Nhân Tạo")
-        layout.addWidget(self._subject_input)
+        self._subject_input.setPlaceholderText("▶ Ví dụ: Trí Tuệ Nhân Tạo")
+        self._subject_input.setStyleSheet(f"background: {BG_INPUT}; color: {TEXT_PRIMARY};")
+        card_layout.addWidget(self._subject_input)
 
-        class_lbl = QLabel("Tên Lớp:")
+        class_lbl = QLabel("Tên Lớp")
         class_lbl.setFont(FONT_BODY)
-        layout.addWidget(class_lbl)
+        class_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; font-weight: 600;")
+        card_layout.addWidget(class_lbl)
 
         self._class_input = QLineEdit()
         self._class_input.setFont(FONT_BODY)
-        self._class_input.setPlaceholderText("Ví dụ: IT01")
-        layout.addWidget(self._class_input)
+        self._class_input.setPlaceholderText("▶ Ví dụ: IT01")
+        self._class_input.setStyleSheet(f"background: {BG_INPUT}; color: {TEXT_PRIMARY};")
+        card_layout.addWidget(self._class_input)
 
-        layout.addSpacing(12)
-
-        btn_start = QPushButton("Bắt Đầu Phiên Điểm Danh  [S]")
-        btn_start.setFont(FONT_BODY)
+        btn_start = QPushButton("Bắt Đầu Phiên [S]")
+        btn_start.setFont(FONT_BUTTON)
+        btn_start.setFixedHeight(44)
+        btn_start.setStyleSheet(
+            f"QPushButton {{ background: {ACCENT_PRIMARY}; color: white; border: none; border-radius: 10px; }}"
+            f"QPushButton:hover {{ background: {ACCENT_HOVER}; }}"
+        )
         btn_start.clicked.connect(self._start_session)
-        layout.addWidget(btn_start)
+        card_layout.addWidget(btn_start)
 
-        btn_admin = QPushButton("Đăng Nhập Quản Trị  [Ctrl+L]")
+        btn_admin = QPushButton("Đăng Nhập Quản Trị")
         btn_admin.setFont(FONT_BODY)
-        btn_admin.setStyleSheet("color: #7f8c8d;")
+        btn_admin.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_admin.setFlat(True)
+        btn_admin.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; color: {TEXT_SECONDARY}; padding: 4px; }}"
+            f"QPushButton:hover {{ color: {ACCENT_PRIMARY}; background: transparent; }}"
+        )
         btn_admin.clicked.connect(self.login_requested.emit)
-        layout.addWidget(btn_admin)
+        card_layout.addWidget(btn_admin, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        layout.addStretch()
+        outer.addWidget(card, alignment=Qt.AlignmentFlag.AlignHCenter)
+
+        self._idle_status_label = QLabel("Trạng thái: IDLE")
+        self._idle_status_label.setFont(FONT_BODY)
+        self._idle_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._idle_status_label.setStyleSheet(f"color: {TEXT_MUTED};")
+        outer.addSpacing(16)
+        outer.addWidget(self._idle_status_label)
+
+        outer.addStretch(2)
         return panel
 
     def _build_active_panel(self) -> QWidget:
         panel = QWidget()
         layout = QVBoxLayout(panel)
-        layout.setSpacing(12)
-        layout.setContentsMargins(48, 24, 48, 24)
+        layout.setContentsMargins(20, 16, 20, 18)
+        layout.setSpacing(14)
+
+        header = QWidget()
+        header_layout = QVBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(4)
+
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.setSpacing(12)
 
         title = QLabel("Hệ Thống Điểm Danh Khuôn Mặt")
-        title.setFont(FONT_TITLE)
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
-
-        active_status = QLabel("Trạng thái: ĐANG HOẠT ĐỘNG  (ACTIVE)")
-        active_status.setFont(FONT_STATUS)
-        active_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        active_status.setStyleSheet("color: #27ae60;")
-        layout.addWidget(active_status)
+        title.setFont(FONT_H2)
+        title.setStyleSheet(f"color: {TEXT_PRIMARY};")
+        top_row.addWidget(title)
+        top_row.addStretch(1)
+        header_layout.addLayout(top_row)
 
         self._session_info_label = QLabel("")
         self._session_info_label.setFont(FONT_BODY)
-        self._session_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self._session_info_label)
+        self._session_info_label.setStyleSheet(f"color: {TEXT_SECONDARY};")
+        header_layout.addWidget(self._session_info_label)
+        layout.addWidget(header)
 
-        # Content area: Camera (Left) + Sidebar (Right)
         content_layout = QHBoxLayout()
         content_layout.setSpacing(16)
-        layout.addLayout(content_layout)
+        layout.addLayout(content_layout, stretch=1)
 
-        # Left Column: Camera and Result Label
         camera_area = QVBoxLayout()
-        camera_area.setSpacing(10)
-        content_layout.addLayout(camera_area, stretch=1)
+        camera_area.setSpacing(12)
+        content_layout.addLayout(camera_area, stretch=2)
 
         self._camera_label = QLabel("[ Đang khởi động camera… ]")
         self._camera_label.setFont(FONT_BODY)
         self._camera_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._camera_label.setStyleSheet(
-            "background-color: #2c3e50; color: #ecf0f1; border-radius: 8px;"
+            f"background-color: #0f172a; color: #e2e8f0; border: 1px solid {BORDER}; border-radius: 14px;"
         )
-        self._camera_label.setMinimumHeight(350)
+        self._camera_label.setMinimumSize(640, 480)
+        self._camera_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._camera_label.setScaledContents(False)
         camera_area.addWidget(self._camera_label, stretch=1)
 
-        self._result_label = QLabel("Đang chờ nhận diện…")
-        self._result_label.setFont(FONT_STATUS)
-        self._result_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._result_label.setMinimumHeight(56)
-        self._set_result_style("neutral")
-        camera_area.addWidget(self._result_label)
 
-        # Right Column: Attendance Sidebar
+
         sidebar_area = QVBoxLayout()
-        sidebar_area.setSpacing(6)
-        content_layout.addLayout(sidebar_area)
+        sidebar_area.setSpacing(12)
+        content_layout.addLayout(sidebar_area, stretch=1)
 
-        sidebar_header = QLabel("Danh sách điểm danh")
-        sidebar_header.setFont(FONT_BODY)
-        sidebar_header.setStyleSheet("font-weight: bold; color: #2c3e50; margin-bottom: 2px;")
-        sidebar_area.addWidget(sidebar_header)
+        stats_title = QLabel("📊 Thống Kê")
+        stats_title.setFont(FONT_BODY)
+        stats_title.setStyleSheet(f"color: {TEXT_PRIMARY}; font-weight: 700;")
+        sidebar_area.addWidget(stats_title)
+
+        stats_card = QFrame()
+        stats_card.setStyleSheet(
+            f"background: {BG_CARD}; border: 1px solid {BORDER}; border-radius: 12px;"
+        )
+        stats_layout = QGridLayout(stats_card)
+        stats_layout.setContentsMargins(12, 12, 12, 12)
+        stats_layout.setSpacing(10)
+        self._stat_success = self._make_stat_card("Đã ĐD", STATUS_SUCCESS)
+        self._stat_unrecognized = self._make_stat_card("Chưa ĐD", STATUS_ERROR)
+        self._stat_spoof = self._make_stat_card("Giả Mạo", STATUS_ERROR)
+        self._stat_time = self._make_stat_card("Thời Gian", STATUS_INFO)
+        stats_layout.addWidget(self._stat_success, 0, 0)
+        stats_layout.addWidget(self._stat_unrecognized, 0, 1)
+        stats_layout.addWidget(self._stat_spoof, 1, 0)
+        stats_layout.addWidget(self._stat_time, 1, 1)
+        sidebar_area.addWidget(stats_card)
+
+        list_title = QLabel("📋 Danh Sách Điểm Danh")
+        list_title.setFont(FONT_BODY)
+        list_title.setStyleSheet(f"color: {TEXT_PRIMARY}; font-weight: 700;")
+        sidebar_area.addWidget(list_title)
 
         self._attendance_list = QListWidget()
-        self._attendance_list.setFont(FONT_BODY)
-        self._attendance_list.setFixedWidth(280)
+        self._attendance_list.setFont(FONT_SMALL)
         self._attendance_list.setStyleSheet(
-            "background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px;"
+            f"background: {BG_CARD}; border: 1px solid {BORDER}; border-radius: 12px; padding: 6px;"
         )
-        sidebar_area.addWidget(self._attendance_list)
+        sidebar_area.addWidget(self._attendance_list, stretch=1)
 
-        btn_end = QPushButton("Kết Thúc Phiên  [E]")
-        btn_end.setFont(FONT_BODY)
+        btn_end = QPushButton("Kết Thúc Phiên [E]")
+        btn_end.setFont(FONT_BUTTON)
+        btn_end.setFixedHeight(44)
+        btn_end.setStyleSheet(
+            f"QPushButton {{ background: {STATUS_ERROR}; color: white; border: none; border-radius: 10px; }}"
+            f"QPushButton:hover {{ background: #b91c1c; }}"
+        )
         btn_end.clicked.connect(self._end_session)
         layout.addWidget(btn_end)
 
+        self._refresh_stats_display()
         return panel
+
+    def _make_stat_card(self, label: str, colour: str) -> QFrame:
+        card = QFrame()
+        card.setStyleSheet(
+            f"background: {BG_CARD}; border: none; border-radius: 10px;"
+        )
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(12, 10, 12, 10)
+        card_layout.setSpacing(2)
+
+        value = QLabel("0")
+        value.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        value.setFont(FONT_STATS)
+        value.setStyleSheet(f"color: {colour}; line-height: 1;")
+
+        title = QLabel(label)
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setFont(FONT_SMALL)
+        title.setStyleSheet(f"color: {TEXT_SECONDARY}; font-weight: 700;")
+
+        card_layout.addWidget(value)
+        card_layout.addWidget(title)
+
+        card._value_label = value  # type: ignore[attr-defined]
+        return card
+
+    def _refresh_stats_display(self) -> None:
+        if self._session_started_monotonic is not None:
+            elapsed_seconds = max(0, int(time.monotonic() - self._session_started_monotonic))
+            elapsed_text = f"{elapsed_seconds // 60:02d}:{elapsed_seconds % 60:02d}"
+        else:
+            elapsed_text = "00:00"
+
+        unresolved = self._stats_unrecognized + self._stats_spoof
+        self._stat_success._value_label.setText(str(self._stats_success))  # type: ignore[attr-defined]
+        self._stat_unrecognized._value_label.setText(str(unresolved))  # type: ignore[attr-defined]
+        self._stat_spoof._value_label.setText(str(self._stats_spoof))  # type: ignore[attr-defined]
+        self._stat_time._value_label.setText(elapsed_text)  # type: ignore[attr-defined]
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+
+    def _reset_stats(self) -> None:
+        self._stats_total = 0
+        self._stats_success = 0
+        self._stats_spoof = 0
+        self._stats_unrecognized = 0
+        self._session_started_monotonic = time.monotonic()
+        self._refresh_stats_display()
 
     # ------------------------------------------------------------------
     # Keyboard shortcuts — called by MainWindow.keyPressEvent
@@ -269,9 +415,9 @@ class UserModeView(QWidget):
         )
 
         self._session_info_label.setText(f"Môn: {subject}  |  Lớp: {class_name}")
-        self._result_label.setText("Đang chờ nhận diện…")
-        self._set_result_style("neutral")
         self._attendance_list.clear()
+        self._reset_stats()
+        self._stats_timer.start()
 
         # Populate sidebar if there are existing success records for this session
         try:
@@ -322,6 +468,7 @@ class UserModeView(QWidget):
 
         self._attendance.end_session(self._session_id, end_time=utc_now_iso())
         self._session_id = None
+        self._stats_timer.stop()
         self._subject_input.clear()
         self._class_input.clear()
         self._attendance_list.clear()
@@ -332,6 +479,7 @@ class UserModeView(QWidget):
         if self._camera_thread is not None:
             self._camera_thread.stop()
             self._camera_thread = None
+        self._stats_timer.stop()
 
     # ------------------------------------------------------------------
     # Camera thread slots
@@ -384,64 +532,32 @@ class UserModeView(QWidget):
                     liveness_score=liveness_score,
                     similarity_score=similarity_score,
                 )
-                self._show_result_success(full_name)
                 self._add_to_sidebar(full_name, now)
+                self._stats_success += 1
             except Exception:
                 self._attendance.record_duplicate(self._session_id, user_id, now)
-                self._show_result_duplicate(full_name)
 
         elif result_type == "spoof":
             self._attendance.record_spoof_warning(
                 self._session_id, now, details=f"liveness={liveness_score:.3f}"
             )
-            self._show_result_spoof()
+            self._stats_spoof += 1
 
         elif result_type == "unrecognized":
             self._attendance.record_unrecognized(
                 self._session_id, now, details=f"liveness={liveness_score:.3f}"
             )
-            self._show_result_unrecognized()
+            self._stats_unrecognized += 1
+
+        self._stats_total += 1
+        self._refresh_stats_display()
 
     def _on_inference_warning(self, message: str) -> None:
-        """Show a temporary inference warning in the result label."""
+        """Log an inference warning."""
         logger.info("Inference warning: %s", message)
-        self._result_label.setText(f"⚠ {message}")
-        self._set_result_style("neutral")
-        # The next recognition_result or frame will overwrite this
 
     def _on_camera_error(self, message: str) -> None:
         QMessageBox.critical(self, "Lỗi Camera", message)
         self._end_session()
 
-    # ------------------------------------------------------------------
-    # Recognition result display
-    # ------------------------------------------------------------------
 
-    def _show_result_success(self, name: str) -> None:
-        self._result_label.setText(f"✅  {name}")
-        self._set_result_style("success")
-
-    def _show_result_duplicate(self, name: str) -> None:
-        self._result_label.setText(f"⚠  {name} – Đã điểm danh")
-        self._set_result_style("duplicate")
-
-    def _show_result_spoof(self) -> None:
-        self._result_label.setText("🚫  Cảnh báo: Giả mạo")
-        self._set_result_style("spoof")
-
-    def _show_result_unrecognized(self) -> None:
-        self._result_label.setText("❌  Không nhận diện được")
-        self._set_result_style("unrecognized")
-
-    def _set_result_style(self, kind: str) -> None:
-        colours = {
-            "neutral": ("#95a5a6", "white"),
-            "success": ("#27ae60", "white"),
-            "duplicate": ("#f39c12", "white"),
-            "spoof": ("#e74c3c", "white"),
-            "unrecognized": ("#f1c40f", "black"),
-        }
-        bg, fg = colours.get(kind, colours["neutral"])
-        self._result_label.setStyleSheet(
-            f"background-color: {bg}; color: {fg}; border-radius: 6px; padding: 8px;"
-        )

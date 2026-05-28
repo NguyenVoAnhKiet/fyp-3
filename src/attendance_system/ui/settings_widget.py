@@ -19,7 +19,8 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from attendance_system.ui.constants import FONT_BODY, FONT_TITLE
+from attendance_system.ui.constants import FONT_BODY
+from attendance_system.ui.styles import FONT_H1
 
 if TYPE_CHECKING:
     from attendance_system.services.settings_service import SettingsService
@@ -77,7 +78,7 @@ class SettingsWidget(QWidget):
         root.setSpacing(20)
 
         title = QLabel("Cài Đặt Hệ Thống")
-        title.setFont(FONT_TITLE)
+        title.setFont(FONT_H1)
         root.addWidget(title)
 
         # --- Camera group ---
@@ -125,10 +126,6 @@ class SettingsWidget(QWidget):
 
         btn_save = QPushButton("Lưu Cài Đặt")
         btn_save.setFont(FONT_BODY)
-        btn_save.setStyleSheet(
-            "QPushButton { background-color: #27ae60; color: white; padding: 8px 24px; border-radius: 4px; }"
-            "QPushButton:hover { background-color: #219a52; }"
-        )
         btn_save.clicked.connect(self._save)
         btn_row.addWidget(btn_save)
 

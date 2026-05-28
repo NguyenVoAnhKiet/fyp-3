@@ -72,6 +72,13 @@ class UserManagementWidget(QWidget):
         self.header_label = QLabel("User Management")
         self.header_label.setFont(FONT_TITLE)
         self.layout.addWidget(self.header_label)
+
+        # Search bar
+        self.search_bar = QLineEdit()
+        self.search_bar.setPlaceholderText("\U0001f50d Tìm kiếm theo tên hoặc mã SV...")
+        self.search_bar.setClearButtonEnabled(True)
+        self.search_bar.textChanged.connect(self._filter_users)
+        self.layout.addWidget(self.search_bar)
         
         # Table
         self.table = QTableWidget()
@@ -104,6 +111,16 @@ class UserManagementWidget(QWidget):
             self.table.setItem(i, 0, QTableWidgetItem(str(user["id"])))
             self.table.setItem(i, 1, QTableWidgetItem(user["student_id"]))
             self.table.setItem(i, 2, QTableWidgetItem(user["full_name"]))
+
+    def _filter_users(self, text: str) -> None:
+        for row in range(self.table.rowCount()):
+            match = False
+            for col in [1, 2]:  # student_id and full_name columns
+                item = self.table.item(row, col)
+                if item and text.lower() in item.text().lower():
+                    match = True
+                    break
+            self.table.setRowHidden(row, not match)
 
     def _generate_student_id(self) -> str:
         """Generate next student_id as STU + (MAX(id) + 1)."""
