@@ -58,7 +58,7 @@ class EnrollmentCameraThread(QThread):
         camera_index: int,
         liveness_checker: LivenessChecker,
         face_recognizer: FaceRecognizer,
-        liveness_threshold: float = 0.5,
+        liveness_threshold: float = 0.3,
         detector_model_path: Path | str | None = None,
         head_pose_estimator: HeadPoseEstimator | None = None,
         target_count: int = 5,

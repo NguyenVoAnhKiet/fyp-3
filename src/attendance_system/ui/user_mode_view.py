@@ -50,7 +50,7 @@ from attendance_system.utils.time_utils import utc_now_iso, utc_to_local
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_LIVENESS_THRESHOLD = 0.5
+_DEFAULT_LIVENESS_THRESHOLD = 0.3
 _DEFAULT_SIMILARITY_THRESHOLD = 0.6
 
 # Stack indices for IDLE / ACTIVE sub-panels inside UserModeView

@@ -37,7 +37,7 @@ class EnrollmentAIWorker(QThread):
         head_pose_estimator: HeadPoseEstimator,
         liveness_checker: LivenessChecker,
         face_recognizer: FaceRecognizer,
-        liveness_threshold: float = 0.5,
+        liveness_threshold: float = 0.3,
         parent: Any = None,
     ) -> None:
         super().__init__(parent)

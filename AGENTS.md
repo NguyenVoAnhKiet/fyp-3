@@ -57,3 +57,13 @@ $env:PYTHONPATH='src'; python src/main.py
 - `models/**/*.onnx` are gitignored; download them separately.
 - First-run threshold values come from `.env`; later changes come from the settings UI.
 - `FACE_ANTISPOOF_ENABLED=false` disables anti-spoofing.
+
+## Liveness Detection (Anti-Spoofing)
+
+- **Model:** MiniFASNet V2 SE quantized (INT8, 600 KB). Trained on CelebA-Spoof, works best well-lit frontal < 30°.
+- **Temporal Smoothing:** `LivenessTracker` in `src/attendance_system/core/liveness_tracker.py` uses EMA (α=0.4) + hysteresis (T_HIGH=0.65, T_LOW=0.45) + IoU face tracking to reduce flicker.
+- **Threshold:** Default 0.3 (reduced from 0.5 for poor-light tolerance). Set via `FACE_ANTISPOOF_CONFIDENCE_THRESHOLD` in `.env` or Admin UI.
+- **Preprocessing:** CLAHE + resize + reflect-pad. CLAHE not in training pipeline but removal worsens poor-light performance.
+- **Crop Scale:** 2.7 for liveness (large context), 1.5 for head-pose (tight crop).
+- **Tuning Script:** `scripts/tune_liveness_threshold.py` collects real/fake videos, extracts frames, runs ONNX inference, plots histogram, recommends optimal threshold (target: FAR < 1%, FRR < 5%).
+- **Known Limitation:** 2D texture classifier; poor lighting still rejects ~95% real faces (model limitation, not preprocessing).

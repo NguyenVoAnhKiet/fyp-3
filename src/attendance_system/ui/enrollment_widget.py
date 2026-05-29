@@ -264,7 +264,7 @@ class EnrollmentWidget(QWidget):
 
         # Get settings
         cam_idx = int(self._settings_service.get("camera_index") or 0)
-        liveness_thresh = float(self._settings_service.get("liveness_threshold") or 0.5)
+        liveness_thresh = float(self._settings_service.get("liveness_threshold") or 0.3)
 
         # Liveness check is intentionally bypassed during enrollment.
         # Multi-pose face capture (yaw/pitch/roll) already provides strong
