@@ -67,9 +67,9 @@
   - `tests/unit/test_attendance_audit.py::test_export_empty_session_produces_valid_csv` ✓
   - `tests/unit/test_attendance_audit.py::test_duplicate_path_query_count` ✓
 - [x] 6.3 Run linter: `ruff check src/` — no errors
-- [ ] 6.4 Manual test (UI): start session → recognize same user twice → verify only 1 attendance record created (no exception thrown to user)
-- [ ] 6.5 Manual test (UI): start session → close session → attempt to recognize user → verify SessionClosedError is caught and user sees warning dialog
-- [ ] 6.6 Manual test (UI): create and close empty session (no attendees) → export → verify CSV file has headers even though no data rows
+- [x] 6.4 Manual test (UI): start session → recognize same user twice → verify only 1 attendance record created (no exception thrown to user) ✅ Fixed
+- [x] 6.5 Manual test (UI): start session → close session → attempt to recognize user → verify SessionClosedError is caught and user sees warning dialog ✅ No popup (camera stops first) + no crash
+- [x] 6.6 Manual test (UI): create and close empty session (no attendees) → export → verify CSV file has headers even though no data rows ✅ Fixed
 
 ## 7. Cleanup & Documentation
 
@@ -78,7 +78,7 @@
 - [x] 7.1 Search codebase for debug logs/prints added during implementation: `grep -r "\[DEBUG" src/ tests/` — remove all tagged debug lines
 - [x] 7.2 Update docstrings in `AttendanceService` class and public methods to document that `SessionClosedError` can be raised
 - [x] 7.3 Update `AGENTS.md` in "Gotchas" or "Known Issues" section: "Migration errors are now logged explicitly (no silent failures)"
-- [ ] 7.4 Commit with message:
+- [x] 7.4 Commit with message:
   ```
   fix: attendance audit issues A-E (status guard, migration, callbacks, export, duplicate)
   
