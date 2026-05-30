@@ -4,14 +4,12 @@ Python 3.11+ offline face-attendance desktop app. PyQt5 UI, SQLite/WAL, ONNX Run
 
 ## Read first
 
-1. `pyproject.toml`
-2. `src/main.py`
-3. `src/attendance_system/core/db.py`
-4. `src/attendance_system/core/bootstrap.py`
-5. `.env.example`
-6. `codemap.md`
-
-If still unclear, inspect `src/attendance_system/ui/camera_thread.py`, `enrollment_camera_thread.py`, `enrollment_ai_worker.py`, and `face_utils.py`.
+1. `pyproject.toml` — deps, entry points, build config
+2. `src/main.py` — app bootstrap (import order matters: onnxruntime before PyQt5)
+3. `src/attendance_system/core/db.py` — SQLite connection (WAL, foreign keys, `check_same_thread=False`)
+4. `src/attendance_system/core/bootstrap.py` — storage initializer (no `load_dotenv()`, uses CLI args)
+5. `.env.example` — all configurable env vars
+6. `codemap.md` — directory map with entrypoints
 
 Prefer executable sources over prose; if docs conflict with code/config/scripts, trust the executable source.
 
@@ -20,52 +18,55 @@ Prefer executable sources over prose; if docs conflict with code/config/scripts,
 ```bash
 pip install -e .
 pip install pytest
-attendance-storage-init
-attendance-storage-init --database-path <path>
-attendance-app
-ruff check src/
-pytest tests/
-pytest tests/unit/ -v
-pytest tests/integration/ -v
-pytest tests/unit/test_camera_thread.py -v
+attendance-storage-init                      # seed DB + admin account
+attendance-storage-init --database-path <p>   # custom path
+attendance-app                                # launch GUI
+ruff check src/                               # full lint (E501 line-length pre-existing)
+ruff check src/ --select F                    # undefined names only (fast pre-commit check)
+pytest tests/                                 # full suite (142 tests)
+pytest tests/unit/ -v                         # fast unit-only
+pytest tests/integration/ -v                  # DB/storage integration
 PYTHONPATH=src python src/main.py
 $env:PYTHONPATH='src'; python src/main.py
 ```
 
 ## Wiring
 
-- Only CLI entrypoints are `attendance-app` → `main:main` and `attendance-storage-init` → `attendance_system.core.bootstrap:main`.
-- `src/main.py` imports `onnxruntime` before `PyQt5` on Windows, then loads `.env`, resolves config, initializes storage, validates models, and launches the UI.
-- `src/attendance_system/core/bootstrap.py` does not call `load_dotenv()`; it uses CLI args and `DATABASE_PATH`.
-- `src/attendance_system/core/db.py` creates SQLite connections with WAL, foreign keys on, `check_same_thread=False`, and a DB-path guard.
+- **Entry points:** `attendance-app` → `main:main`; `attendance-storage-init` → `attendance_system.core.bootstrap:main`.
+- **Startup order:** `load_dotenv()` → resolve CLI/env config → `initialize_storage()` → validate ONNX models → wire services → launch `MainWindow`.
+- **`bootstrap.py`** uses raw CLI args + `DATABASE_PATH` env var, **not** `load_dotenv()`.
+- **`db.py`** connections: WAL journal, `synchronous=NORMAL`, `foreign_keys=ON`, `check_same_thread=False`. Path traversal guard in `DatabaseConfig`.
+- **Config priority:** CLI arg > env var > default. Thresholds seed once from `.env` into DB, then Admin UI controls them.
 
 ## Gotchas
 
-- `CAMERA_INDEX=` (empty string) counts as missing.
+- `CAMERA_INDEX=` (empty string) in `.env` counts as missing → defaults to 0.
+- `onnxruntime` must be imported **before** `PyQt5` on Windows (DLL conflict). Both `src/main.py` and `tests/conftest.py` do this.
 - `QImage` crossing threads must be `.copy()`'d first.
 - Create worker `QThread`s in `__init__`, start them in `run()`.
-- `EnrollmentCameraThread` flips frames; attendance camera does not.
-- `FaceReferenceRepository._cache_all` is keyed by DB path; every write path must invalidate cache.
-- `attendance_records.user_id` is nullable and uses `ON DELETE SET NULL`.
-- `_crop_face` scales: attendance/enrollment liveness `2.7`, head-pose default `1.5`.
-- Migration errors are now logged explicitly (no silent failures) — `_migrate_attendance_records_cascade_to_setnull()` re-raises exceptions after logging.
-- Session-status validation — `record_success()`, `record_duplicate()`, `record_spoof_warning()`, `record_unrecognized()` all raise `SessionClosedError` for closed sessions.
+- `EnrollmentCameraThread` flips frames (mirror); attendance `CameraThread` does not.
+- `FaceReferenceRepository._cache_all` keyed by DB path; **every write path** must invalidate cache.
+- `_crop_face` scale: 2.7 for liveness (broad context), 1.5 for head-pose (tight crop).
+- `_COOLDOWN_SECONDS = 3.0` in `camera_thread.py` — per-user cooldown before re-recognition. In-memory, resets on thread restart.
+- `_AI_FRAME_SKIP = 3` — full AI pipeline runs every 3rd frame (~10 Hz at 30 fps).
+- `user_mode_view.py` tracks `_recognized_users` (set of `user_id`) to suppress duplicate sidebar entries + `_stats_success` increment. `_stats_total` always increments (total events).
+- `record_success()` catches `IntegrityError` internally on UNIQUE `(session_id, user_id)` — falls back to SELECT-existing, returns normally. Caller never sees a DB exception for duplicates.
+- `record_duplicate()` does **not** insert a `recognition_events` row (no audit trail for the second path — caller is expected to have already inserted one).
+- `attendance_records.user_id` is nullable, `ON DELETE SET NULL`.
+- Migration errors are now logged explicitly + re-raised (no silent failures). See `schema.py` `except Exception` blocks.
+- Session-status validation: `record_success()`, `record_spoof_warning()`, `record_unrecognized()` all raise `SessionClosedError` on closed sessions.
 
-## Tests / assets
+## Tests
 
-- `tests/conftest.py` imports `onnxruntime` first and builds an isolated tmp SQLite DB with full schema.
-- `tests/unit/` is the fast suite; `tests/integration/` hits DB/storage paths.
-- `cryptography`, `pandas`, and `openpyxl` are soft dependencies; tests may skip related paths.
-- `models/**/*.onnx` are gitignored; download them separately.
-- First-run threshold values come from `.env`; later changes come from the settings UI.
-- `FACE_ANTISPOOF_ENABLED=false` disables anti-spoofing.
+- `tests/conftest.py` imports `onnxruntime` before `pytest`, ensures `src/` is on `sys.path`, and provides a `database` fixture (isolated `tmp_path` SQLite, full schema).
+- `tests/unit/` — fast, mocked DB; `tests/integration/` — real DB/storage paths.
+- `cryptography`, `pandas`, `openpyxl` are soft deps; tests skip related paths if missing.
+- `models/**/*.onnx` are gitignored — download separately before running integration tests.
 
-## Liveness Detection (Anti-Spoofing)
+## Liveness (Anti-Spoofing)
 
-- **Model:** MiniFASNet V2 SE quantized (INT8, 600 KB). Trained on CelebA-Spoof, works best well-lit frontal < 30°.
-- **Temporal Smoothing:** `LivenessTracker` in `src/attendance_system/core/liveness_tracker.py` uses EMA (α=0.4) + hysteresis (T_HIGH=0.65, T_LOW=0.45) + IoU face tracking to reduce flicker.
-- **Threshold:** Default 0.3 (reduced from 0.5 for poor-light tolerance). Set via `FACE_ANTISPOOF_CONFIDENCE_THRESHOLD` in `.env` or Admin UI.
-- **Preprocessing:** CLAHE + resize + reflect-pad. CLAHE not in training pipeline but removal worsens poor-light performance.
-- **Crop Scale:** 2.7 for liveness (large context), 1.5 for head-pose (tight crop).
-- **Tuning Script:** `scripts/tune_liveness_threshold.py` collects real/fake videos, extracts frames, runs ONNX inference, plots histogram, recommends optimal threshold (target: FAR < 1%, FRR < 5%).
-- **Known Limitation:** 2D texture classifier; poor lighting still rejects ~95% real faces (model limitation, not preprocessing).
+- **Model:** MiniFASNet V2 SE quantized (INT8, 600 KB). Best well-lit frontal <30°.
+- **Temporal smoothing:** `LivenessTracker` uses EMA (α=0.4) + hysteresis (T_HIGH=0.65, T_LOW=0.45) + IoU tracking.
+- **Threshold:** Default 0.3. Configurable via `FACE_ANTISPOOF_CONFIDENCE_THRESHOLD` env var or Admin UI.
+- **Crop scale:** 2.7 for liveness, 1.5 for head-pose.
+- **Known limitation:** 2D texture classifier; poor lighting still rejects ~95% real faces (model limitation).
