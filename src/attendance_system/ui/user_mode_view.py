@@ -92,8 +92,9 @@ class UserModeView(QWidget):
         self._session_id: int | None = None
         self._camera_thread: CameraThread | None = None
         self._session_started_monotonic: float | None = None
-
-
+        # Track user_ids already acknowledged in sidebar this session
+        # to avoid showing the same person multiple times.
+        self._recognized_users: set[int] = set()
 
         self._stats_total: int = 0
         self._stats_success: int = 0
@@ -414,6 +415,7 @@ class UserModeView(QWidget):
             similarity_threshold_snapshot=similarity_threshold,
             start_time=utc_now_iso(),
         )
+        self._recognized_users.clear()
 
         self._session_info_label.setText(f"Môn: {subject}  |  Lớp: {class_name}")
         self._attendance_list.clear()
@@ -469,6 +471,7 @@ class UserModeView(QWidget):
 
         self._attendance.end_session(self._session_id, end_time=utc_now_iso())
         self._session_id = None
+        self._recognized_users.clear()
         self._stats_timer.stop()
         self._subject_input.clear()
         self._class_input.clear()
@@ -536,8 +539,11 @@ class UserModeView(QWidget):
                     similarity_score=similarity_score,
                     details=details,
                 )
-                self._add_to_sidebar(full_name, now)
-                self._stats_success += 1
+                # Only update sidebar & stats for first recognition of this user
+                if user_id not in self._recognized_users:
+                    self._recognized_users.add(user_id)
+                    self._add_to_sidebar(full_name, now)
+                    self._stats_success += 1
             except SessionClosedError:
                 QMessageBox.warning(self, "Session Closed", "Cannot record attendance: the session has been closed.")
                 return
