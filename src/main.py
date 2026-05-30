@@ -173,7 +173,15 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     # --- Phase 3: Bootstrap database ------------------------------------------
-    initialize_storage(database_path)
+    try:
+        initialize_storage(database_path)
+    except Exception as exc:
+        QMessageBox.critical(
+            None,
+            "Database Initialization Failed",
+            f"A database migration error occurred:\n\n{exc}\n\nThe application cannot start.",
+        )
+        return 1
 
     # --- Phase 4: Start Qt application ----------------------------------------
     # Pass consistent argv so that test harnesses work correctly.

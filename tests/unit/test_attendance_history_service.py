@@ -86,6 +86,24 @@ def test_attendance_export_excel(database, tmp_path):
     assert df.iloc[0]["Student ID"] == "S001"
 
 
+def test_export_empty_session_produces_valid_csv(database, tmp_path):
+    """Exporting a session with no records must produce a CSV with proper headers."""
+    service = AttendanceService(database)
+    session_id = service.start_session("History", "C", 0.5, 0.8)
+    service.end_session(session_id)
+
+    csv_path = tmp_path / "empty_export.csv"
+    service.export_session_to_csv(session_id, str(csv_path))
+
+    assert csv_path.exists()
+    content = csv_path.read_text(encoding="utf-8")
+    assert content.strip(), "CSV file is empty (no headers)"
+    first_line = content.split("\n")[0]
+    expected_headers = ["Student ID", "Full Name", "Subject Name", "Class Name", "Status"]
+    for header in expected_headers:
+        assert header in first_line, f"Expected header {header!r} in CSV, got: {first_line!r}"
+
+
 def test_unique_filters(database):
     service = AttendanceService(database)
     service.start_session("Math", "ClassA", 0.5, 0.8)

@@ -211,21 +211,10 @@ def test_attendance_records_migration_silent_failure(
     # Make the migration function raise
     mock_migrate.side_effect = RuntimeError("Simulated migration failure")
 
-    # Act — initialize_schema catches the exception silently
+    # Act — initialize_schema now logs and re-raises the exception
     with database.session() as connection:
-        initialize_schema(connection)
-
-    # Assert — no exception propagated; table still has the old schema
-    conn2 = database.connect()
-    row = conn2.execute(
-        "SELECT sql FROM sqlite_master WHERE type='table' AND name='attendance_records'"
-    ).fetchone()
-    conn2.close()
-
-    assert row is not None
-    assert "user_id INTEGER NOT NULL" in row[0], (
-        "Migration silently failed: the table still uses the old schema"
-    )
+        with pytest.raises(RuntimeError, match="Simulated migration failure"):
+            initialize_schema(connection)
 
 
 # ============================================================================
@@ -271,10 +260,10 @@ def test_duplicate_path_query_count(database: Database) -> None:
     """The duplicate-recognition path should execute at most 6 non-PRAGMA SQL
     queries.
 
-    In production ``UserModeView._on_recognition_result`` first calls
-    ``record_success`` (which fails on the UNIQUE constraint), then falls
-    through to ``record_duplicate``.  This full flow currently issues ~9
-    non-PRAGMA queries.  An optimised implementation should stay under 6.
+    ``record_success`` now handles the UNIQUE constraint internally by
+    catching ``IntegrityError`` and doing a fallback SELECT — no separate
+    call to ``record_duplicate`` is needed.  This keeps the total query
+    count under 6.
     """
     service = AttendanceService(database)
     users = UserRepository(database)

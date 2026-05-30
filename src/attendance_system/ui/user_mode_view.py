@@ -25,6 +25,7 @@ from PyQt5.QtWidgets import (
 
 from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
 from attendance_system.services.attendance_service import AttendanceService
+from attendance_system.services.exceptions import SessionClosedError
 from attendance_system.services.settings_service import SettingsService
 from attendance_system.ui.camera_thread import CameraThread
 from attendance_system.ui.styles import (
@@ -537,20 +538,31 @@ class UserModeView(QWidget):
                 )
                 self._add_to_sidebar(full_name, now)
                 self._stats_success += 1
+            except SessionClosedError:
+                QMessageBox.warning(self, "Session Closed", "Cannot record attendance: the session has been closed.")
+                return
             except Exception:
                 self._attendance.record_duplicate(self._session_id, user_id, now, details=details)
 
         elif result_type == "spoof":
-            self._attendance.record_spoof_warning(
-                self._session_id, now, details=f"liveness={liveness_score:.3f}"
-            )
-            self._stats_spoof += 1
+            try:
+                self._attendance.record_spoof_warning(
+                    self._session_id, now, details=f"liveness={liveness_score:.3f}"
+                )
+                self._stats_spoof += 1
+            except SessionClosedError:
+                QMessageBox.warning(self, "Session Closed", "Cannot record spoof warning: the session has been closed.")
+                return
 
         elif result_type == "unrecognized":
-            self._attendance.record_unrecognized(
-                self._session_id, now, details=f"liveness={liveness_score:.3f}"
-            )
-            self._stats_unrecognized += 1
+            try:
+                self._attendance.record_unrecognized(
+                    self._session_id, now, details=f"liveness={liveness_score:.3f}"
+                )
+                self._stats_unrecognized += 1
+            except SessionClosedError:
+                QMessageBox.warning(self, "Session Closed", "Cannot record unrecognized: the session has been closed.")
+                return
 
         self._stats_total += 1
         self._refresh_stats_display()

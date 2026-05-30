@@ -48,6 +48,8 @@ $env:PYTHONPATH='src'; python src/main.py
 - `FaceReferenceRepository._cache_all` is keyed by DB path; every write path must invalidate cache.
 - `attendance_records.user_id` is nullable and uses `ON DELETE SET NULL`.
 - `_crop_face` scales: attendance/enrollment liveness `2.7`, head-pose default `1.5`.
+- Migration errors are now logged explicitly (no silent failures) — `_migrate_attendance_records_cascade_to_setnull()` re-raises exceptions after logging.
+- Session-status validation — `record_success()`, `record_duplicate()`, `record_spoof_warning()`, `record_unrecognized()` all raise `SessionClosedError` for closed sessions.
 
 ## Tests / assets
 

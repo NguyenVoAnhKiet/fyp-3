@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
 import sqlite3
+
+logger = logging.getLogger(__name__)
 
 
 SCHEMA_STATEMENTS = (
@@ -164,13 +167,23 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
         # New schema has "user_id INTEGER" (nullable) with ON DELETE SET NULL
         if row and "user_id INTEGER NOT NULL" in row[0]:
             _migrate_attendance_records_cascade_to_setnull(connection)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(
+            "[MIGRATION] attendance_records CASCADE→SET_NULL failed: %s: %s",
+            type(exc).__name__,
+            exc,
+        )
+        raise
 
     # Migration: add pose_label and UNIQUE(user_id, pose_label) to face_references
     try:
         columns = [col[1] for col in connection.execute("PRAGMA table_info(face_references)")]
         if "pose_label" not in columns:
             _migrate_face_references_add_pose_label(connection)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(
+            "[MIGRATION] face_references pose_label migration failed: %s: %s",
+            type(exc).__name__,
+            exc,
+        )
+        raise
