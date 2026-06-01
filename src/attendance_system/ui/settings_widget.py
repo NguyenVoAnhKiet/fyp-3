@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import cv2
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
@@ -15,6 +16,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -32,6 +34,11 @@ _KEY_SIMILARITY_THRESHOLD = "similarity_threshold"
 
 _DEFAULT_LIVENESS = 0.3
 _DEFAULT_SIMILARITY = 0.6
+
+_KEY_FREEZE_SECONDS = "attendance_freeze_seconds"
+_KEY_FREEZE_SOUND_ENABLED = "attendance_freeze_sound_enabled"
+_DEFAULT_FREEZE_SECONDS = 4
+_DEFAULT_FREEZE_SOUND_ENABLED = False
 
 # Range of camera indices to probe (0-4 inclusive)
 _CAMERA_SCAN_MAX = 5
@@ -120,6 +127,29 @@ class SettingsWidget(QWidget):
 
         root.addWidget(ai_group)
 
+        # --- Attendance Freeze group ---
+        freeze_group = QGroupBox("Điểm Danh")
+        freeze_group.setFont(FONT_BODY)
+        freeze_form = QFormLayout(freeze_group)
+
+        self._freeze_spin = QSpinBox()
+        self._freeze_spin.setFont(FONT_BODY)
+        self._freeze_spin.setRange(0, 10)
+        self._freeze_spin.setSingleStep(1)
+        self._freeze_spin.setSuffix(" giây")
+        freeze_form.addRow("Thời gian đóng băng:", self._freeze_spin)
+
+        freeze_hint = QLabel("Đặt 0 để tắt hiệu ứng đóng băng khi điểm danh thành công")
+        freeze_hint.setFont(FONT_BODY)
+        freeze_hint.setStyleSheet("color: #888888;")
+        freeze_form.addRow("", freeze_hint)
+
+        self._freeze_sound_check = QCheckBox("Phát âm thanh khi điểm danh thành công")
+        self._freeze_sound_check.setFont(FONT_BODY)
+        freeze_form.addRow("", self._freeze_sound_check)
+
+        root.addWidget(freeze_group)
+
         # --- Save button ---
         btn_row = QHBoxLayout()
         btn_row.addStretch()
@@ -143,6 +173,11 @@ class SettingsWidget(QWidget):
         similarity = self._settings.get(_KEY_SIMILARITY_THRESHOLD)
         self._similarity_spin.setValue(float(similarity) if similarity else _DEFAULT_SIMILARITY)
 
+        freeze_seconds = self._settings.get(_KEY_FREEZE_SECONDS)
+        self._freeze_spin.setValue(int(freeze_seconds) if freeze_seconds else _DEFAULT_FREEZE_SECONDS)
+        freeze_sound = self._settings.get(_KEY_FREEZE_SOUND_ENABLED)
+        self._freeze_sound_check.setChecked(freeze_sound is not None and freeze_sound.lower() in {"1", "true", "yes", "on"})
+
     def _save(self) -> None:
         # Camera index
         cam_idx = self._camera_combo.currentData()
@@ -159,6 +194,14 @@ class SettingsWidget(QWidget):
             _KEY_SIMILARITY_THRESHOLD,
             str(self._similarity_spin.value()),
             "float",
+        )
+
+        # Freeze settings
+        self._settings.set(_KEY_FREEZE_SECONDS, str(self._freeze_spin.value()), "int")
+        self._settings.set(
+            _KEY_FREEZE_SOUND_ENABLED,
+            "true" if self._freeze_sound_check.isChecked() else "false",
+            "bool",
         )
 
         QMessageBox.information(self, "Cài Đặt", "Đã lưu cài đặt thành công.")

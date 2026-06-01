@@ -19,6 +19,10 @@ docs/
 ├── modules.md             ← Complete module-by-module reference
 ├── adr/                   ← Architecture Decision Records
 │   └── 0001-onnx-circuit-breaker.md
+├── plans/                 ← Feature plans (active + archive)
+│   ├── README.md          ← Plan conventions + active plans index
+│   ├── active/            ← In-flight feature plans
+│   └── archive/           ← Completed plans (date-prefixed)
 ├── agents/                ← AI agent engineering conventions
 │   ├── domain.md          ← Agent domain navigation
 │   ├── issue-tracker.md   ← Issue tracking conventions

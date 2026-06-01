@@ -21,6 +21,7 @@ from attendance_system.utils.face_utils import _crop_face, _create_face_detector
 
 _AI_FRAME_SKIP = 3       # run full pipeline every N frames (≈10 Hz at 30 fps)
 _COOLDOWN_SECONDS = 3.0  # min seconds between two recognitions of the same user
+_PAUSE_POLL_INTERVAL_SECONDS = 0.05  # how often the paused loop sleeps before re-checking the flag
 
 # Bounding-box colours in RGB (frame is already RGB after cvtColor)
 _COLOR_DETECTING: tuple[int, int, int] = (180, 180, 180)  # gray  – face found, awaiting result
@@ -233,6 +234,7 @@ class CameraThread(QThread):
         self._face_recognizer = face_recognizer
         self._camera_index = camera_index
         self._running = False
+        self._paused: bool = False
 
         # Initialize YuNet detector
         if detector_model_path is None:
@@ -264,6 +266,14 @@ class CameraThread(QThread):
     # ------------------------------------------------------------------
     # Public control
     # ------------------------------------------------------------------
+
+    def pause(self) -> None:
+        """Pause frame capture. The main loop will sleep-skip until resumed."""
+        self._paused = True
+
+    def resume(self) -> None:
+        """Resume frame capture after a pause."""
+        self._paused = False
 
     def stop(self) -> None:
         """Signal the thread to exit and block until it finishes."""
@@ -327,6 +337,9 @@ class CameraThread(QThread):
             frame_counter = 0
 
             while self._running:
+                if self._paused:
+                    time.sleep(_PAUSE_POLL_INTERVAL_SECONDS)
+                    continue
                 ret, frame = cap.read()
                 if not ret:
                     success, cap, frame = self._retry_read(cap)
