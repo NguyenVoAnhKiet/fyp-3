@@ -8,8 +8,9 @@ Python 3.11+ offline face-attendance desktop app. PyQt5 UI, SQLite/WAL, ONNX Run
 2. `src/main.py` — app bootstrap (import order matters: onnxruntime before PyQt5)
 3. `src/attendance_system/core/db.py` — SQLite connection (WAL, foreign keys, `check_same_thread=False`)
 4. `src/attendance_system/core/bootstrap.py` — storage initializer (no `load_dotenv()`, uses CLI args)
-5. `.env.example` — all configurable env vars
-6. `codemap.md` — directory map with entrypoints
+5. `.env.example` — all configurable env vars (4 sections: Core, AI, Admin, Attendance UX)
+6. `codemap.md` + per-module `codemap.md` files — directory map with entrypoints
+7. `docs/README.md` — doc index (architecture, ai-pipeline, database, modules, adr, plans, agents)
 
 Prefer executable sources over prose; if docs conflict with code/config/scripts, trust the executable source.
 
@@ -23,12 +24,14 @@ attendance-storage-init --database-path <p>   # custom path
 attendance-app                                # launch GUI
 ruff check src/                               # full lint (E501 line-length pre-existing)
 ruff check src/ --select F                    # undefined names only (fast pre-commit check)
-pytest tests/                                 # full suite (155 tests)
+pytest tests/                                 # full suite (167 tests: 144 unit + 23 integration)
 pytest tests/unit/ -v                         # fast unit-only
 pytest tests/integration/ -v                  # DB/storage integration
-PYTHONPATH=src python src/main.py
-$env:PYTHONPATH='src'; python src/main.py
+PYTHONPATH=src python src/main.py             # dev run without `pip install -e .`
+$env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 ```
+
+`pytest` is a dev dependency (not in `pyproject.toml`); install with `pip install pytest`.
 
 ## Wiring
 
@@ -37,6 +40,15 @@ $env:PYTHONPATH='src'; python src/main.py
 - **`bootstrap.py`** uses raw CLI args + `DATABASE_PATH` env var, **not** `load_dotenv()`.
 - **`db.py`** connections: WAL journal, `synchronous=NORMAL`, `foreign_keys=ON`, `check_same_thread=False`. Path traversal guard in `DatabaseConfig`.
 - **Config priority:** CLI arg > env var > default. Thresholds seed once from `.env` into DB, then Admin UI controls them.
+
+## Related agent files
+
+- `CLAUDE.md` — behavioral layer (think before coding, simplicity, surgical changes, goal-driven execution). Read alongside this file.
+- `docs/agents/issue-tracker.md` — issues live on **GitHub Issues** via `gh` CLI; repo inferred from `git remote -v`.
+- `docs/agents/triage-labels.md` — five canonical labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`.
+- `docs/agents/domain.md` — read root `CONTEXT.md` + relevant `docs/adr/*` before working in an area; use glossary vocabulary in outputs.
+- `docs/plans/README.md` — feature plans convention (`active/` → `archive/` with date prefix on Done; standard sections: Status / Context / Goals / Non-Goals / Design Decisions / Implementation / Testing).
+- `docs/adr/0001-onnx-circuit-breaker.md` — explains the 30-failure ONNX circuit-breaker pattern.
 
 ## Gotchas
 
@@ -49,6 +61,7 @@ $env:PYTHONPATH='src'; python src/main.py
 - `_crop_face` scale: 2.7 for liveness (broad context), 1.5 for head-pose (tight crop).
 - `_COOLDOWN_SECONDS = 3.0` in `camera_thread.py` — per-user cooldown before re-recognition. In-memory, resets on thread restart.
 - `_AI_FRAME_SKIP = 3` — full AI pipeline runs every 3rd frame (~10 Hz at 30 fps).
+- `_PAUSE_POLL_INTERVAL_SECONDS = 0.05` — `CameraThread.pause()`/`resume()` poll interval; `AIWorker` idles naturally on its own queue.
 - `user_mode_view.py` tracks `_recognized_users` (set of `user_id`) to suppress duplicate sidebar entries + `_stats_success` increment. `_stats_total` always increments (total events).
 - `record_success()` catches `IntegrityError` internally on UNIQUE `(session_id, user_id)` — falls back to SELECT-existing, returns normally. Caller never sees a DB exception for duplicates.
 - `record_duplicate()` does **not** insert a `recognition_events` row (no audit trail for the second path — caller is expected to have already inserted one).
