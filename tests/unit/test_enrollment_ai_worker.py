@@ -258,7 +258,8 @@ def test_circuit_breaker_pose_error() -> None:
     # Submit 30 tasks — each triggers a PoseInferenceError
     for i in range(30):
         current_warnings = len(warnings)
-        worker.submit_task(frame_bgr, face_row, do_capture=False)
+        while not worker.submit_task(frame_bgr, face_row, do_capture=False):
+            time.sleep(0.001)
 
         start_t = time.monotonic()
         while (
@@ -332,7 +333,8 @@ def test_circuit_breaker_recovers() -> None:
     # Phase 1 — 5 errors (each emits a warning)
     for _ in range(5):
         current_warns = len(warnings)
-        worker.submit_task(frame_bgr, face_row, do_capture=False)
+        while not worker.submit_task(frame_bgr, face_row, do_capture=False):
+            time.sleep(0.001)
         start_t = time.monotonic()
         while len(warnings) == current_warns and time.monotonic() - start_t < 2.0:
             time.sleep(0.002)
@@ -342,7 +344,8 @@ def test_circuit_breaker_recovers() -> None:
 
     # Phase 2 — 1 success (counter resets, pose_estimated emitted)
     current_poses = len(pose_results)
-    worker.submit_task(frame_bgr, face_row, do_capture=False)
+    while not worker.submit_task(frame_bgr, face_row, do_capture=False):
+        time.sleep(0.001)
     start_t = time.monotonic()
     while len(pose_results) == current_poses and time.monotonic() - start_t < 2.0:
         time.sleep(0.002)
@@ -353,7 +356,8 @@ def test_circuit_breaker_recovers() -> None:
     # Phase 3 — 5 more errors (counter climbs from 0 → 5, still < 30)
     for _ in range(5):
         current_warns = len(warnings)
-        worker.submit_task(frame_bgr, face_row, do_capture=False)
+        while not worker.submit_task(frame_bgr, face_row, do_capture=False):
+            time.sleep(0.001)
         start_t = time.monotonic()
         while len(warnings) == current_warns and time.monotonic() - start_t < 2.0:
             time.sleep(0.002)

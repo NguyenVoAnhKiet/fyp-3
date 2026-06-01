@@ -311,57 +311,58 @@ class CameraThread(QThread):
             self.camera_error.emit(f"Cannot open camera (index {self._camera_index})")
             return
 
-        # Set resolution
-        w, h = 640, 480
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
-        
-        # Update detector input size to match camera
-        self._detector.setInputSize((w, h))
+        try:
+            # Set resolution
+            w, h = 640, 480
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
+            
+            # Update detector input size to match camera
+            self._detector.setInputSize((w, h))
 
-        # Start AI worker thread
-        self._ai_worker.start()
+            # Start AI worker thread
+            self._ai_worker.start()
 
-        self._running = True
-        frame_counter = 0
+            self._running = True
+            frame_counter = 0
 
-        while self._running:
-            ret, frame = cap.read()
-            if not ret:
-                success, cap, frame = self._retry_read(cap)
-                if not success:
-                    self.camera_error.emit(
-                        f"Camera read failed after {_MAX_READ_RETRIES} attempts."
-                    )
-                    break
-                # Reconnected successfully — continue processing this frame
+            while self._running:
+                ret, frame = cap.read()
+                if not ret:
+                    success, cap, frame = self._retry_read(cap)
+                    if not success:
+                        self.camera_error.emit(
+                            f"Camera read failed after {_MAX_READ_RETRIES} attempts."
+                        )
+                        break
+                    # Reconnected successfully — continue processing this frame
 
-            # YuNet expects BGR for detection, but we want RGB for display
-            faces = self._detect_faces(frame)
-            self._detected_faces = faces
+                # YuNet expects BGR for detection, but we want RGB for display
+                faces = self._detect_faces(frame)
+                self._detected_faces = faces
 
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-            # Decay result colour back to gray after hold period
-            if self._result_hold_counter > 0:
-                self._result_hold_counter -= 1
-                if self._result_hold_counter == 0:
-                    self._bbox_color = _COLOR_DETECTING
+                # Decay result colour back to gray after hold period
+                if self._result_hold_counter > 0:
+                    self._result_hold_counter -= 1
+                    if self._result_hold_counter == 0:
+                        self._bbox_color = _COLOR_DETECTING
 
-            # Draw bboxes onto a copy, then emit the annotated frame
-            annotated = self._draw_bboxes(frame_rgb)
-            self._emit_display_frame(annotated)
+                # Draw bboxes onto a copy, then emit the annotated frame
+                annotated = self._draw_bboxes(frame_rgb)
+                self._emit_display_frame(annotated)
 
-            # Run full AI pipeline asynchronously every N frames (only when faces are present)
-            frame_counter += 1
-            if frame_counter % _AI_FRAME_SKIP == 0 and self._detected_faces is not None and len(self._detected_faces) > 0:
-                # Skip AI work when queue is full — CPU drops ~30% during AI lag
-                if not self._ai_worker.is_busy():
-                    idx = int(np.argmax(self._detected_faces[:, 2] * self._detected_faces[:, 3]))
-                    face_row = self._detected_faces[idx]
-                    self._ai_worker.submit_task(frame, frame_rgb, face_row, frame_counter)
-
-        cap.release()
+                # Run full AI pipeline asynchronously every N frames (only when faces are present)
+                frame_counter += 1
+                if frame_counter % _AI_FRAME_SKIP == 0 and self._detected_faces is not None and len(self._detected_faces) > 0:
+                    # Skip AI work when queue is full — CPU drops ~30% during AI lag
+                    if not self._ai_worker.is_busy():
+                        idx = int(np.argmax(self._detected_faces[:, 2] * self._detected_faces[:, 3]))
+                        face_row = self._detected_faces[idx]
+                        self._ai_worker.submit_task(frame, frame_rgb, face_row, frame_counter)
+        finally:
+            cap.release()
 
     # ------------------------------------------------------------------
     # Private helpers

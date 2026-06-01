@@ -273,11 +273,14 @@ class FaceRecognizer:
         best_ref = None
 
         for ref in refs:
-            stored_emb = np.frombuffer(ref["embedding"], dtype=np.float32)
-            sim = self._cosine_similarity(live_emb, stored_emb)
-            if sim > best_sim:
-                best_sim = sim
-                best_ref = ref
+            try:
+                stored_emb = np.frombuffer(ref["embedding"], dtype=np.float32)
+                sim = self._cosine_similarity(live_emb, stored_emb)
+                if sim > best_sim:
+                    best_sim = sim
+                    best_ref = ref
+            except (ValueError, TypeError, IndexError):
+                continue
 
         #=======================================================================
         # Step 3: Apply similarity threshold guard

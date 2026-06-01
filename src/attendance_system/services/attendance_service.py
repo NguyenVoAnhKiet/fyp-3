@@ -108,6 +108,7 @@ class AttendanceService:
         Validation is assumed to have been performed by the caller (``record_success``).
         """
         self.attendance.require_non_empty_text(event_time, "event_time")
+        self._validate_session_active(session_id)
         with self.attendance.connection() as connection:
             row = connection.execute(
                 "SELECT id FROM attendance_records WHERE session_id = ? AND user_id = ?",

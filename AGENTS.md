@@ -23,7 +23,7 @@ attendance-storage-init --database-path <p>   # custom path
 attendance-app                                # launch GUI
 ruff check src/                               # full lint (E501 line-length pre-existing)
 ruff check src/ --select F                    # undefined names only (fast pre-commit check)
-pytest tests/                                 # full suite (142 tests)
+pytest tests/                                 # full suite (155 tests)
 pytest tests/unit/ -v                         # fast unit-only
 pytest tests/integration/ -v                  # DB/storage integration
 PYTHONPATH=src python src/main.py
@@ -53,6 +53,7 @@ $env:PYTHONPATH='src'; python src/main.py
 - `record_success()` catches `IntegrityError` internally on UNIQUE `(session_id, user_id)` — falls back to SELECT-existing, returns normally. Caller never sees a DB exception for duplicates.
 - `record_duplicate()` does **not** insert a `recognition_events` row (no audit trail for the second path — caller is expected to have already inserted one).
 - `attendance_records.user_id` is nullable, `ON DELETE SET NULL`.
+- LEFT JOIN required when joining `attendance_records` → `users`; INNER JOIN silently drops records of deleted users. NULL sort: `ORDER BY u.full_name ASC` puts deleted-user rows first — use `IS NULL, full_name ASC` to push them last.
 - Migration errors are now logged explicitly + re-raised (no silent failures). See `schema.py` `except Exception` blocks.
 - Session-status validation: `record_success()`, `record_spoof_warning()`, `record_unrecognized()` all raise `SessionClosedError` on closed sessions.
 

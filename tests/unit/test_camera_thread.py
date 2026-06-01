@@ -137,7 +137,8 @@ def test_ai_worker_circuit_breaker() -> None:
     # Submit 30 tasks
     for i in range(30):
         current_len = len(warnings)
-        worker.submit_task(frame_bgr, frame_rgb, face_row, i)
+        while not worker.submit_task(frame_bgr, frame_rgb, face_row, i):
+            time.sleep(0.001)
         
         # Wait for this task to be processed (up to 2 seconds)
         start_time = time.monotonic()
@@ -222,3 +223,46 @@ def test_ai_worker_recognition_cooldown() -> None:
         assert results[1] == ("success", 42, "John Doe")
         
         worker.stop()
+
+
+@patch("cv2.VideoCapture")
+@patch("time.sleep")
+@patch("cv2.FaceDetectorYN.create")
+def test_camera_thread_retry_read_releases_old_cap(mock_detector_create, mock_sleep, mock_video_capture_cls) -> None:
+    mock_detector_create.side_effect = lambda *args, **kwargs: MagicMock()
+    
+    liveness = MagicMock(spec=LivenessChecker)
+    recognizer = MagicMock(spec=FaceRecognizer)
+    
+    camera_thread = CameraThread(
+        session_id=1,
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
+        liveness_checker=liveness,
+        face_recognizer=recognizer,
+        detector_model_path=Path("fake.onnx"),
+    )
+    camera_thread._running = True  # simulate running
+    
+    # Setup mock cap that fails to read
+    mock_old_cap = MagicMock()
+    mock_old_cap.release = MagicMock()
+    
+    # Setup mock new cap that succeeds
+    mock_new_cap = MagicMock()
+    mock_new_cap.isOpened.return_value = True
+    mock_new_cap.read.return_value = (True, np.zeros((480, 640, 3), dtype=np.uint8))
+    
+    mock_video_capture_cls.return_value = mock_new_cap
+    
+    # Call _retry_read
+    success, return_cap, frame = camera_thread._retry_read(mock_old_cap)
+    
+    assert success is True
+    assert return_cap is mock_new_cap
+    assert frame is not None
+    
+    # Verify that the old cap was released BEFORE VideoCapture was reinstantiated
+    mock_old_cap.release.assert_called_once()
+    mock_video_capture_cls.assert_called_with(camera_thread._camera_index)
+

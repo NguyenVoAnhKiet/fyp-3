@@ -142,13 +142,16 @@ def test_on_recognition_result_catches_service_exception(view, mock_service) -> 
     mock_service.record_duplicate.assert_called_once()
 
 
-def test_on_recognition_result_catches_session_closed_error(view, mock_service) -> None:
+@patch("attendance_system.ui.user_mode_view.QMessageBox")
+def test_on_recognition_result_catches_session_closed_error(mock_qmessagebox, view, mock_service) -> None:
     """Callback must catch ``SessionClosedError`` and NOT fall through to duplicate."""
     mock_service.record_success.side_effect = SessionClosedError("Session 42 is closed")
 
     # Should not raise
     _invoke_callback(view, "success", user_id=1, full_name="Frank")
 
+    # QMessageBox.warning must have been called
+    mock_qmessagebox.warning.assert_called_once()
     # record_duplicate must NOT be called (session closed is not a duplicate scenario)
     mock_service.record_duplicate.assert_not_called()
 
