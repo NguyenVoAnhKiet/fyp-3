@@ -30,7 +30,7 @@ _KEY_CAMERA_INDEX = "camera_index"
 _KEY_LIVENESS_THRESHOLD = "liveness_threshold"
 _KEY_SIMILARITY_THRESHOLD = "similarity_threshold"
 
-_DEFAULT_LIVENESS = 0.5
+_DEFAULT_LIVENESS = 0.3
 _DEFAULT_SIMILARITY = 0.6
 
 # Range of camera indices to probe (0-4 inclusive)

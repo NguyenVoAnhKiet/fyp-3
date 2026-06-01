@@ -264,7 +264,7 @@ class EnrollmentWidget(QWidget):
 
         # Get settings
         cam_idx = int(self._settings_service.get("camera_index") or 0)
-        liveness_thresh = float(self._settings_service.get("liveness_threshold") or 0.5)
+        liveness_thresh = float(self._settings_service.get("liveness_threshold") or 0.3)
 
         # Liveness check is intentionally bypassed during enrollment.
         # Multi-pose face capture (yaw/pitch/roll) already provides strong
@@ -424,21 +424,25 @@ class EnrollmentWidget(QWidget):
         self._notif_anim.finished.connect(self._notification_label.hide)
         self._notif_anim.start()
 
-    @pyqtSlot(np.ndarray)
-    def _handle_complete(self, avg_embedding: np.ndarray) -> None:
+    @pyqtSlot(dict)
+    def _handle_complete(self, pose_embeddings: dict[str, np.ndarray]) -> None:
         """Finalize enrollment after success effect plays."""
         user_id = self._user_dropdown.currentData()
         # Delay final save + dialog by 1.5s so success effect is visible
-        QTimer.singleShot(1500, lambda: self._finalize_enrollment(user_id, avg_embedding))
+        QTimer.singleShot(1500, lambda: self._finalize_enrollment(user_id, pose_embeddings))
 
-    def _finalize_enrollment(self, user_id: int, avg_embedding: np.ndarray) -> None:
-        """Save embedding and show result (called after success effect)."""
+    def _finalize_enrollment(self, user_id: int, pose_embeddings: dict[str, np.ndarray]) -> None:
+        """Save five pose embeddings and show result (called after success effect)."""
         try:
-            self._enroll_service.save_face_reference(
+            pose_bytes = {
+                pose: emb.tobytes() for pose, emb in pose_embeddings.items()
+            }
+            first_emb = next(iter(pose_embeddings.values()))
+            self._enroll_service.save_face_references(
                 user_id=user_id,
-                embedding=avg_embedding.tobytes(),
+                pose_embeddings=pose_bytes,
                 model_name="SFace",
-                vector_length=len(avg_embedding)
+                vector_length=len(first_emb),
             )
             QMessageBox.information(self, "Thành Công", "Đăng ký khuôn mặt thành công!")
         except Exception as e:

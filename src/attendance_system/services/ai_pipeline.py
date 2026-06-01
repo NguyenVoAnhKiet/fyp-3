@@ -32,6 +32,7 @@ class RecognitionResult(NamedTuple):
     full_name: str
     student_id: str
     similarity: float
+    matched_pose_label: str = ""
 
 
 class LivenessChecker:
@@ -79,7 +80,13 @@ class LivenessChecker:
         return self._session is not None
 
     def _preprocess(self, face_rgb: np.ndarray) -> np.ndarray:
-        """Letterbox-resize and normalize face crop to model input tensor [1, 3, H, W]."""
+        """Letterbox-resize and normalize face crop to model input tensor [1, 3, H, W].
+
+        Pipeline (matches MiniFASNet training preprocessing without CLAHE):
+            1. Resize longest side to 128px (keep aspect ratio)
+            2. Reflect-pad to 128×128
+            3. Transpose HWC → CHW and normalize to [0, 1]
+        """
         #=======================================================================
         # Step 1: Scale the longest side down to 128px, keep aspect ratio
         #=======================================================================
@@ -106,7 +113,7 @@ class LivenessChecker:
         arr = img.transpose(2, 0, 1).astype(np.float32) / 255.0
         return arr[np.newaxis]  # add batch dim → [1, 3, H, W]
 
-    def check(self, face_rgb: np.ndarray, threshold: float = 0.5) -> LivenessResult:
+    def check(self, face_rgb: np.ndarray, threshold: float = 0.3) -> LivenessResult:
         """
         Check liveness of a pre-cropped face image.
 
@@ -114,7 +121,7 @@ class LivenessChecker:
 
         Args:
             face_rgb:  H×W×3 uint8 RGB face crop.
-            threshold: Probability threshold (0–1).  Default 0.5.
+            threshold: Probability threshold (0–1).  Default 0.3.
 
         Returns:
             LivenessResult with is_real flag and raw logit_diff score.
@@ -266,11 +273,14 @@ class FaceRecognizer:
         best_ref = None
 
         for ref in refs:
-            stored_emb = np.frombuffer(ref["embedding"], dtype=np.float32)
-            sim = self._cosine_similarity(live_emb, stored_emb)
-            if sim > best_sim:
-                best_sim = sim
-                best_ref = ref
+            try:
+                stored_emb = np.frombuffer(ref["embedding"], dtype=np.float32)
+                sim = self._cosine_similarity(live_emb, stored_emb)
+                if sim > best_sim:
+                    best_sim = sim
+                    best_ref = ref
+            except (ValueError, TypeError, IndexError):
+                continue
 
         #=======================================================================
         # Step 3: Apply similarity threshold guard
@@ -285,9 +295,12 @@ class FaceRecognizer:
         if user is None:
             return None
 
+        matched_pose_label = str(best_ref.get("pose_label", ""))
+
         return RecognitionResult(
             user_id=int(best_ref["user_id"]),
             full_name=str(user["full_name"]),
             student_id=str(user["student_id"]),
             similarity=best_sim,
+            matched_pose_label=matched_pose_label,
         )

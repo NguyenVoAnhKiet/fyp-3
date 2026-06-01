@@ -16,6 +16,7 @@ class FaceReference:
     embedding: bytes
     model_name: str
     vector_length: int
+    pose_label: str = "center"
 
 
 @dataclass(slots=True)

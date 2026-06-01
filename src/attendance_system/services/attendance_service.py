@@ -10,9 +10,17 @@ from attendance_system.repositories.attendance_repository import AttendanceRepos
 from attendance_system.repositories.recognition_event_repository import RecognitionEventRepository
 from attendance_system.repositories.session_repository import SessionRepository
 from attendance_system.repositories.user_repository import UserRepository
+from attendance_system.services.exceptions import SessionClosedError
 
 
 class AttendanceService:
+    """
+    Service layer for attendance recording and session management.
+
+    Raises:
+        SessionClosedError: When attempting to record attendance in a closed session.
+        LookupError: When session or user is not found.
+    """
     def __init__(self, database: Database) -> None:
         self.sessions = SessionRepository(database)
         self.attendance = AttendanceRepository(database)
@@ -44,6 +52,16 @@ class AttendanceService:
         if self.users.get_by_id(user_id) is None:
             raise LookupError(f"User {user_id} not found")
 
+    def _validate_session_active(self, session_id: int) -> None:
+        """Check session status is ``active``; raise ``SessionClosedError`` otherwise."""
+        session = self.sessions.get_by_id(session_id)
+        if session is None:
+            raise LookupError(f"Session {session_id} not found")
+        if session["status"] != "active":
+            raise SessionClosedError(
+                f"Session {session_id} is {session['status']}; attendance records rejected."
+            )
+
     def record_success(
         self,
         session_id: int,
@@ -55,6 +73,7 @@ class AttendanceService:
     ) -> int:
         self.attendance.require_non_empty_text(event_time, "event_time")
         self._validate_session_and_user(session_id, user_id)
+        self._validate_session_active(session_id)
         with self.attendance.connection() as connection:
             connection.execute(
                 """
@@ -64,37 +83,17 @@ class AttendanceService:
                 """,
                 (session_id, user_id, event_time, "success", liveness_score, similarity_score, details),
             )
-            cursor = connection.execute(
-                """
-                INSERT INTO attendance_records(session_id, user_id, status, recorded_at)
-                VALUES (?, ?, ?, ?)
-                """,
-                (session_id, user_id, "success", event_time),
-            )
-            return cursor.lastrowid
-
-    def record_duplicate(self, session_id: int, user_id: int, event_time: str, details: str | None = None) -> int:
-        self.attendance.require_non_empty_text(event_time, "event_time")
-        self._validate_session_and_user(session_id, user_id)
-        with self.attendance.connection() as connection:
-            connection.execute(
-                """
-                INSERT INTO recognition_events(
-                    session_id, user_id, event_time, result, details
-                ) VALUES (?, ?, ?, ?, ?)
-                """,
-                (session_id, user_id, event_time, "duplicate", details),
-            )
             try:
                 cursor = connection.execute(
                     """
                     INSERT INTO attendance_records(session_id, user_id, status, recorded_at)
                     VALUES (?, ?, ?, ?)
                     """,
-                    (session_id, user_id, "duplicate", event_time),
+                    (session_id, user_id, "success", event_time),
                 )
                 return cursor.lastrowid
             except sqlite3.IntegrityError:
+                # Duplicate — same user in same session; fall back to existing record
                 row = connection.execute(
                     "SELECT id FROM attendance_records WHERE session_id = ? AND user_id = ?",
                     (session_id, user_id),
@@ -103,7 +102,27 @@ class AttendanceService:
                     raise
                 return int(row["id"])
 
+    def record_duplicate(self, session_id: int, user_id: int, event_time: str, details: str | None = None) -> int:
+        """Record a duplicate recognition event and return the existing attendance record id.
+
+        Validation is assumed to have been performed by the caller (``record_success``).
+        """
+        self.attendance.require_non_empty_text(event_time, "event_time")
+        self._validate_session_active(session_id)
+        with self.attendance.connection() as connection:
+            row = connection.execute(
+                "SELECT id FROM attendance_records WHERE session_id = ? AND user_id = ?",
+                (session_id, user_id),
+            ).fetchone()
+            if row is None:
+                raise LookupError(
+                    f"No attendance record found for session {session_id}, user {user_id}. "
+                    "Call record_success first."
+                )
+            return int(row["id"])
+
     def record_spoof_warning(self, session_id: int, event_time: str, details: str | None = None) -> int:
+        self._validate_session_active(session_id)
         return self.events.create(
             session_id=session_id,
             user_id=None,
@@ -113,6 +132,7 @@ class AttendanceService:
         )
 
     def record_unrecognized(self, session_id: int, event_time: str, details: str | None = None) -> int:
+        self._validate_session_active(session_id)
         return self.events.create(
             session_id=session_id,
             user_id=None,
@@ -163,12 +183,15 @@ class AttendanceService:
             ) from e
 
         records = self.get_session_records(session_id)
-        df = pd.DataFrame([dict(r) for r in records])
-        if not df.empty:
+        if records:
+            df = pd.DataFrame([dict(r) for r in records])
             # Convert recorded_at from UTC to local timezone, then format for export
             df["recorded_at"] = df["recorded_at"].apply(utc_to_local).apply(self._format_export_time)
             df = df[["student_id", "full_name", "subject_name", "class_name", "status", "recorded_at"]]
             df.columns = ["Student ID", "Full Name", "Subject Name", "Class Name", "Status", "recorded_at"]
+        else:
+            # Empty session — produce a DataFrame with just headers
+            df = pd.DataFrame(columns=["Student ID", "Full Name", "Subject Name", "Class Name", "Status", "recorded_at"])
 
         if format == "csv":
             df.to_csv(file_path, index=False)

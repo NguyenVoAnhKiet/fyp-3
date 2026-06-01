@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
 import sqlite3
+
+logger = logging.getLogger(__name__)
 
 
 SCHEMA_STATEMENTS = (
@@ -27,11 +30,13 @@ SCHEMA_STATEMENTS = (
     """
     CREATE TABLE IF NOT EXISTS face_references (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL UNIQUE,
+        user_id INTEGER NOT NULL,
         embedding BLOB NOT NULL,
         model_name TEXT NOT NULL,
         vector_length INTEGER NOT NULL,
+        pose_label TEXT NOT NULL DEFAULT 'center',
         created_at TEXT NOT NULL,
+        UNIQUE(user_id, pose_label),
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
     """,
@@ -108,6 +113,39 @@ def _migrate_attendance_records_cascade_to_setnull(connection: sqlite3.Connectio
     connection.execute("PRAGMA foreign_keys = ON")
 
 
+def _migrate_face_references_add_pose_label(connection: sqlite3.Connection) -> None:
+    """Recreate face_references with pose_label column and UNIQUE(user_id, pose_label).
+
+    This is a no-data-loss migration: existing rows are preserved with
+    ``pose_label = 'center'``. If multiple rows exist for the same user_id
+    (extremely unlikely), only the row with the smallest id is kept so that
+    the UNIQUE constraint can be applied.
+    """
+    connection.execute("PRAGMA foreign_keys = OFF")
+    connection.execute("ALTER TABLE face_references RENAME TO face_references_old")
+    connection.execute("""
+        CREATE TABLE face_references (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            embedding BLOB NOT NULL,
+            model_name TEXT NOT NULL,
+            vector_length INTEGER NOT NULL,
+            pose_label TEXT NOT NULL DEFAULT 'center',
+            created_at TEXT NOT NULL,
+            UNIQUE(user_id, pose_label),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    """)
+    connection.execute("""
+        INSERT INTO face_references (id, user_id, embedding, model_name, vector_length, pose_label, created_at)
+        SELECT id, user_id, embedding, model_name, vector_length, 'center', created_at
+        FROM face_references_old
+        WHERE id IN (SELECT MIN(id) FROM face_references_old GROUP BY user_id)
+    """)
+    connection.execute("DROP TABLE face_references_old")
+    connection.execute("PRAGMA foreign_keys = ON")
+
+
 def initialize_schema(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA foreign_keys = ON")
     for statement in SCHEMA_STATEMENTS:
@@ -129,5 +167,23 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
         # New schema has "user_id INTEGER" (nullable) with ON DELETE SET NULL
         if row and "user_id INTEGER NOT NULL" in row[0]:
             _migrate_attendance_records_cascade_to_setnull(connection)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(
+            "[MIGRATION] attendance_records CASCADE→SET_NULL failed: %s: %s",
+            type(exc).__name__,
+            exc,
+        )
+        raise
+
+    # Migration: add pose_label and UNIQUE(user_id, pose_label) to face_references
+    try:
+        columns = [col[1] for col in connection.execute("PRAGMA table_info(face_references)")]
+        if "pose_label" not in columns:
+            _migrate_face_references_add_pose_label(connection)
+    except Exception as exc:
+        logger.warning(
+            "[MIGRATION] face_references pose_label migration failed: %s: %s",
+            type(exc).__name__,
+            exc,
+        )
+        raise

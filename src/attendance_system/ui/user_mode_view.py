@@ -25,6 +25,7 @@ from PyQt5.QtWidgets import (
 
 from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
 from attendance_system.services.attendance_service import AttendanceService
+from attendance_system.services.exceptions import SessionClosedError
 from attendance_system.services.settings_service import SettingsService
 from attendance_system.ui.camera_thread import CameraThread
 from attendance_system.ui.styles import (
@@ -50,7 +51,7 @@ from attendance_system.utils.time_utils import utc_now_iso, utc_to_local
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_LIVENESS_THRESHOLD = 0.5
+_DEFAULT_LIVENESS_THRESHOLD = 0.3
 _DEFAULT_SIMILARITY_THRESHOLD = 0.6
 
 # Stack indices for IDLE / ACTIVE sub-panels inside UserModeView
@@ -91,8 +92,9 @@ class UserModeView(QWidget):
         self._session_id: int | None = None
         self._camera_thread: CameraThread | None = None
         self._session_started_monotonic: float | None = None
-
-
+        # Track user_ids already acknowledged in sidebar this session
+        # to avoid showing the same person multiple times.
+        self._recognized_users: set[int] = set()
 
         self._stats_total: int = 0
         self._stats_success: int = 0
@@ -413,6 +415,7 @@ class UserModeView(QWidget):
             similarity_threshold_snapshot=similarity_threshold,
             start_time=utc_now_iso(),
         )
+        self._recognized_users.clear()
 
         self._session_info_label.setText(f"Môn: {subject}  |  Lớp: {class_name}")
         self._attendance_list.clear()
@@ -468,6 +471,7 @@ class UserModeView(QWidget):
 
         self._attendance.end_session(self._session_id, end_time=utc_now_iso())
         self._session_id = None
+        self._recognized_users.clear()
         self._stats_timer.stop()
         self._subject_input.clear()
         self._class_input.clear()
@@ -517,6 +521,7 @@ class UserModeView(QWidget):
         full_name: str,
         liveness_score: float,
         similarity_score: float | None,
+        matched_pose_label: str = "",
     ) -> None:
         if self._session_id is None:
             return
@@ -524,6 +529,7 @@ class UserModeView(QWidget):
         now = utc_now_iso()
 
         if result_type == "success":
+            details = f"matched_pose={matched_pose_label}" if matched_pose_label else None
             try:
                 self._attendance.record_success(
                     session_id=self._session_id,
@@ -531,23 +537,38 @@ class UserModeView(QWidget):
                     event_time=now,
                     liveness_score=liveness_score,
                     similarity_score=similarity_score,
+                    details=details,
                 )
-                self._add_to_sidebar(full_name, now)
-                self._stats_success += 1
+                # Only update sidebar & stats for first recognition of this user
+                if user_id not in self._recognized_users:
+                    self._recognized_users.add(user_id)
+                    self._add_to_sidebar(full_name, now)
+                    self._stats_success += 1
+            except SessionClosedError:
+                QMessageBox.warning(self, "Session Closed", "Cannot record attendance: the session has been closed.")
+                return
             except Exception:
-                self._attendance.record_duplicate(self._session_id, user_id, now)
+                self._attendance.record_duplicate(self._session_id, user_id, now, details=details)
 
         elif result_type == "spoof":
-            self._attendance.record_spoof_warning(
-                self._session_id, now, details=f"liveness={liveness_score:.3f}"
-            )
-            self._stats_spoof += 1
+            try:
+                self._attendance.record_spoof_warning(
+                    self._session_id, now, details=f"liveness={liveness_score:.3f}"
+                )
+                self._stats_spoof += 1
+            except SessionClosedError:
+                QMessageBox.warning(self, "Session Closed", "Cannot record spoof warning: the session has been closed.")
+                return
 
         elif result_type == "unrecognized":
-            self._attendance.record_unrecognized(
-                self._session_id, now, details=f"liveness={liveness_score:.3f}"
-            )
-            self._stats_unrecognized += 1
+            try:
+                self._attendance.record_unrecognized(
+                    self._session_id, now, details=f"liveness={liveness_score:.3f}"
+                )
+                self._stats_unrecognized += 1
+            except SessionClosedError:
+                QMessageBox.warning(self, "Session Closed", "Cannot record unrecognized: the session has been closed.")
+                return
 
         self._stats_total += 1
         self._refresh_stats_display()

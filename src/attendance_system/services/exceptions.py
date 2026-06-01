@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-__all__ = ["ONNXInferenceError", "PoseInferenceError", "LivenessInferenceError"]
+__all__ = [
+    "ONNXInferenceError",
+    "PoseInferenceError",
+    "LivenessInferenceError",
+    "SessionClosedError",
+]
 
 
 class ONNXInferenceError(Exception):
@@ -28,3 +33,7 @@ class PoseInferenceError(ONNXInferenceError):
 
 class LivenessInferenceError(ONNXInferenceError):
     """Liveness detection ONNX inference failed."""
+
+
+class SessionClosedError(Exception):
+    """Raised when attempting to record attendance in a closed session."""

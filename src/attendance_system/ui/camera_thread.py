@@ -16,6 +16,7 @@ from PyQt5.QtGui import QImage
 from pathlib import Path
 from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
 from attendance_system.services.exceptions import LivenessInferenceError
+from attendance_system.core.liveness_tracker import LivenessTracker, compute_iou, IOU_THRESHOLD
 from attendance_system.utils.face_utils import _crop_face, _create_face_detector
 
 _AI_FRAME_SKIP = 3       # run full pipeline every N frames (≈10 Hz at 30 fps)
@@ -43,7 +44,7 @@ class AIWorker(QThread):
     Worker QThread that performs anti-spoofing and face recognition on a background thread.
     Uses a queue of size 1 for backpressure.
     """
-    recognition_result = pyqtSignal(str, int, str, float, object)
+    recognition_result = pyqtSignal(str, int, str, float, object, str)
     inference_warning = pyqtSignal(str)
     camera_error = pyqtSignal(str)
 
@@ -64,6 +65,7 @@ class AIWorker(QThread):
         self._running = False
         self._consecutive_failures = 0
         self._last_recognized: dict[int, float] = {}  # user_id -> monotonic timestamp
+        self._liveness_tracker = LivenessTracker()
 
     def submit_task(
         self,
@@ -108,7 +110,7 @@ class AIWorker(QThread):
 
             # Step 1 — Liveness (MiniFASNet ONNX)
             try:
-                liveness = self._liveness_checker.check(face_crop, self._liveness_threshold)
+                liveness = self._liveness_checker.check(face_crop, 0.0)
             except LivenessInferenceError:
                 self._consecutive_failures += 1
                 logger.warning(
@@ -131,14 +133,29 @@ class AIWorker(QThread):
             # Reset consecutive-failure counter on success
             self._consecutive_failures = 0
 
-            if not liveness.is_real:
-                self.recognition_result.emit("spoof", 0, "", liveness.score, None)
+            # ── Temporal smoothing via EMA + Hysteresis tracker ─────────────
+            # Feed raw detection + liveness score into the tracker, then look
+            # up our face's result from the returned active tracks.
+            bbox_float = (float(x), float(y), float(w), float(h))
+            tracked_faces = self._liveness_tracker.update([bbox_float], [liveness.score])
+
+            # Find the track that matches our current detection
+            state = "SPOOF"
+            ema_score = liveness.score
+            for tb, ts, tes in tracked_faces:
+                if compute_iou(bbox_float, tb) >= IOU_THRESHOLD:
+                    state = ts
+                    ema_score = tes
+                    break
+
+            if state == "SPOOF":
+                self.recognition_result.emit("spoof", 0, "", ema_score, None, "")
                 continue
 
             # Step 2 — Recognition (SFace)
             match = self._face_recognizer.identify(frame_bgr, face_row, self._similarity_threshold)
             if match is None:
-                self.recognition_result.emit("unrecognized", 0, "", liveness.score, 0.0)
+                self.recognition_result.emit("unrecognized", 0, "", ema_score, 0.0, "")
                 continue
 
             # Per-user cooldown to avoid flooding the DB
@@ -148,10 +165,12 @@ class AIWorker(QThread):
             self._last_recognized[match.user_id] = now
 
             self.recognition_result.emit(
-                "success", match.user_id, match.full_name, liveness.score, match.similarity
+                "success", match.user_id, match.full_name, ema_score, match.similarity,
+                match.matched_pose_label,
             )
 
     def stop(self) -> None:
+        self._liveness_tracker.tracks.clear()
         self._running = False
         # Drain the queue to release references to frames
         while not self._queue.empty():
@@ -191,7 +210,7 @@ class CameraThread(QThread):
     """
 
     frame_ready = pyqtSignal(QImage)
-    recognition_result = pyqtSignal(str, int, str, float, object)
+    recognition_result = pyqtSignal(str, int, str, float, object, str)
     camera_error = pyqtSignal(str)
     inference_warning = pyqtSignal(str)
 
@@ -292,57 +311,58 @@ class CameraThread(QThread):
             self.camera_error.emit(f"Cannot open camera (index {self._camera_index})")
             return
 
-        # Set resolution
-        w, h = 640, 480
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
-        
-        # Update detector input size to match camera
-        self._detector.setInputSize((w, h))
+        try:
+            # Set resolution
+            w, h = 640, 480
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
+            
+            # Update detector input size to match camera
+            self._detector.setInputSize((w, h))
 
-        # Start AI worker thread
-        self._ai_worker.start()
+            # Start AI worker thread
+            self._ai_worker.start()
 
-        self._running = True
-        frame_counter = 0
+            self._running = True
+            frame_counter = 0
 
-        while self._running:
-            ret, frame = cap.read()
-            if not ret:
-                success, cap, frame = self._retry_read(cap)
-                if not success:
-                    self.camera_error.emit(
-                        f"Camera read failed after {_MAX_READ_RETRIES} attempts."
-                    )
-                    break
-                # Reconnected successfully — continue processing this frame
+            while self._running:
+                ret, frame = cap.read()
+                if not ret:
+                    success, cap, frame = self._retry_read(cap)
+                    if not success:
+                        self.camera_error.emit(
+                            f"Camera read failed after {_MAX_READ_RETRIES} attempts."
+                        )
+                        break
+                    # Reconnected successfully — continue processing this frame
 
-            # YuNet expects BGR for detection, but we want RGB for display
-            faces = self._detect_faces(frame)
-            self._detected_faces = faces
+                # YuNet expects BGR for detection, but we want RGB for display
+                faces = self._detect_faces(frame)
+                self._detected_faces = faces
 
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-            # Decay result colour back to gray after hold period
-            if self._result_hold_counter > 0:
-                self._result_hold_counter -= 1
-                if self._result_hold_counter == 0:
-                    self._bbox_color = _COLOR_DETECTING
+                # Decay result colour back to gray after hold period
+                if self._result_hold_counter > 0:
+                    self._result_hold_counter -= 1
+                    if self._result_hold_counter == 0:
+                        self._bbox_color = _COLOR_DETECTING
 
-            # Draw bboxes onto a copy, then emit the annotated frame
-            annotated = self._draw_bboxes(frame_rgb)
-            self._emit_display_frame(annotated)
+                # Draw bboxes onto a copy, then emit the annotated frame
+                annotated = self._draw_bboxes(frame_rgb)
+                self._emit_display_frame(annotated)
 
-            # Run full AI pipeline asynchronously every N frames (only when faces are present)
-            frame_counter += 1
-            if frame_counter % _AI_FRAME_SKIP == 0 and self._detected_faces is not None and len(self._detected_faces) > 0:
-                # Skip AI work when queue is full — CPU drops ~30% during AI lag
-                if not self._ai_worker.is_busy():
-                    idx = int(np.argmax(self._detected_faces[:, 2] * self._detected_faces[:, 3]))
-                    face_row = self._detected_faces[idx]
-                    self._ai_worker.submit_task(frame, frame_rgb, face_row, frame_counter)
-
-        cap.release()
+                # Run full AI pipeline asynchronously every N frames (only when faces are present)
+                frame_counter += 1
+                if frame_counter % _AI_FRAME_SKIP == 0 and self._detected_faces is not None and len(self._detected_faces) > 0:
+                    # Skip AI work when queue is full — CPU drops ~30% during AI lag
+                    if not self._ai_worker.is_busy():
+                        idx = int(np.argmax(self._detected_faces[:, 2] * self._detected_faces[:, 3]))
+                        face_row = self._detected_faces[idx]
+                        self._ai_worker.submit_task(frame, frame_rgb, face_row, frame_counter)
+        finally:
+            cap.release()
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -452,6 +472,7 @@ class CameraThread(QThread):
         full_name: str,
         liveness_score: float,
         similarity_score: Any,
+        matched_pose_label: str = "",
     ) -> None:
         self._current_result_type = result_type
         self._current_result_name = full_name
@@ -466,4 +487,4 @@ class CameraThread(QThread):
             self._bbox_color = _COLOR_UNKNOWN
 
         self._result_hold_counter = _RESULT_HOLD_FRAMES
-        self.recognition_result.emit(result_type, user_id, full_name, liveness_score, similarity_score)
+        self.recognition_result.emit(result_type, user_id, full_name, liveness_score, similarity_score, matched_pose_label)
