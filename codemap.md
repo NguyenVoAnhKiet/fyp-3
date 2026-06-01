@@ -33,6 +33,5 @@
 | `data/` | Runtime data storage (exports, logs, etc.) | — |
 | `docs/` | Documentation assets | — |
 | `scripts/` | Helper scripts | [View Map](scripts/codemap.md) |
-| `openspec/` | OpenSpec specifications | — |
 | `.agents/` | Agent tooling config | — |
 | `.slim/` | Slim tooling workspace | — |
