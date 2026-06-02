@@ -21,10 +21,12 @@ This folder tracks in-flight and archived feature plans — work-in-progress des
 
 ## Active Plans
 
-| ID | Title | Status | Branch | Owner |
-|----|-------|--------|--------|-------|
-| 0001 | [Attendance Freeze Feedback](active/0001-attendance-freeze-feedback.md) | Draft | `feature/attendance-freeze-feedback` | — |
+_No active plans — see [Archive](#archive) for completed work._
 
 ## Archive
 
 Browse `docs/plans/archive/` for completed plans. Date prefix sorts chronologically.
+
+| ID | Title | Done on | Branch |
+|----|-------|---------|--------|
+| 0001 | [Attendance Freeze Feedback](archive/2026-06-02-0001-attendance-freeze-feedback.md) | 2026-06-02 | `feature/attendance-freeze-feedback` |

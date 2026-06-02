@@ -2,7 +2,7 @@
 
 ## Status
 
-**Draft** — design finalized, implementation pending on branch `feature/attendance-freeze-feedback`.
+**Done** — implementation complete on branch `feature/attendance-freeze-feedback` (commits `12b030d`, `4110d97`). 12 new unit tests pass (5 `test_camera_thread_pause`, 7 `test_user_mode_freeze`); full suite 144/144; ruff clean. Awaiting merge to `main`.
 
 ## Context
 
