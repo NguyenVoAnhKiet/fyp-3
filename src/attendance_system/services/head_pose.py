@@ -2,23 +2,16 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Final, NamedTuple
+from typing import NamedTuple
 
-import cv2
 import numpy as np
 import onnxruntime as ort
 
 from attendance_system.services.exceptions import PoseInferenceError
+from attendance_system.services.face_preprocessor import FacePreprocessor
+from attendance_system.services.preprocessing_configs import HEAD_POSE_CONFIG
 
 __all__ = ["HeadPoseEstimator", "PoseAngles"]
-
-_INPUT_SIZE: Final[tuple[int, int]] = (224, 224)
-_IMAGENET_MEAN: Final[np.ndarray] = np.array(
-    [0.485, 0.456, 0.406], dtype=np.float32
-)
-_IMAGENET_STD: Final[np.ndarray] = np.array(
-    [0.229, 0.224, 0.225], dtype=np.float32
-)
 
 
 class PoseAngles(NamedTuple):
@@ -39,6 +32,10 @@ class HeadPoseEstimator:
             raise RuntimeError("Head pose model does not expose any inputs")
         self._input_name = inputs[0].name
 
+        # Composable preprocessing pipeline (extracted as part of plan 0007).
+        # Owns BGR->RGB, direct resize, ImageNet normalize, to_tensor.
+        self._preprocessor = FacePreprocessor(HEAD_POSE_CONFIG)
+
     def estimate(self, face_crop_bgr: np.ndarray) -> tuple[float, float, float]:
         """Return pitch, yaw, and roll in degrees for a BGR face crop."""
         tensor = self._preprocess(face_crop_bgr)
@@ -53,18 +50,24 @@ class HeadPoseEstimator:
         rotation_matrix = self._rotation_matrix(raw_output)
         return self._matrix_to_euler(rotation_matrix)
 
-    def _preprocess(self, face_crop_bgr: np.ndarray) -> np.ndarray:
+    def _preprocess(
+        self,
+        face_crop_bgr: np.ndarray,
+        bbox: tuple[int, int, int, int] | None = None,
+    ) -> np.ndarray:
+        """Preprocess a BGR face crop into the head-pose input tensor.
+
+        Delegates to the shared `FacePreprocessor` (plan 0007). The
+        optional `bbox` argument enables the crop step; existing
+        callers pre-crop with `_crop_face` and pass ``bbox=None``,
+        so behavior is unchanged.
+
+        Returns:
+            float32 tensor of shape ``(1, 3, 224, 224)``, ImageNet-normalized.
+        """
         if face_crop_bgr.size == 0:
             raise ValueError("face_crop_bgr is empty")
-        if face_crop_bgr.ndim != 3 or face_crop_bgr.shape[2] != 3:
-            raise ValueError("face_crop_bgr must be an HxWx3 BGR image")
-
-        face_rgb = cv2.cvtColor(face_crop_bgr, cv2.COLOR_BGR2RGB)
-        resized = cv2.resize(face_rgb, _INPUT_SIZE, interpolation=cv2.INTER_LINEAR)
-        normalized = resized.astype(np.float32) / 255.0
-        normalized = (normalized - _IMAGENET_MEAN) / _IMAGENET_STD
-        chw = np.transpose(normalized, (2, 0, 1))
-        return chw[np.newaxis, ...]
+        return self._preprocessor(face_crop_bgr, bbox)
 
     @staticmethod
     def _rotation_matrix(raw_output: np.ndarray) -> np.ndarray:

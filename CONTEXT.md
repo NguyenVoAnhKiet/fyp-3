@@ -18,11 +18,13 @@
 
 ### Preprocessing
 
-**CLAHE** — Contrast Limited Adaptive Histogram Equalization. Improves contrast in low-light images by locally equalizing histogram. Helps with poor lighting but can add frame-to-frame variance.
+**FacePreprocessor** — Composable preprocessing pipeline (`src/attendance_system/services/face_preprocessor.py`). Steps: `crop → color → optional CLAHE → resize → normalize → to_tensor (HWC→CHW float32)`. Each ONNX model gets its own frozen `PreprocessingConfig` (see `preprocessing_configs.py`): `LIVENESS_CONFIG` for MiniFASNet (scale=2.7, 128×128, [0,1], letterbox), `HEAD_POSE_CONFIG` for MobileNetV2 (scale=1.5, 224×224, ImageNet, direct resize, BGR input). Adding a new model = define a new config, no preprocessing code duplication.
 
-**Crop Scale** — Factor controlling how much context around the face bbox is included. `scale=2.7` = large crop with background. `scale=1.5` = tight crop, mostly face.
+**CLAHE** — Contrast Limited Adaptive Histogram Equalization. Improves contrast in low-light images by locally equalizing histogram. **Status (resolved, plan 0007):** OFF by default in production (`use_clahe=False` in `LIVENESS_CONFIG` / `HEAD_POSE_CONFIG`). Toggleable per-config. Phase-1 testing showed that removing CLAHE worsened poor-light performance (99% spoof rate), but the result was kept because the MiniFASNet training pipeline does not include CLAHE — the test confirmed CLAHE was a mismatch with the training distribution, not a needed enhancement. The toggle remains available for future experimentation.
 
-**Letterbox Resize** — Resize longest side to target size, pad shorter side to make square. Preserves aspect ratio.
+**Crop Scale** — Factor controlling how much context around the face bbox is included. `scale=2.7` = large crop with background. `scale=1.5` = tight crop, mostly face. Encoded in each model's `PreprocessingConfig.scale`.
+
+**Letterbox Resize** — Resize longest side to target size, pad shorter side to make square. Preserves aspect ratio. `ResizeMode.LETTERBOX` in `FacePreprocessor` (used by liveness). `ResizeMode.DIRECT` does straight `cv2.resize` (used by head-pose, matching its training pipeline).
 
 ### Temporal Behavior
 
@@ -56,7 +58,7 @@
 1. Should we use temporal smoothing? (Recommended: yes) → **CONFIRMED: YES, no temporal smoothing currently**
 2. What is the optimal crop scale for liveness? (Current: 2.7, needs validation) → **CONFIRMED: 2.7 is defensible**
 3. Should we use hysteresis thresholds? (Recommended: yes) → **PENDING: Phase 2**
-4. Should CLAHE be always-on or optional? (Current: always-on) → **CONFIRMED: Remove by default, CLAHE is mismatch**
+4. Should CLAHE be always-on or optional? (Current: always-on) → **RESOLVED (plan 0007): OFF by default, toggleable per `PreprocessingConfig.use_clahe`. Production code has CLAHE removed to match the MiniFASNet training pipeline.**
 5. Should we validate against FP model vs quantized model? → **CONFIRMED: Quantized shows no accuracy drop on benchmark**
 
 ## Phase 1 Findings

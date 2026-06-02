@@ -1,7 +1,7 @@
 """AI pipeline: liveness detection (ONNX) + face recognition (SFace)."""
 
 from __future__ import annotations
- 
+
 __all__ = ["LivenessResult", "RecognitionResult", "LivenessChecker", "FaceRecognizer"]
 
 import math
@@ -14,12 +14,12 @@ import onnxruntime as ort
 
 from attendance_system.core.db import Database
 from attendance_system.services.exceptions import LivenessInferenceError
+from attendance_system.services.face_preprocessor import FacePreprocessor
+from attendance_system.services.preprocessing_configs import LIVENESS_CONFIG
 from attendance_system.repositories.face_reference_repository import (
     FaceReferenceRepository,
 )
 from attendance_system.repositories.user_repository import UserRepository
-
-_LIVENESS_IMG_SIZE = 128
 
 
 class LivenessResult(NamedTuple):
@@ -69,6 +69,11 @@ class LivenessChecker:
             self._input_name = None
             self._model_path = ""
 
+        # Composable preprocessing pipeline (extracted from this class as
+        # part of plan 0007). Owns crop -> resize -> normalize -> to_tensor.
+        # `_preprocess` below is now a one-liner that delegates here.
+        self._preprocessor = FacePreprocessor(LIVENESS_CONFIG)
+
     @property
     def is_enabled(self) -> bool:
         """Whether a real ONNX model is loaded (vs. disabled/bypassed).
@@ -79,39 +84,22 @@ class LivenessChecker:
         """
         return self._session is not None
 
-    def _preprocess(self, face_rgb: np.ndarray) -> np.ndarray:
-        """Letterbox-resize and normalize face crop to model input tensor [1, 3, H, W].
+    def _preprocess(
+        self,
+        face_rgb: np.ndarray,
+        bbox: tuple[int, int, int, int] | None = None,
+    ) -> np.ndarray:
+        """Preprocess a face crop into the MiniFASNet input tensor.
 
-        Pipeline (matches MiniFASNet training preprocessing without CLAHE):
-            1. Resize longest side to 128px (keep aspect ratio)
-            2. Reflect-pad to 128×128
-            3. Transpose HWC → CHW and normalize to [0, 1]
+        Delegates to the shared `FacePreprocessor` (plan 0007). The
+        optional `bbox` argument enables the crop step; existing
+        callers pre-crop with `_crop_face` and pass ``bbox=None``,
+        so behavior is unchanged.
+
+        Returns:
+            float32 tensor of shape ``(1, 3, 128, 128)``, values in [0, 1].
         """
-        #=======================================================================
-        # Step 1: Scale the longest side down to 128px, keep aspect ratio
-        #=======================================================================
-        old_size = face_rgb.shape[:2]  # (H, W)
-        ratio = float(_LIVENESS_IMG_SIZE) / max(old_size)
-        scaled_shape = (int(old_size[0] * ratio), int(old_size[1] * ratio))
-        interp = cv2.INTER_LANCZOS4 if ratio > 1.0 else cv2.INTER_AREA
-        img = cv2.resize(face_rgb, (scaled_shape[1], scaled_shape[0]), interpolation=interp)
-
-        #=======================================================================
-        # Step 2: Pad the shorter side to make a 128×128 square
-        #=======================================================================
-        # BORDER_REFLECT_101 avoids hard edge artifacts at the padding boundary.
-        delta_h = _LIVENESS_IMG_SIZE - scaled_shape[0]
-        delta_w = _LIVENESS_IMG_SIZE - scaled_shape[1]
-        top, bottom = delta_h // 2, delta_h - (delta_h // 2)
-        left, right = delta_w // 2, delta_w - (delta_w // 2)
-        img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_REFLECT_101)
-
-        #=======================================================================
-        # Step 3: HWC uint8 → CHW float32 in [0, 1] (model training range)
-        #=======================================================================
-        # NOTE: Do NOT normalize to [-1, 1]; this model was trained with [0, 1] inputs.
-        arr = img.transpose(2, 0, 1).astype(np.float32) / 255.0
-        return arr[np.newaxis]  # add batch dim → [1, 3, H, W]
+        return self._preprocessor(face_rgb, bbox)
 
     def check(self, face_rgb: np.ndarray, threshold: float = 0.3) -> LivenessResult:
         """

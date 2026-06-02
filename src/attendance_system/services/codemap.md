@@ -8,9 +8,20 @@ Business logic layer that encapsulates all domain operations. Acts as the interm
 
 ### `ai_pipeline.py` — AI inference orchestration
 
-- **`LivenessChecker`** — Wraps the quantized MiniFASNet ONNX model (`models/anti_spoof/best_model_quantized.onnx`). Performs letterbox-resize preprocessing (128×128, [0,1] range), runs ONNX inference, and classifies real vs. spoof via logit-diff thresholding. Can be disabled entirely by passing `model_path=None` (or setting `FACE_ANTISPOOF_ENABLED=false`) — all faces treated as real.
+- **`LivenessChecker`** — Wraps the quantized MiniFASNet ONNX model (`models/anti_spoof/best_model_quantized.onnx`). Preprocessing is delegated to `FacePreprocessor(LIVENESS_CONFIG)` (letterbox-resize 128×128, [0,1] range, RGB). Runs ONNX inference and classifies real vs. spoof via logit-diff thresholding. Can be disabled entirely by passing `model_path=None` (or setting `FACE_ANTISPOOF_ENABLED=false`) — all faces treated as real.
 - **`FaceRecognizer`** — Wraps the SFace ONNX model (`models/face_recognition/face_recognition_sface_2021dec.onnx`) via OpenCV's `cv2.FaceRecognizerSF`. Extracts 128-dim float32 embeddings using `alignCrop` + `feature`. Identification uses cosine similarity against all cached face references from `FaceReferenceRepository.get_all()`. Resolution of matched user details via `UserRepository`.
 - **`LivenessResult` / `RecognitionResult`** — NamedTuple data carriers across threads.
+
+### `face_preprocessor.py` — Composable preprocessing pipeline (plan 0007)
+
+- **`FacePreprocessor`** — Stateless pipeline: `crop → color → optional CLAHE → resize (letterbox|direct) → normalize (zero_one|imagenet) → to_tensor (HWC→CHW float32)`. Composed by a frozen `PreprocessingConfig` (scale, target_size, normalize, use_clahe, input_color, resize_mode). No ONNX dependency, so each step is unit-testable in isolation.
+- **`PreprocessingConfig`** — Frozen dataclass; per-model recipe. Adding a new model = one new config constant in `preprocessing_configs.py`.
+- **Constants:** `Normalize.{ZERO_ONE, IMAGENET}`, `ResizeMode.{LETTERBOX, DIRECT}`, `InputColor.{RGB, BGR}`.
+
+### `preprocessing_configs.py` — Per-model config constants (plan 0007)
+
+- **`LIVENESS_CONFIG`** — `scale=2.7, target_size=(128, 128), normalize=zero_one, use_clahe=False, input_color=rgb, resize_mode=letterbox`. Matches the MiniFASNet training pipeline.
+- **`HEAD_POSE_CONFIG`** — `scale=1.5, target_size=(224, 224), normalize=imagenet, use_clahe=False, input_color=bgr, resize_mode=direct`. Matches the MobileNetV2 training pipeline.
 
 ### `attendance_service.py` — Attendance session lifecycle
 
@@ -42,7 +53,7 @@ Each carries optional `input_shape` and `model_path` context for logging. Used i
 
 ### `head_pose.py` — Head pose estimation
 
-- **`HeadPoseEstimator`** — ONNX model that outputs a 3×3 rotation matrix from a 224×224 RGB face crop. Preprocessing uses ImageNet normalization (mean/std). Converts rotation matrix to pitch/yaw/roll (degrees) via Euler angle decomposition.
+- **`HeadPoseEstimator`** — ONNX model that outputs a 3×3 rotation matrix from a 224×224 RGB face crop. Preprocessing is delegated to `FacePreprocessor(HEAD_POSE_CONFIG)` (direct resize, ImageNet normalization, BGR→RGB). Converts rotation matrix to pitch/yaw/roll (degrees) via Euler angle decomposition.
 - Raises `PoseInferenceError` on inference failure.
 
 ### `settings_service.py` — System settings CRUD
