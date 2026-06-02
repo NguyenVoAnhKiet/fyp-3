@@ -21,7 +21,9 @@ This folder tracks in-flight and archived feature plans — work-in-progress des
 
 ## Active Plans
 
-_No active plans — see [Archive](#archive) for completed work._
+| ID | Title | Status | Branch |
+|----|-------|--------|--------|
+| 0002 | [Architecture Deepening — 5 Grilling Candidates](active/0002-architecture-deepening.md) | Draft | `refactor/source-code` |
 
 ## Archive
 
