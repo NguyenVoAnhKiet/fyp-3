@@ -8,6 +8,7 @@ from pathlib import Path
 from PyQt5.QtCore import QTimer, Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QKeyEvent, QPixmap
 from PyQt5.QtWidgets import (
+    QApplication,
     QFrame,
     QGraphicsDropShadowEffect,
     QGridLayout,
@@ -100,6 +101,8 @@ class UserModeView(QWidget):
         self._stats_success: int = 0
         self._stats_spoof: int = 0
         self._stats_unrecognized: int = 0
+        self._freeze_overlay: QLabel | None = None
+        self._freeze_timer: QTimer | None = None
 
         self._build_ui()
         self._stats_timer = QTimer(self)
@@ -309,6 +312,7 @@ class UserModeView(QWidget):
         layout.addWidget(btn_end)
 
         self._refresh_stats_display()
+        self._build_freeze_overlay()
         return panel
 
     def _make_stat_card(self, label: str, colour: str) -> QFrame:
@@ -336,6 +340,27 @@ class UserModeView(QWidget):
         card._value_label = value  # type: ignore[attr-defined]
         return card
 
+    def _build_freeze_overlay(self) -> None:
+        """Build the freeze overlay QLabel positioned over the camera feed."""
+        if self._freeze_overlay is not None:
+            return
+        # Parent to _camera_label so coordinates are local to the video widget,
+        # not to the UserModeView (avoids ~44px layout-margin offset bug).
+        self._freeze_overlay = QLabel(self._camera_label)
+        self._freeze_overlay.setStyleSheet(
+            f"background-color: rgba(15, 23, 42, 0.85);"
+            f"color: {STATUS_SUCCESS};"
+            f"font-size: 28px;"
+            f"font-weight: bold;"
+            f"border-radius: 14px;"
+        )
+        self._freeze_overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._freeze_overlay.setText("✓ ĐIỂM DANH THÀNH CÔNG")
+        self._freeze_overlay.setGeometry(
+            0, 0, self._camera_label.width(), self._camera_label.height()
+        )
+        self._freeze_overlay.hide()
+
     def _refresh_stats_display(self) -> None:
         if self._session_started_monotonic is not None:
             elapsed_seconds = max(0, int(time.monotonic() - self._session_started_monotonic))
@@ -351,6 +376,11 @@ class UserModeView(QWidget):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
+        # Keep freeze overlay synced to camera_label on every resize
+        if self._freeze_overlay is not None:
+            self._freeze_overlay.setGeometry(
+                0, 0, self._camera_label.width(), self._camera_label.height()
+            )
 
     def _reset_stats(self) -> None:
         self._stats_total = 0
@@ -382,6 +412,48 @@ class UserModeView(QWidget):
             self.login_requested.emit()
         else:
             super().keyPressEvent(a0)
+
+    # ------------------------------------------------------------------
+    # Freeze / Pause helpers
+    # ------------------------------------------------------------------
+
+    def _trigger_freeze(self) -> None:
+        """Freeze the camera and show a success overlay after first recognition."""
+        # Cancel any in-progress freeze to avoid orphan timers
+        if self._freeze_timer is not None:
+            self._freeze_timer.stop()
+        seconds_str = self._settings.get("attendance_freeze_seconds")
+        seconds = int(seconds_str) if seconds_str is not None else 4
+        if seconds == 0:
+            return  # feature disabled
+        if self._camera_thread is not None:
+            self._camera_thread.pause()
+        if self._freeze_overlay is not None:
+            # Re-sync geometry in case the camera_label was resized after build
+            self._freeze_overlay.setGeometry(
+                0, 0, self._camera_label.width(), self._camera_label.height()
+            )
+            self._freeze_overlay.show()
+            self._freeze_overlay.raise_()
+        # Optional sound cue
+        sound_enabled = self._settings.get("attendance_freeze_sound_enabled")
+        # Platform note: QApplication.beep() plays the system default sound on Windows,
+        # may be silent on some Linux setups, and uses the system alert sound on macOS.
+        if sound_enabled and sound_enabled.lower() in ("true", "1", "yes"):
+            QApplication.beep()
+        # Schedule end of freeze (use a real QTimer so we can cancel it)
+        self._freeze_timer = QTimer(self)
+        self._freeze_timer.setSingleShot(True)
+        self._freeze_timer.timeout.connect(self._end_freeze)
+        self._freeze_timer.start(seconds * 1000)
+
+    def _end_freeze(self) -> None:
+        """Resume the camera and hide the freeze overlay."""
+        if self._camera_thread is not None:
+            self._camera_thread.resume()
+        if self._freeze_overlay is not None:
+            self._freeze_overlay.hide()
+        self._freeze_timer = None
 
     # ------------------------------------------------------------------
     # Session lifecycle
@@ -465,6 +537,15 @@ class UserModeView(QWidget):
         if self._session_id is None:
             return
 
+        # Cancel any pending freeze before stopping the camera
+        if self._freeze_timer is not None:
+            self._freeze_timer.stop()
+            self._freeze_timer = None
+        if self._freeze_overlay is not None:
+            self._freeze_overlay.hide()
+        if self._camera_thread is not None:
+            self._camera_thread.resume()
+
         if self._camera_thread is not None:
             self._camera_thread.stop()
             self._camera_thread = None
@@ -544,6 +625,7 @@ class UserModeView(QWidget):
                     self._recognized_users.add(user_id)
                     self._add_to_sidebar(full_name, now)
                     self._stats_success += 1
+                    self._trigger_freeze()
             except SessionClosedError:
                 QMessageBox.warning(self, "Session Closed", "Cannot record attendance: the session has been closed.")
                 return

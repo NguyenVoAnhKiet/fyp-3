@@ -133,6 +133,22 @@ def _seed_threshold(
         settings.set(setting_key, value, "float")
 
 
+def _seed_setting(
+    settings: SettingsService, env_key: str, setting_key: str,
+    value_type: str, default: str,
+) -> None:
+    """Write an env-var value into the DB settings table on first run only.
+
+    Unlike ``_seed_threshold`` which hard-codes ``"float"``, this helper
+    accepts an explicit *value_type* and *default* string so it works for
+    any setting type (int, bool, etc.).
+    """
+    if settings.get(setting_key) is not None:
+        return
+    value = os.getenv(env_key) or default
+    settings.set(setting_key, value, value_type)
+
+
 # ---------------------------------------------------------------------------
 # Application entry point
 # ---------------------------------------------------------------------------
@@ -234,6 +250,10 @@ def main(argv: list[str] | None = None) -> int:
     # Seed camera index so the Settings UI shows the correct startup value
     if settings_service.get("camera_index") is None:
         settings_service.set("camera_index", str(camera_index), "int")
+
+    # Seed attendance freeze settings from .env on first run
+    _seed_setting(settings_service, "ATTENDANCE_FREEZE_SECONDS", "attendance_freeze_seconds", "int", "4")
+    _seed_setting(settings_service, "ATTENDANCE_FREEZE_SOUND_ENABLED", "attendance_freeze_sound_enabled", "bool", "false")
 
     # Build AI components
     liveness_checker = LivenessChecker(liveness_model_path)
