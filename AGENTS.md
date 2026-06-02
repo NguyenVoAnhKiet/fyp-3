@@ -24,7 +24,7 @@ attendance-storage-init --database-path <p>   # custom path
 attendance-app                                # launch GUI
 ruff check src/                               # full lint (E501 line-length pre-existing)
 ruff check src/ --select F                    # undefined names only (fast pre-commit check)
-pytest tests/                                 # full suite (167 tests: 144 unit + 23 integration)
+pytest tests/                                 # full suite (199 tests: 176 unit + 23 integration)
 pytest tests/unit/ -v                         # fast unit-only
 pytest tests/integration/ -v                  # DB/storage integration
 PYTHONPATH=src python src/main.py             # dev run without `pip install -e .`

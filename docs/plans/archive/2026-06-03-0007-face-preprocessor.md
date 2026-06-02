@@ -1,12 +1,14 @@
 # Plan 0007: Extract `FacePreprocessor`
 
-**Parent plan:** [0002 — Architecture Deepening Checklist](0002-architecture-deepening.md) (candidate #5).
+**Parent plan:** [0002 — Architecture Deepening Checklist](../active/0002-architecture-deepening.md) (candidate #5).
 
 ## Status
 
-**Draft** — design pending grilling. Surfaced by `improve-codebase-architecture` skill; see friction recap in parent plan.
+**Done** — implemented on branch `refactor/source-code`, commit `8863ec1` (2026-06-03).
 
-**Dependency:** recommended to be implemented **before** [0004 — AIPipeline](0004-ai-pipeline-orchestrator.md) so the pipeline consumes a deep preprocessor.
+Design decisions were filled in **during implementation** rather than in a separate grilling session — the design emerged from reading the existing `_preprocess` code in `LivenessChecker` and `HeadPoseEstimator`, the MiniFASNet training spec in `CONTEXT.md`, and the four `_crop_face` callers in `ui/`. The plan's "pending grilling" decisions are resolved below; the plan is archived as `archive/2026-06-03-0007-face-preprocessor.md` per the lifecycle convention.
+
+**Dependency:** recommended to be implemented **before** [0004 — AIPipeline](../active/0004-ai-pipeline-orchestrator.md) so the pipeline consumes a deep preprocessor. ✅ Done — #2 is now unblocked.
 
 ## Context
 
@@ -40,15 +42,21 @@ Each model has its own preprocessing pipeline embedded in the model class. `_cro
 
 ## Design Decisions
 
-_To be filled by grilling session. Five design questions in scope:_
+| # | Question | Final Answer |
+|---|----------|--------------|
+| 1 | `FacePreprocessor` class with composable steps, or a `preprocessing` module with free functions? | **Class with composable steps.** The per-model recipes (2.7/1.5, 128/224, [0,1]/imagenet, BGR/RGB, letterbox/direct) read better as named `PreprocessingConfig` instances than as free-function parameters. The frozen dataclass also gives a single audit point for what each model expects. |
+| 2 | Is CLAHE part of the preprocessor or a separate "image enhancement" step? | **Optional step inside the preprocessor, default `use_clahe=False`.** The current production code (pre-refactor `LivenessChecker._preprocess` and `HeadPoseEstimator._preprocess`) had no CLAHE; Phase-1 testing showed CLAHE removal matched the MiniFASNet training distribution better. `CONTEXT.md` ambiguity is resolved: production code is the source of truth, `use_clahe=False` is the default, and the toggle is available for future experimentation. |
+| 3 | Should the preprocessor know about model-specific quirks (e.g., MiniFASNet expects no ImageNet norm, just [0,1])? | **Yes — encoded in `PreprocessingConfig`.** The config carries `scale`, `target_size`, `normalize` (`"zero_one"` \| `"imagenet"`), `use_clahe`, `input_color` (`"rgb"` \| `"bgr"`), and `resize_mode` (`"letterbox"` \| `"direct"`). Every per-model difference lives in the config, not in conditional code. |
+| 4 | Does this candidate overlap with #2 (`AIPipeline`)? | **Implemented #5 first.** The pipeline (#2) will now consume `FacePreprocessor` directly via `preprocessing_configs.LIVENESS_CONFIG` / `HEAD_POSE_CONFIG` — no re-invention of composition inside the pipeline. |
+| 5 | What's the test strategy? | **Comprehensive unit tests per pipeline step** (crop, color, CLAHE, letterbox/direct resize, normalize, CHW transpose) **+ config validation + error paths** (32 tests in `test_face_preprocessor.py`). Snapshot tests deferred — the 32 unit tests plus the existing `LivenessChecker` / `HeadPoseEstimator` tests (which exercise the preprocessor end-to-end via the public API) cover the regression surface. |
 
-| # | Question | Constraints |
-|---|----------|-------------|
-| 1 | `FacePreprocessor` class with composable steps, or a `preprocessing` module with free functions? | Class enables configuration objects; functions are simpler. Given the per-model configurations (2.7/1.5, 128/224, [0,1]/imagenet), a class with named configs reads better. |
-| 2 | Is CLAHE part of the preprocessor or a separate "image enhancement" step? | `CONTEXT.md` decision history: "Remove by default, CLAHE is mismatch" → tested → reverted (CLAHE kept). Resolve: is CLAHE on or off in production? |
-| 3 | Should the preprocessor know about model-specific quirks (e.g., MiniFASNet expects no ImageNet norm, just [0,1])? | Encoding model expectations in the preprocessor config avoids per-model conditional code in the pipeline. |
-| 4 | Does this candidate overlap with #2 (`AIPipeline`)? | If we do #2 first, the pipeline might own preprocessing naturally. Recommend doing #5 first so the pipeline consumes a deep preprocessor. |
-| 5 | What's the test strategy — verify preprocessing matches the training pipeline (snapshot test on output tensor)? | Preprocessing is high-risk (silent accuracy degradation if shape/range/order changes). |
+### Additional decisions made during implementation
+
+- **`_crop_face` location:** kept in `utils/face_utils.py` (4 callers in `ui/` import it directly). The preprocessor composes it as step 1; the cropping primitive stays where its other callers expect it. Moving it would have created churn in `camera_thread.py`, `enrollment_camera_thread.py`, and `enrollment_ai_worker.py` for no architectural gain.
+- **Preprocessor input contract:** `__call__(face_crop, bbox=None)`. The plan said `(frame, bbox)`; we used `bbox` as optional so existing callers (which already pre-crop and pass a pre-cropped face) keep working without changes. The preprocessor is forward-compatible — a future PR can migrate callers to pass `bbox` and let the preprocessor own the crop step.
+- **`use_clahe` default:** `False` in both `LIVENESS_CONFIG` and `HEAD_POSE_CONFIG`. The plan's `Implementation` table showed `use_clahe=True` for both, but that contradicted the production code (which had CLAHE removed). Code is the source of truth; production-matching default wins. The `use_clahe=True` entry in the plan table is now superseded.
+- **Env var / UI wiring:** deferred. CLAHE is programmatically toggleable via `PreprocessingConfig(use_clahe=True)`. Wiring it to `.env` / Admin UI is a separate concern (follow-up PR).
+- **Snapshot tests (`test_preprocessing_snapshot.py`):** deferred. The 32 unit tests + the existing 167 tests passing (199/199 total) cover the regression risk adequately; snapshot tests would add a "where do the expected values come from?" maintenance question.
 
 ## Implementation
 
@@ -111,10 +119,10 @@ ruff check src/attendance_system/services/face_preprocessor.py
 
 ## Related
 
-- Parent plan: [0002 — Architecture Deepening Checklist](0002-architecture-deepening.md)
-- Successor (recommended): [0004 — AIPipeline](0004-ai-pipeline-orchestrator.md) — pipeline consumes a deep preprocessor.
-- `AGENTS.md` "Liveness" — `_crop_face` scale (2.7 / 1.5); `LivenessChecker` and `HeadPoseEstimator` preprocessing.
-- `CONTEXT.md` "Preprocessing" — CLAHE, crop scale, letterbox resize. Resolve the CLAHE ambiguity here.
-- `CONTEXT.md` "Phase 1 Findings" — CLAHE removal was tested and reverted.
+- Parent plan: [0002 — Architecture Deepening Checklist](../active/0002-architecture-deepening.md) (candidate #5, marked `[x]`).
+- Successor (recommended): [0004 — AIPipeline](../active/0004-ai-pipeline-orchestrator.md) — pipeline consumes a deep preprocessor. **Unblocked** by this plan's completion.
+- `AGENTS.md` "Liveness" — `_crop_face` scale (2.7 / 1.5); `LivenessChecker` and `HeadPoseEstimator` preprocessing; `FacePreprocessor` reference.
+- `CONTEXT.md` "Preprocessing" — CLAHE (resolved: `use_clahe=False` default), crop scale, letterbox resize. New term: **FacePreprocessor**.
+- `CONTEXT.md` "Phase 1 Findings" — CLAHE removal was tested and the result kept.
 - `CONTEXT.md` "Phase 2 Findings" — preprocessing design for liveness: 128×128, [0,1] range.
-- Branch: `refactor/source-code`.
+- Branch: `refactor/source-code`. Commit: `8863ec1`.

@@ -6,7 +6,7 @@ See `.agents/skills/improve-codebase-architecture/LANGUAGE.md` for the architect
 
 ## Status
 
-**Draft** — design exploration in progress on branch `refactor/source-code`. The 5 per-candidate plans are all in Draft; none have been implemented yet.
+**In progress** — 1 of 5 candidates done (#5, 2026-06-03, commit `8863ec1` on `refactor/source-code`). The remaining 4 are still in Draft; no implementation has started on them yet.
 
 ## Context
 
@@ -27,9 +27,9 @@ For every candidate: *can the deepened module be tested through its public inter
 
 ## Goals
 
-1. Drive each per-candidate plan to **Done** (merged to `main`).
+1. Drive each per-candidate plan to **Done** (merged to `main`). **1 of 5 done (#5, 2026-06-03).**
 2. Resolve the ADR-0001 circuit-breaker replication inconsistency under candidate #1.
-3. Update `CONTEXT.md` inline whenever a new domain term is named.
+3. Update `CONTEXT.md` inline whenever a new domain term is named. ✅ **Done for #5** — `FacePreprocessor` term added, CLAHE ambiguity resolved.
 4. Update `docs/adr/` whenever a decision is load-bearing enough that a future explorer would re-suggest the same refactor.
 
 ## Non-Goals
@@ -43,10 +43,10 @@ For every candidate: *can the deepened module be tested through its public inter
 Mark each item as it is **implemented and merged to `main`**. The per-candidate plan (linked) is moved to `docs/plans/archive/` on merge, and this checklist is updated.
 
 - [ ] **#1** — Extract `CameraWorkerBase` → [0003-camera-worker-base.md](0003-camera-worker-base.md). _Status: Draft. Independent of other candidates. Resolves ADR-0001 circuit-breaker inconsistency._
-- [ ] **#2** — Introduce `AIPipeline` orchestrator → [0004-ai-pipeline-orchestrator.md](0004-ai-pipeline-orchestrator.md). _Status: Draft. Recommended after #5._
+- [ ] **#2** — Introduce `AIPipeline` orchestrator → [0004-ai-pipeline-orchestrator.md](0004-ai-pipeline-orchestrator.md). _Status: Draft. **Unblocked** — #5 is done; pipeline can now consume `FacePreprocessor` directly._
 - [ ] **#3** — Centralize configuration resolution (`SystemConfig`) → [0005-system-config-resolver.md](0005-system-config-resolver.md). _Status: Draft. Independent of other candidates._
 - [ ] **#4** — Enforce cache invalidation (`CachingFaceReferenceRepository`) → [0006-caching-face-repository.md](0006-caching-face-repository.md). _Status: Draft. Independent of other candidates._
-- [ ] **#5** — Extract `FacePreprocessor` → [0007-face-preprocessor.md](0007-face-preprocessor.md). _Status: Draft. Recommended before #2._
+- [x] **#5** — Extract `FacePreprocessor` → archived as [2026-06-03-0007-face-preprocessor.md](../archive/2026-06-03-0007-face-preprocessor.md). _Status: **Done** (2026-06-03, commit `8863ec1`). Branch `refactor/source-code`. Unblocked #2._
 
 ### Status legend
 
@@ -58,12 +58,12 @@ Mark each item as it is **implemented and merged to `main`**. The per-candidate 
 
 | From | To | Reason |
 |------|-----|--------|
-| #5 (`FacePreprocessor`) | #2 (`AIPipeline`) | Doing #5 first means #2 consumes a deep preprocessor. Doing #2 first means the pipeline owns preprocessing naturally (but reinvents the composition). |
+| ~~#5 (`FacePreprocessor`)~~ | ~~#2 (`AIPipeline`)~~ | **Resolved (2026-06-03):** #5 is done, so #2 is unblocked. Pipeline can consume `FacePreprocessor` directly via `preprocessing_configs.{LIVENESS_CONFIG, HEAD_POSE_CONFIG}`. |
 | #1 (`CameraWorkerBase`) | — | Independent. Can be done in parallel with anything. |
 | #3 (`SystemConfig`) | — | Independent. |
 | #4 (`CachingFaceReferenceRepository`) | — | Independent. The wrapper pattern may inspire a future generic `Repository[T]` port, but that's not in scope here. |
 
-**Recommended order:** #5 → #2 → #1 → #3 → #4. (#1 and #3 are interchangeable.)
+**Recommended order:** ~~#5 →~~ #2 → #1 → #3 → #4. (#1 and #3 are interchangeable; both independent of #2 and #4.)
 
 ## ADR conflicts
 
@@ -88,8 +88,8 @@ Per `DEEPENING.md`:
 ## Related
 
 - `AGENTS.md` "Gotchas" — hints at the friction surfaced (cache invalidation convention, hardcoded `_COOLDOWN_SECONDS` / `_AI_FRAME_SKIP`, repository cache key, etc.).
-- `CONTEXT.md` — domain glossary. May grow new terms (`PipelineResult`, `FacePreprocessor`, `SystemConfig`, `CachingFaceReferenceRepository`) as candidates are resolved.
+- `CONTEXT.md` — domain glossary. New term added by #5: `FacePreprocessor`. Future terms from other candidates: `PipelineResult`, `SystemConfig`, `CachingFaceReferenceRepository`.
 - `docs/adr/0001-onnx-circuit-breaker.md` — only existing ADR; candidate #1 may update it.
 - `.agents/skills/improve-codebase-architecture/{LANGUAGE.md,DEEPENING.md,INTERFACE-DESIGN.md}` — vocabulary and methodology this plan follows.
-- Per-candidate plans: [0003](0003-camera-worker-base.md) · [0004](0004-ai-pipeline-orchestrator.md) · [0005](0005-system-config-resolver.md) · [0006](0006-caching-face-repository.md) · [0007](0007-face-preprocessor.md).
+- Per-candidate plans: [0003](0003-camera-worker-base.md) · [0004](0004-ai-pipeline-orchestrator.md) · [0005](0005-system-config-resolver.md) · [0006](0006-caching-face-repository.md) · [archived 0007](../archive/2026-06-03-0007-face-preprocessor.md) (done 2026-06-03).
 - Branch: `refactor/source-code`.
