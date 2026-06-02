@@ -23,7 +23,12 @@ This folder tracks in-flight and archived feature plans — work-in-progress des
 
 | ID | Title | Status | Branch |
 |----|-------|--------|--------|
-| 0002 | [Architecture Deepening — 5 Grilling Candidates](active/0002-architecture-deepening.md) | Draft | `refactor/source-code` |
+| 0002 | [Architecture Deepening — Checklist](active/0002-architecture-deepening.md) | Draft (tracker) | `refactor/source-code` |
+| 0003 | [Extract `CameraWorkerBase`](active/0003-camera-worker-base.md) | Draft (candidate #1) | `refactor/source-code` |
+| 0004 | [Introduce `AIPipeline` Orchestrator](active/0004-ai-pipeline-orchestrator.md) | Draft (candidate #2) | `refactor/source-code` |
+| 0005 | [Centralize Configuration Resolution](active/0005-system-config-resolver.md) | Draft (candidate #3) | `refactor/source-code` |
+| 0006 | [Enforce Cache Invalidation](active/0006-caching-face-repository.md) | Draft (candidate #4) | `refactor/source-code` |
+| 0007 | [Extract `FacePreprocessor`](active/0007-face-preprocessor.md) | Draft (candidate #5) | `refactor/source-code` |
 
 ## Archive
 
