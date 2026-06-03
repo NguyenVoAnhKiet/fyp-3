@@ -34,6 +34,12 @@
 
 **Hysteresis** — Using separate thresholds for real→spoof and spoof→real transitions to reduce boundary oscillation.
 
+### Pipeline Orchestration
+
+**AIPipeline** — Orchestrator class (`src/attendance_system/services/ai_pipeline.py`) that composes LivenessChecker, FaceRecognizer, LivenessTracker, and optionally HeadPoseEstimator into a single per-frame inference sequence. Provides `run_attendance()` and `run_enrollment()` methods. Each instance owns its own LivenessTracker state.
+
+**PipelineResult** — `@dataclass(slots=True)` output of a single frame through the AIPipeline (`src/attendance_system/services/pipeline_result.py`). Uses `result_type` discriminator (`"success"`, `"spoof"`, `"unrecognized"`, `"pose_only"`, `"capture_success"`, `"capture_fail"`) with optional fields for liveness, recognition, head-pose, and embedding outputs.
+
 ### Current Issues
 
 **Issue 1: Flicker** — In good lighting, real faces are detected correctly but bbox flickers red (spoof) every few frames.
@@ -148,12 +154,17 @@
 ## Artifacts
 
 ### Code
-- `src/attendance_system/core/liveness_tracker.py` — LivenessTracker class (EMA + Hysteresis + IoU)
-- `src/attendance_system/ui/camera_thread.py` — AIWorker integration
+- `src/attendance_system/services/liveness_tracker.py` — LivenessTracker class (EMA + Hysteresis + IoU), relocated from `core/` as part of Plan 0004
+- `src/attendance_system/core/liveness_tracker.py` — Backward-compatibility re-export shim
+- `src/attendance_system/services/pipeline_result.py` — PipelineResult dataclass (structured AI pipeline output)
+- `src/attendance_system/services/ai_pipeline.py` — AIPipeline orchestrator, LivenessChecker, FaceRecognizer
+- `src/attendance_system/ui/camera_thread.py` — AIWorker integration (uses AIPipeline)
 - `scripts/tune_liveness_threshold.py` — Threshold tuning script
 
 ### Tests
 - `tests/unit/test_liveness_tracker.py` — 28 unit tests (all passing)
+- `tests/unit/test_pipeline_result.py` — 13 unit tests for PipelineResult dataclass
+- `tests/unit/test_ai_pipeline_orchestrator.py` — 16 unit tests for AIPipeline orchestrator
 
 ### Configuration
 - `.env.example` — Updated with `FACE_ANTISPOOF_CONFIDENCE_THRESHOLD=0.3`

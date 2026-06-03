@@ -10,7 +10,7 @@ import numpy as np
 from PyQt5.QtCore import QThread, Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPainter, QColor, QFont
 
-from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
+from attendance_system.services.ai_pipeline import AIPipeline, FaceRecognizer, LivenessChecker
 from attendance_system.services.exceptions import LivenessInferenceError
 from attendance_system.services.head_pose import HeadPoseEstimator
 from attendance_system.ui.enrollment_ai_worker import EnrollmentAIWorker
@@ -93,11 +93,14 @@ class EnrollmentCameraThread(QThread):
         self._current_face_bbox: tuple[int, int, int, int] | None = None
 
         if self._head_pose_estimator is not None:
-            self._enrollment_ai_worker = EnrollmentAIWorker(
-                head_pose_estimator=self._head_pose_estimator,
+            pipeline = AIPipeline(
                 liveness_checker=self._liveness_checker,
                 face_recognizer=self._face_recognizer,
+                head_pose_estimator=self._head_pose_estimator,
                 liveness_threshold=self._liveness_threshold,
+            )
+            self._enrollment_ai_worker = EnrollmentAIWorker(
+                pipeline=pipeline,
                 parent=None,
             )
             self._enrollment_ai_worker.pose_estimated.connect(self._on_pose_estimated)

@@ -14,10 +14,9 @@ from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtGui import QImage
 
 from pathlib import Path
-from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
+from attendance_system.services.ai_pipeline import AIPipeline, FaceRecognizer, LivenessChecker
 from attendance_system.services.exceptions import LivenessInferenceError
-from attendance_system.core.liveness_tracker import LivenessTracker, compute_iou, IOU_THRESHOLD
-from attendance_system.utils.face_utils import _crop_face, _create_face_detector
+from attendance_system.utils.face_utils import _create_face_detector
 
 _AI_FRAME_SKIP = 3       # run full pipeline every N frames (≈10 Hz at 30 fps)
 _COOLDOWN_SECONDS = 3.0  # min seconds between two recognitions of the same user
@@ -51,22 +50,15 @@ class AIWorker(QThread):
 
     def __init__(
         self,
-        liveness_threshold: float,
-        similarity_threshold: float,
-        liveness_checker: LivenessChecker,
-        face_recognizer: FaceRecognizer,
+        pipeline: AIPipeline,
         parent: Any = None,
     ) -> None:
         super().__init__(parent)
-        self._liveness_threshold = liveness_threshold
-        self._similarity_threshold = similarity_threshold
-        self._liveness_checker = liveness_checker
-        self._face_recognizer = face_recognizer
+        self._pipeline = pipeline
         self._queue: queue.Queue[Any] = queue.Queue(maxsize=1)
         self._running = False
         self._consecutive_failures = 0
         self._last_recognized: dict[int, float] = {}  # user_id -> monotonic timestamp
-        self._liveness_tracker = LivenessTracker()
 
     def submit_task(
         self,
@@ -105,13 +97,11 @@ class AIWorker(QThread):
 
             frame_bgr, frame_rgb, face_row, frame_counter = task
 
-            # Extract bbox for liveness
-            x, y, w, h = face_row[:4].astype(int)
-            face_crop = _crop_face(frame_rgb, (x, y, w, h), scale=2.7)
-
-            # Step 1 — Liveness (MiniFASNet ONNX)
+            # Delegate to AIPipeline for the core AI processing
             try:
-                liveness = self._liveness_checker.check(face_crop, 0.0)
+                result = self._pipeline.run_attendance(
+                    frame_bgr, frame_rgb, face_row, frame_counter
+                )
             except LivenessInferenceError:
                 self._consecutive_failures += 1
                 logger.warning(
@@ -134,44 +124,24 @@ class AIWorker(QThread):
             # Reset consecutive-failure counter on success
             self._consecutive_failures = 0
 
-            # ── Temporal smoothing via EMA + Hysteresis tracker ─────────────
-            # Feed raw detection + liveness score into the tracker, then look
-            # up our face's result from the returned active tracks.
-            bbox_float = (float(x), float(y), float(w), float(h))
-            tracked_faces = self._liveness_tracker.update([bbox_float], [liveness.score])
-
-            # Find the track that matches our current detection
-            state = "SPOOF"
-            ema_score = liveness.score
-            for tb, ts, tes in tracked_faces:
-                if compute_iou(bbox_float, tb) >= IOU_THRESHOLD:
-                    state = ts
-                    ema_score = tes
-                    break
-
-            if state == "SPOOF":
-                self.recognition_result.emit("spoof", 0, "", ema_score, None, "")
-                continue
-
-            # Step 2 — Recognition (SFace)
-            match = self._face_recognizer.identify(frame_bgr, face_row, self._similarity_threshold)
-            if match is None:
-                self.recognition_result.emit("unrecognized", 0, "", ema_score, 0.0, "")
-                continue
-
             # Per-user cooldown to avoid flooding the DB
-            now = time.monotonic()
-            if now - self._last_recognized.get(match.user_id, 0.0) < _COOLDOWN_SECONDS:
-                continue
-            self._last_recognized[match.user_id] = now
+            if result.result_type == "success" and result.user_id is not None:
+                now = time.monotonic()
+                if now - self._last_recognized.get(result.user_id, 0.0) < _COOLDOWN_SECONDS:
+                    continue
+                self._last_recognized[result.user_id] = now
 
             self.recognition_result.emit(
-                "success", match.user_id, match.full_name, ema_score, match.similarity,
-                match.matched_pose_label,
+                result.result_type,
+                result.user_id or 0,
+                result.full_name or "",
+                result.liveness_score or 0.0,
+                result.similarity,
+                result.matched_pose_label or "",
             )
 
     def stop(self) -> None:
-        self._liveness_tracker.tracks.clear()
+        self._pipeline.reset_tracker()
         self._running = False
         # Drain the queue to release references to frames
         while not self._queue.empty():
@@ -251,12 +221,15 @@ class CameraThread(QThread):
         self._current_result_name: str = ""
         self._current_result_score: float = 0.0
 
-        # Initialize AI worker thread
-        self._ai_worker = AIWorker(
-            liveness_threshold=self._liveness_threshold,
-            similarity_threshold=self._similarity_threshold,
+        # Initialize AI pipeline and worker thread
+        pipeline = AIPipeline(
             liveness_checker=self._liveness_checker,
             face_recognizer=self._face_recognizer,
+            liveness_threshold=self._liveness_threshold,
+            similarity_threshold=self._similarity_threshold,
+        )
+        self._ai_worker = AIWorker(
+            pipeline=pipeline,
             parent=self,
         )
         self._ai_worker.recognition_result.connect(self._on_recognition_result)

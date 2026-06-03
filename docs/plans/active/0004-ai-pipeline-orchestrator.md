@@ -8,6 +8,8 @@
 
 **Dependency:** recommended to be implemented after [0007 — FacePreprocessor](0007-face-preprocessor.md) so the pipeline consumes a deep preprocessor.
 
+**Implementation:** ✅ Complete (Plan 0004-impl). See `docs/plans/active/0004-ai-pipeline-orchestrator-implement.md`.
+
 ## Context
 
 The per-frame AI pipeline is distributed across 6 files in 4 layers:

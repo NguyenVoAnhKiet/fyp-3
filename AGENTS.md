@@ -80,8 +80,14 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 ## Liveness (Anti-Spoofing)
 
 - **Model:** MiniFASNet V2 SE quantized (INT8, 600 KB). Best well-lit frontal <30°.
-- **Temporal smoothing:** `LivenessTracker` uses EMA (α=0.4) + hysteresis (T_HIGH=0.65, T_LOW=0.45) + IoU tracking.
+- **Temporal smoothing:** `LivenessTracker` (`src/attendance_system/services/liveness_tracker.py`, relocated from `core/` in Plan 0004) uses EMA (α=0.4) + hysteresis (T_HIGH=0.65, T_LOW=0.45) + IoU tracking.
 - **Threshold:** Default 0.3. Configurable via `FACE_ANTISPOOF_CONFIDENCE_THRESHOLD` env var or Admin UI.
 - **Preprocessing:** `FacePreprocessor` (`src/attendance_system/services/face_preprocessor.py`) with `LIVENESS_CONFIG` (scale=2.7, 128×128, [0,1], letterbox, RGB) and `HEAD_POSE_CONFIG` (scale=1.5, 224×224, ImageNet, direct resize, BGR). Defined in `preprocessing_configs.py`. CLAHE is OFF by default (`use_clahe=False`) — toggleable per config but not wired to env/UI yet. Adding a new model = define a new `PreprocessingConfig`, not duplicate preprocessing code (plan 0007).
 - **Crop scale:** 2.7 for liveness, 1.5 for head-pose (encoded in each model's `PreprocessingConfig.scale`).
 - **Known limitation:** 2D texture classifier; poor lighting still rejects ~95% real faces (model limitation).
+
+## AI Pipeline Orchestration
+
+- **AIPipeline** (`src/attendance_system/services/ai_pipeline.py`): Orchestrates per-frame AI inference. Composes `LivenessChecker`, `FaceRecognizer`, `LivenessTracker`, and optionally `HeadPoseEstimator`. Methods: `run_attendance()` → `PipelineResult`, `run_enrollment()` → `PipelineResult`.
+- **PipelineResult** (`src/attendance_system/services/pipeline_result.py`): `@dataclass(slots=True)` with `result_type` discriminator and optional fields for liveness, recognition, head-pose, and embedding outputs.
+- **Backward compat:** `core/liveness_tracker.py` re-exports from `services/liveness_tracker.py`.

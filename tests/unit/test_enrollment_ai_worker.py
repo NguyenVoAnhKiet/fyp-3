@@ -9,7 +9,8 @@ import numpy as np
 import pytest
 from PyQt5.QtCore import Qt
 
-from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker, LivenessResult
+from attendance_system.services.ai_pipeline import AIPipeline, FaceRecognizer, LivenessChecker, LivenessResult
+from attendance_system.services.pipeline_result import PipelineResult
 from attendance_system.services.exceptions import PoseInferenceError
 from attendance_system.services.head_pose import HeadPoseEstimator
 from attendance_system.ui.enrollment_ai_worker import EnrollmentAIWorker, _SENTINEL
@@ -29,11 +30,12 @@ def _make_face() -> np.ndarray:
 
 
 def test_queue_backpressure() -> None:
-    worker = EnrollmentAIWorker(
-        head_pose_estimator=MagicMock(spec=HeadPoseEstimator),
+    pipeline = AIPipeline(
         liveness_checker=MagicMock(spec=LivenessChecker),
         face_recognizer=MagicMock(spec=FaceRecognizer),
+        head_pose_estimator=MagicMock(spec=HeadPoseEstimator),
     )
+    worker = EnrollmentAIWorker(pipeline=pipeline)
     frame_bgr = np.zeros((480, 640, 3), dtype=np.uint8)
     face_row = _make_face()
 
@@ -56,11 +58,12 @@ def test_queue_backpressure() -> None:
 
 
 def test_sentinel_termination() -> None:
-    worker = EnrollmentAIWorker(
-        head_pose_estimator=MagicMock(spec=HeadPoseEstimator),
+    pipeline = AIPipeline(
         liveness_checker=MagicMock(spec=LivenessChecker),
         face_recognizer=MagicMock(spec=FaceRecognizer),
+        head_pose_estimator=MagicMock(spec=HeadPoseEstimator),
     )
+    worker = EnrollmentAIWorker(pipeline=pipeline)
     frame_bgr = np.zeros((480, 640, 3), dtype=np.uint8)
     face_row = _make_face()
 
@@ -85,11 +88,12 @@ def test_pose_estimation_only() -> None:
     liveness = MagicMock(spec=LivenessChecker)
     recognizer = MagicMock(spec=FaceRecognizer)
 
-    worker = EnrollmentAIWorker(
-        head_pose_estimator=head_pose,
+    pipeline = AIPipeline(
         liveness_checker=liveness,
         face_recognizer=recognizer,
+        head_pose_estimator=head_pose,
     )
+    worker = EnrollmentAIWorker(pipeline=pipeline)
 
     pose_results: list[tuple[float, float, float]] = []
     capture_results: list[tuple] = []
@@ -138,12 +142,13 @@ def test_capture_complete_success() -> None:
     expected_emb = np.ones(128, dtype=np.float32)
     recognizer.get_embedding.return_value = expected_emb
 
-    worker = EnrollmentAIWorker(
-        head_pose_estimator=head_pose,
+    pipeline = AIPipeline(
         liveness_checker=liveness,
         face_recognizer=recognizer,
+        head_pose_estimator=head_pose,
         liveness_threshold=0.5,
     )
+    worker = EnrollmentAIWorker(pipeline=pipeline)
 
     pose_results: list[tuple[float, float, float]] = []
     capture_results: list[tuple] = []
@@ -191,12 +196,13 @@ def test_capture_embedding_failure() -> None:
     recognizer = MagicMock(spec=FaceRecognizer)
     recognizer.get_embedding.return_value = None  # embedding failure
 
-    worker = EnrollmentAIWorker(
-        head_pose_estimator=head_pose,
+    pipeline = AIPipeline(
         liveness_checker=liveness,
         face_recognizer=recognizer,
+        head_pose_estimator=head_pose,
         liveness_threshold=0.5,
     )
+    worker = EnrollmentAIWorker(pipeline=pipeline)
 
     capture_results: list[tuple] = []
 
@@ -234,11 +240,12 @@ def test_circuit_breaker_pose_error() -> None:
     liveness = MagicMock(spec=LivenessChecker)
     recognizer = MagicMock(spec=FaceRecognizer)
 
-    worker = EnrollmentAIWorker(
-        head_pose_estimator=head_pose,
+    pipeline = AIPipeline(
         liveness_checker=liveness,
         face_recognizer=recognizer,
+        head_pose_estimator=head_pose,
     )
+    worker = EnrollmentAIWorker(pipeline=pipeline)
 
     camera_errors: list[str] = []
     warnings: list[str] = []
@@ -305,11 +312,12 @@ def test_circuit_breaker_recovers() -> None:
     liveness = MagicMock(spec=LivenessChecker)
     recognizer = MagicMock(spec=FaceRecognizer)
 
-    worker = EnrollmentAIWorker(
-        head_pose_estimator=head_pose,
+    pipeline = AIPipeline(
         liveness_checker=liveness,
         face_recognizer=recognizer,
+        head_pose_estimator=head_pose,
     )
+    worker = EnrollmentAIWorker(pipeline=pipeline)
 
     camera_errors: list[str] = []
     warnings: list[str] = []
@@ -376,11 +384,12 @@ def test_circuit_breaker_recovers() -> None:
 
 
 def test_frame_copy() -> None:
-    worker = EnrollmentAIWorker(
-        head_pose_estimator=MagicMock(spec=HeadPoseEstimator),
+    pipeline = AIPipeline(
         liveness_checker=MagicMock(spec=LivenessChecker),
         face_recognizer=MagicMock(spec=FaceRecognizer),
+        head_pose_estimator=MagicMock(spec=HeadPoseEstimator),
     )
+    worker = EnrollmentAIWorker(pipeline=pipeline)
 
     original_bgr = np.zeros((480, 640, 3), dtype=np.uint8)
     original_face = _make_face()

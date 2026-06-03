@@ -12,7 +12,8 @@ from PyQt5.QtCore import Qt
 
 from attendance_system.ui.camera_thread import AIWorker, CameraThread, _SENTINEL
 from attendance_system.ui.enrollment_camera_thread import EnrollmentCameraThread
-from attendance_system.services.ai_pipeline import LivenessChecker, FaceRecognizer, LivenessResult, RecognitionResult
+from attendance_system.services.ai_pipeline import AIPipeline, LivenessChecker, FaceRecognizer, LivenessResult, RecognitionResult
+from attendance_system.services.pipeline_result import PipelineResult
 from attendance_system.services.exceptions import LivenessInferenceError
 
 def _make_face() -> np.ndarray:
@@ -26,12 +27,13 @@ def test_ai_worker_queue_backpressure() -> None:
     liveness = MagicMock(spec=LivenessChecker)
     recognizer = MagicMock(spec=FaceRecognizer)
     
-    worker = AIWorker(
-        liveness_threshold=0.5,
-        similarity_threshold=0.6,
+    pipeline = AIPipeline(
         liveness_checker=liveness,
         face_recognizer=recognizer,
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
+    worker = AIWorker(pipeline=pipeline)
     
     frame_bgr = np.zeros((480, 640, 3), dtype=np.uint8)
     frame_rgb = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -54,12 +56,13 @@ def test_ai_worker_sentinel_termination_and_drain() -> None:
     liveness = MagicMock(spec=LivenessChecker)
     recognizer = MagicMock(spec=FaceRecognizer)
     
-    worker = AIWorker(
-        liveness_threshold=0.5,
-        similarity_threshold=0.6,
+    pipeline = AIPipeline(
         liveness_checker=liveness,
         face_recognizer=recognizer,
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
+    worker = AIWorker(pipeline=pipeline)
     
     frame_bgr = np.zeros((480, 640, 3), dtype=np.uint8)
     frame_rgb = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -109,12 +112,13 @@ def test_ai_worker_circuit_breaker() -> None:
     
     recognizer = MagicMock(spec=FaceRecognizer)
     
-    worker = AIWorker(
-        liveness_threshold=0.5,
-        similarity_threshold=0.6,
+    pipeline = AIPipeline(
         liveness_checker=liveness,
         face_recognizer=recognizer,
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
+    worker = AIWorker(pipeline=pipeline)
     
     camera_errors = []
     warnings = []
@@ -161,12 +165,13 @@ def test_ai_worker_recognition_cooldown() -> None:
     match = RecognitionResult(user_id=42, full_name="John Doe", student_id="SV001", similarity=0.85)
     recognizer.identify.return_value = match
     
-    worker = AIWorker(
-        liveness_threshold=0.5,
-        similarity_threshold=0.6,
+    pipeline = AIPipeline(
         liveness_checker=liveness,
         face_recognizer=recognizer,
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
+    worker = AIWorker(pipeline=pipeline)
     
     results = []
     def on_result(result_type, user_id, name, liveness_score, sim_score):
