@@ -6,7 +6,7 @@ See `.agents/skills/improve-codebase-architecture/LANGUAGE.md` for the architect
 
 ## Status
 
-**In progress** — 2 of 5 candidates done (#5 2026-06-03 commit `8863ec1`, #2 2026-06-03 commit `a1590c1` on `refactor/source-code`). The remaining 3 are still in Draft.
+**In progress** — 3 of 5 candidates done (#5 2026-06-03 commit `8863ec1`, #2 2026-06-03 commit `a1590c1`, #1 2026-06-04 commit `7e0e747` on `refactor/source-code`). The remaining 2 are still in Draft.
 
 ## Context
 
@@ -27,7 +27,7 @@ For every candidate: *can the deepened module be tested through its public inter
 
 ## Goals
 
-1. Drive each per-candidate plan to **Done** (merged to `main`). **2 of 5 done (#5, #2 — 2026-06-03).**
+1. Drive each per-candidate plan to **Done** (merged to `main`). **3 of 5 done (#5, #2 — 2026-06-03; #1 — 2026-06-04).**
 2. Resolve the ADR-0001 circuit-breaker replication inconsistency under candidate #1.
 3. Update `CONTEXT.md` inline whenever a new domain term is named. ✅ **Done for #5 and #2** — `FacePreprocessor`, `PipelineResult`, `AIPipeline` terms added.
 4. Update `docs/adr/` whenever a decision is load-bearing enough that a future explorer would re-suggest the same refactor.
@@ -42,7 +42,7 @@ For every candidate: *can the deepened module be tested through its public inter
 
 Mark each item as it is **implemented and merged to `main`**. The per-candidate plan (linked) is moved to `docs/plans/archive/` on merge, and this checklist is updated.
 
-- [ ] **#1** — Extract `CameraWorkerBase` → [0003-camera-worker-base.md](0003-camera-worker-base.md). _Status: Draft. Independent of other candidates. Resolves ADR-0001 circuit-breaker inconsistency._
+- [x] **#1** — Extract `CameraWorkerBase` → archived as [2026-06-04-0003-camera-worker-base.md](../archive/2026-06-04-0003-camera-worker-base.md). _Status: **Done** (2026-06-04, commit `7e0e747`). Branch `refactor/source-code`. Resolves ADR-0001 circuit-breaker inconsistency._
 - [x] **#2** — Introduce `AIPipeline` orchestrator → archived as [2026-06-03-0004-ai-pipeline-orchestrator-implement.md](../archive/2026-06-03-0004-ai-pipeline-orchestrator-implement.md). _Status: **Done** (2026-06-03, commit `a1590c1`). Branch `refactor/source-code`._
 - [ ] **#3** — Centralize configuration resolution (`SystemConfig`) → [0005-system-config-resolver.md](0005-system-config-resolver.md). _Status: Draft. Independent of other candidates._
 - [ ] **#4** — Enforce cache invalidation (`CachingFaceReferenceRepository`) → [0006-caching-face-repository.md](0006-caching-face-repository.md). _Status: Draft. Independent of other candidates._
@@ -60,11 +60,11 @@ Mark each item as it is **implemented and merged to `main`**. The per-candidate 
 |------|-----|--------|
 | ~~#5 (`FacePreprocessor`)~~ | ~~#2 (`AIPipeline`)~~ | **Resolved (2026-06-03):** #5 is done, so #2 is unblocked. Pipeline can consume `FacePreprocessor` directly via `preprocessing_configs.{LIVENESS_CONFIG, HEAD_POSE_CONFIG}`. |
 | ~~#5 (`FacePreprocessor`)~~ | ~~#2 (`AIPipeline`)~~ | **Resolved (2026-06-03):** #2 is done. Pipeline composes `LivenessChecker` + `LivenessTracker` + `FaceRecognizer`. |
-| #1 (`CameraWorkerBase`) | — | Independent. Can be done in parallel with anything. |
+| ~~#1 (`CameraWorkerBase`)~~ | — | **Resolved (2026-06-04):** #1 is done. Base classes live in `ui/camera_worker_base.py`. |
 | #3 (`SystemConfig`) | — | Independent. |
 | #4 (`CachingFaceReferenceRepository`) | — | Independent. The wrapper pattern may inspire a future generic `Repository[T]` port, but that's not in scope here. |
 
-**Recommended order:** ~~#5 → #2 →~~ #1 → #3 → #4. (#1 and #3 are interchangeable; both independent of #4.)
+**Recommended order:** ~~#5 → #2 → #1 →~~ #3 → #4. (#3 and #4 are independent.)
 
 ## ADR conflicts
 
@@ -72,12 +72,7 @@ Mark each item as it is **implemented and merged to `main`**. The per-candidate 
 
 The ADR says the circuit-breaker counter is "shared between liveness and head-pose in the enrollment thread." In `EnrollmentAIWorker`, the counter is shared **by variable reuse, not by design** — a success in head-pose resets failures counted by liveness. This is a partial implementation of the ADR's intent.
 
-**Resolution path:** candidate #1 (`CameraWorkerBase`) is the natural place to encode the correct semantics. The grilling session for #1 should decide between:
-- Per-model counters (preserves "one broken model kills both" intent with explicit logic).
-- Single shared counter (current accidental behavior, document the reset rule).
-- A new ADR that revises the original decision.
-
-If the design decision differs from ADR-0001, **update the ADR** as part of candidate #1.
+**Resolution (2026-06-04, #1):** Candidate #1 (`CameraWorkerBase`) encoded the correct semantics in `AIWorkerBase`. The shared counter is now explicit: one broken model kills both attendance and enrollment. No ADR update needed — the base class implementation matches ADR-0001 intent.
 
 ## Testing discipline (applies to all candidates)
 
@@ -92,5 +87,5 @@ Per `DEEPENING.md`:
 - `CONTEXT.md` — domain glossary. Terms added: `FacePreprocessor` (#5), `PipelineResult`, `AIPipeline` (#2). Future terms from other candidates: `SystemConfig`, `CachingFaceReferenceRepository`.
 - `docs/adr/0001-onnx-circuit-breaker.md` — only existing ADR; candidate #1 may update it.
 - `.agents/skills/improve-codebase-architecture/{LANGUAGE.md,DEEPENING.md,INTERFACE-DESIGN.md}` — vocabulary and methodology this plan follows.
-- Per-candidate plans: [0003](0003-camera-worker-base.md) · [archived 0004 design](../archive/2026-06-03-0004-ai-pipeline-orchestrator.md) + [archived 0004 implement](../archive/2026-06-03-0004-ai-pipeline-orchestrator-implement.md) (done 2026-06-03) · [0005](0005-system-config-resolver.md) · [0006](0006-caching-face-repository.md) · [archived 0007](../archive/2026-06-03-0007-face-preprocessor.md) (done 2026-06-03).
+- Per-candidate plans: [archived 0003](../archive/2026-06-04-0003-camera-worker-base.md) (done 2026-06-04) · [archived 0004 design](../archive/2026-06-03-0004-ai-pipeline-orchestrator.md) + [archived 0004 implement](../archive/2026-06-03-0004-ai-pipeline-orchestrator-implement.md) (done 2026-06-03) · [0005](0005-system-config-resolver.md) · [0006](0006-caching-face-repository.md) · [archived 0007](../archive/2026-06-03-0007-face-preprocessor.md) (done 2026-06-03).
 - Branch: `refactor/source-code`.

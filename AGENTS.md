@@ -24,7 +24,7 @@ attendance-storage-init --database-path <p>   # custom path
 attendance-app                                # launch GUI
 ruff check src/                               # full lint (E501 line-length pre-existing)
 ruff check src/ --select F                    # undefined names only (fast pre-commit check)
-pytest tests/                                 # full suite (228 tests: 176 unit + 52 integration)
+pytest tests/                                 # full suite (237 tests: 185 unit + 52 integration)
 pytest tests/unit/ -v                         # fast unit-only
 pytest tests/integration/ -v                  # DB/storage integration
 PYTHONPATH=src python src/main.py             # dev run without `pip install -e .`
@@ -61,7 +61,7 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 - `_crop_face` scale: 2.7 for liveness (broad context), 1.5 for head-pose (tight crop).
 - `_COOLDOWN_SECONDS = 3.0` in `camera_thread.py` — per-user cooldown before re-recognition. In-memory, resets on thread restart.
 - `_AI_FRAME_SKIP = 3` — full AI pipeline runs every 3rd frame (~10 Hz at 30 fps).
-- `_PAUSE_POLL_INTERVAL_SECONDS = 0.05` — `CameraThread.pause()`/`resume()` poll interval; `AIWorker` idles naturally on its own queue.
+- `_PAUSE_POLL_INTERVAL_SECONDS = 0.05` — `CameraThreadBase.pause()`/`resume()` poll interval; `AIWorker` idles naturally on its own queue.
 - `user_mode_view.py` tracks `_recognized_users` (set of `user_id`) to suppress duplicate sidebar entries + `_stats_success` increment. `_stats_total` always increments (total events).
 - `record_success()` catches `IntegrityError` internally on UNIQUE `(session_id, user_id)` — falls back to SELECT-existing, returns normally. Caller never sees a DB exception for duplicates.
 - `record_duplicate()` does **not** insert a `recognition_events` row (no audit trail for the second path — caller is expected to have already inserted one).
@@ -91,3 +91,10 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 - **AIPipeline** (`src/attendance_system/services/ai_pipeline.py`): Orchestrates per-frame AI inference. Composes `LivenessChecker`, `FaceRecognizer`, `LivenessTracker`, and optionally `HeadPoseEstimator`. Methods: `run_attendance()` → `PipelineResult`, `run_enrollment()` → `PipelineResult`.
 - **PipelineResult** (`src/attendance_system/services/pipeline_result.py`): `@dataclass(slots=True)` with `result_type` discriminator and optional fields for liveness, recognition, head-pose, and embedding outputs.
 - **Backward compat:** `core/liveness_tracker.py` re-exports from `services/liveness_tracker.py`.
+
+## Camera Worker Base Classes
+
+- **CameraThreadBase** (`src/attendance_system/ui/camera_worker_base.py`): Base `QThread` for camera capture. Provides: camera init, `_retry_read()` (exponential backoff), `pause()`/`resume()`, `_detect_faces()`, `_draw_bboxes()`, `_annotate_frame()`, `_emit_display_frame()`, `stop()`. Concrete `run()` loop calls abstract `_process_frame()`.
+- **AIWorkerBase** (`src/attendance_system/ui/camera_worker_base.py`): Base `QThread` for AI inference workers. Provides: `queue.Queue(maxsize=1)` + sentinel shutdown, `submit_task(*args)` (auto-copies numpy arrays), `is_busy()`, `stop()` (drain + sentinel + wait). Concrete `run()` loop with circuit-breaker (`_MAX_CONSECUTIVE_FAILURES = 30`). Calls abstract `_process_frame()`.
+- **Inheritance:** `CameraThread` + `EnrollmentCameraThread` inherit `CameraThreadBase`. `AIWorker` + `EnrollmentAIWorker` inherit `AIWorkerBase`.
+- **Circuit-breaker:** Shared counter in `AIWorkerBase`. ADR-0001: one broken model kills both attendance and enrollment. Override `_inference_error_types()` to specify caught exceptions per subclass.

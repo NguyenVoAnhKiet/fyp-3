@@ -4,7 +4,7 @@
 
 ## Status
 
-**Draft** — design resolved, pending implementation.
+**Done** — implemented 2026-06-04, commit `7e0e747` on `refactor/source-code`.
 
 ## Context
 

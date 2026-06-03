@@ -23,8 +23,7 @@ This folder tracks in-flight and archived feature plans — work-in-progress des
 
 | ID | Title | Status | Branch |
 |----|-------|--------|--------|
-| 0002 | [Architecture Deepening — Checklist](active/0002-architecture-deepening.md) | In progress (2/5 done) | `refactor/source-code` |
-| 0003 | [Extract `CameraWorkerBase`](active/0003-camera-worker-base.md) | Draft (candidate #1) | `refactor/source-code` |
+| 0002 | [Architecture Deepening — Checklist](active/0002-architecture-deepening.md) | In progress (3/5 done) | `refactor/source-code` |
 | 0005 | [Centralize Configuration Resolution](active/0005-system-config-resolver.md) | Draft (candidate #3) | `refactor/source-code` |
 | 0006 | [Enforce Cache Invalidation](active/0006-caching-face-repository.md) | Draft (candidate #4) | `refactor/source-code` |
 
@@ -38,3 +37,4 @@ Browse `docs/plans/archive/` for completed plans. Date prefix sorts chronologica
 | 0004 | [Introduce `AIPipeline` Orchestrator](archive/2026-06-03-0004-ai-pipeline-orchestrator.md) — design doc | 2026-06-03 | `refactor/source-code` |
 | 0004 | [Introduce `AIPipeline` Orchestrator — implement](archive/2026-06-03-0004-ai-pipeline-orchestrator-implement.md) — impl plan | 2026-06-03 | `refactor/source-code` |
 | 0007 | [Extract `FacePreprocessor`](archive/2026-06-03-0007-face-preprocessor.md) | 2026-06-03 | `refactor/source-code` |
+| 0003 | [Extract `CameraWorkerBase`](archive/2026-06-04-0003-camera-worker-base.md) | 2026-06-04 | `refactor/source-code` |
