@@ -111,7 +111,7 @@
 ### Completed ✅
 - LivenessTracker class created with EMA + Hysteresis + IoU tracking
 - Integrated into camera_thread.py AIWorker
-- 33 tests pass (5 existing + 28 new)
+- 228 tests pass (176 unit + 52 integration)
 - Backward compatible
 
 ### Testing Results
@@ -130,7 +130,7 @@
 ### Quick Fix Applied
 - Reduced threshold from 0.5 → 0.3 across 7 files
 - Updated `.env.example`, UI defaults, AI worker defaults
-- 108 tests pass
+- 228 tests pass
 
 ### Results at 0.3
 - **Good lighting:** Flicker improved (2-3s intervals)

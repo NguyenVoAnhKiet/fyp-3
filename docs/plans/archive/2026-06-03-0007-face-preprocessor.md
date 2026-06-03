@@ -8,7 +8,7 @@
 
 Design decisions were filled in **during implementation** rather than in a separate grilling session — the design emerged from reading the existing `_preprocess` code in `LivenessChecker` and `HeadPoseEstimator`, the MiniFASNet training spec in `CONTEXT.md`, and the four `_crop_face` callers in `ui/`. The plan's "pending grilling" decisions are resolved below; the plan is archived as `archive/2026-06-03-0007-face-preprocessor.md` per the lifecycle convention.
 
-**Dependency:** recommended to be implemented **before** [0004 — AIPipeline](../active/0004-ai-pipeline-orchestrator.md) so the pipeline consumes a deep preprocessor. ✅ Done — #2 is now unblocked.
+**Dependency:** recommended to be implemented **before** [0004 — AIPipeline](../archive/2026-06-03-0004-ai-pipeline-orchestrator.md) so the pipeline consumes a deep preprocessor. ✅ Done — #2 is now unblocked.
 
 ## Context
 
@@ -120,7 +120,7 @@ ruff check src/attendance_system/services/face_preprocessor.py
 ## Related
 
 - Parent plan: [0002 — Architecture Deepening Checklist](../active/0002-architecture-deepening.md) (candidate #5, marked `[x]`).
-- Successor (recommended): [0004 — AIPipeline](../active/0004-ai-pipeline-orchestrator.md) — pipeline consumes a deep preprocessor. **Unblocked** by this plan's completion.
+- Successor (completed): [0004 — AIPipeline](../archive/2026-06-03-0004-ai-pipeline-orchestrator.md) — pipeline consumes a deep preprocessor. **Done** (2026-06-03, commit `a1590c1`).
 - `AGENTS.md` "Liveness" — `_crop_face` scale (2.7 / 1.5); `LivenessChecker` and `HeadPoseEstimator` preprocessing; `FacePreprocessor` reference.
 - `CONTEXT.md` "Preprocessing" — CLAHE (resolved: `use_clahe=False` default), crop scale, letterbox resize. New term: **FacePreprocessor**.
 - `CONTEXT.md` "Phase 1 Findings" — CLAHE removal was tested and the result kept.
