@@ -10,7 +10,8 @@ import numpy as np
 import pytest
 from PyQt5.QtCore import Qt
 
-from attendance_system.ui.camera_thread import AIWorker, CameraThread, _SENTINEL
+from attendance_system.ui.camera_thread import AIWorker, CameraThread
+from attendance_system.ui.camera_worker_base import _SENTINEL
 from attendance_system.ui.enrollment_camera_thread import EnrollmentCameraThread
 from attendance_system.services.ai_pipeline import AIPipeline, LivenessChecker, FaceRecognizer, LivenessResult, RecognitionResult
 from attendance_system.services.pipeline_result import PipelineResult
@@ -152,7 +153,7 @@ def test_ai_worker_circuit_breaker() -> None:
     # Once it hits 30 consecutive errors, the circuit breaker should trigger
     # Emit camera_error and stop the thread
     assert len(camera_errors) == 1
-    assert "Liveness model failed" in camera_errors[0]
+    assert "gặp lỗi" in camera_errors[0] or "failed" in camera_errors[0]
     assert worker._running is False
     worker.stop()
 

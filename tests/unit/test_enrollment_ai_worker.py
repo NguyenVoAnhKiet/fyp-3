@@ -13,7 +13,8 @@ from attendance_system.services.ai_pipeline import AIPipeline, FaceRecognizer, L
 from attendance_system.services.pipeline_result import PipelineResult
 from attendance_system.services.exceptions import PoseInferenceError
 from attendance_system.services.head_pose import HeadPoseEstimator
-from attendance_system.ui.enrollment_ai_worker import EnrollmentAIWorker, _SENTINEL
+from attendance_system.ui.enrollment_ai_worker import EnrollmentAIWorker
+from attendance_system.ui.camera_worker_base import _SENTINEL
 
 
 def _make_face() -> np.ndarray:
