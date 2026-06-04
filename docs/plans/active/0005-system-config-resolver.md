@@ -119,3 +119,151 @@ ruff check src/attendance_system/core/config.py src/attendance_system/core/defau
 - `AGENTS.md` "Config" section — thresholds seed once from `.env` into DB, then Admin UI controls them.
 - `CONTEXT.md` — Phase 4 documents the 0.5→0.3 migration that touched 7 files.
 - Branch: `refactor/source-code`.
+
+## Implementation
+
+### Task Breakdown
+
+#### Task 1: Design Grilling Session `[SEQ: 0]`
+- **Sub-agent:** @oracle
+- **Complexity:** S (decision-making, no code)
+- **Files:** None (design discussion)
+- **Deliverable:** Answers to 5 design questions documented in this plan under "Design Decisions" table
+- **Verification:** Plan updated with decisions
+- **Rationale:** All implementation depends on these 5 architectural decisions. Must resolve before any code is written.
+
+#### Task 2: Create `defaults.py` — Single Source of Truth for Defaults `[P]`
+- **Sub-agent:** @fixer
+- **Complexity:** S (<50 LOC)
+- **Files:** `src/attendance_system/core/defaults.py` (new)
+- **Deliverable:** Python module with all default constants (liveness_threshold, similarity_threshold, camera_index, freeze_seconds, freeze_sound_enabled, model paths, etc.)
+- **Verification:** `ruff check src/attendance_system/core/defaults.py`; import test in Python REPL
+- **Rationale:** Pure data module, no logic. Independent of resolver design. Can be done in parallel with Task 3.
+
+#### Task 3: Create `config.py` — SystemConfig Dataclass + SettingsResolver `[P]`
+- **Sub-agent:** @fixer
+- **Complexity:** M (50-200 LOC)
+- **Files:** `src/attendance_system/core/config.py` (new)
+- **Deliverable:** 
+  - `@dataclass(slots=True, frozen=True) SystemConfig` with all tunable fields
+  - `SettingsResolver` class implementing resolution logic (CLI > env > DB > default) and seeding
+  - Factory function `resolve_config(cli_args, env, db, mode="runtime") -> SystemConfig`
+- **Verification:** `ruff check src/attendance_system/core/config.py`; unit tests from Task 9
+- **Rationale:** Core abstraction. Depends on Task 1 decisions and Task 2 defaults. Can start after Task 1.
+
+#### Task 4: Refactor `main.py` to Use SettingsResolver `[SEQ: 3]`
+- **Sub-agent:** @fixer
+- **Complexity:** M (50-200 LOC)
+- **Files:** `src/main.py`
+- **Deliverable:** 
+  - Remove `_resolve_path`, `_resolve_camera_index`, `_resolve_enabled`, `_seed_threshold`, `_seed_setting`
+  - Call `SettingsResolver.resolve_config()` once at startup
+  - Pass `SystemConfig` to services/UI instead of individual values
+  - Update `MainWindow` construction to use config fields
+- **Verification:** `pytest tests/unit/test_config_resolver.py -v`; `ruff check src/main.py`; manual smoke test 1-4
+- **Rationale:** Main entry point wiring. Depends on Task 3 resolver being ready.
+
+#### Task 5: Update `bootstrap.py` to Use Resolver (or Own) `[SEQ: 3]`
+- **Sub-agent:** @fixer
+- **Complexity:** S (<50 LOC)
+- **Files:** `src/attendance_system/core/bootstrap.py`
+- **Deliverable:** 
+  - Per Design Q2: either use shared resolver with `mode="init"` flag, or create minimal init-mode resolver
+  - Remove direct `os.getenv("DATABASE_PATH")` in favor of resolver
+  - Document the choice in code comments
+- **Verification:** `pytest tests/unit/test_config_resolver.py::test_bootstrap_mode_skips_dotenv -v`; run `attendance-storage-init --help`
+- **Rationale:** Separate entry point. Depends on Task 3 and Design Q2 decision.
+
+#### Task 6: Handle `SettingsService` per Design Q5 `[SEQ: 3]`
+- **Sub-agent:** @fixer
+- **Complexity:** S (<50 LOC) if delete; M if transform
+- **Files:** `src/attendance_system/services/settings_service.py`, `src/attendance_system/ui/user_mode_view.py`, `src/attendance_system/ui/settings_widget.py`, `src/main.py`
+- **Deliverable:** 
+  - If delete: remove file, update imports in `user_mode_view.py`, `settings_widget.py`, `main.py` to use `SystemConfig` directly
+  - If keep: add caching/validation/transformation logic; update callers
+- **Verification:** `pytest tests/unit/test_settings_service.py -v`; `ruff check src/attendance_system/services/settings_service.py`
+- **Rationale:** Cross-cutting change. Depends on Design Q5 decision and Task 3.
+
+#### Task 7: Update `user_mode_view.py` — Remove Hardcoded Defaults `[SEQ: 6]`
+- **Sub-agent:** @fixer
+- **Complexity:** S (<50 LOC)
+- **Files:** `src/attendance_system/ui/user_mode_view.py`
+- **Deliverable:** 
+  - Remove `_DEFAULT_LIVENESS_THRESHOLD` and `_DEFAULT_SIMILARITY_THRESHOLD` constants
+  - Read thresholds from injected `SystemConfig` (or `SettingsService` if kept)
+  - Update `_start_session()` to use config values
+- **Verification:** `ruff check src/attendance_system/ui/user_mode_view.py`; manual smoke test 2-3
+- **Rationale:** UI consumer of config. Depends on Task 6 (how config is accessed).
+
+#### Task 8: Update `settings_widget.py` — Remove Hardcoded Defaults `[SEQ: 6]`
+- **Sub-agent:** @fixer
+- **Complexity:** S (<50 LOC)
+- **Files:** `src/attendance_system/ui/settings_widget.py`
+- **Deliverable:** 
+  - Remove `_DEFAULT_LIVENESS` and `_DEFAULT_SIMILARITY` constants
+  - Read initial values from injected `SystemConfig` (or `SettingsService` if kept)
+  - Keep DB write logic unchanged (Non-Goal)
+- **Verification:** `ruff check src/attendance_system/ui/settings_widget.py`; manual smoke test 2-3
+- **Rationale:** UI consumer of config. Independent of Task 7, same dependency.
+
+#### Task 9: Update `ai_pipeline.py` — Remove Default Threshold Parameter `[P]`
+- **Sub-agent:** @fixer
+- **Complexity:** S (<50 LOC)
+- **Files:** `src/attendance_system/services/ai_pipeline.py`
+- **Deliverable:** 
+  - Remove `threshold=0.3` default from `LivenessChecker.check()`
+  - Update `AIPipeline.__init__` to require `liveness_threshold` (already required, just ensure no default)
+  - Update callers in `camera_thread.py` and `enrollment_ai_worker.py` to pass threshold from config
+- **Verification:** `ruff check src/attendance_system/services/ai_pipeline.py`; `pytest tests/unit/ -k liveness -v`
+- **Rationale:** Service layer cleanup. Independent of UI tasks.
+
+#### Task 10: Create `test_config_resolver.py` — Unit Tests `[SEQ: 3]`
+- **Sub-agent:** @fixer
+- **Complexity:** M (50-200 LOC)
+- **Files:** `tests/unit/test_config_resolver.py` (new)
+- **Deliverable:** All 10 unit tests listed in Testing section
+- **Verification:** `pytest tests/unit/test_config_resolver.py -v`
+- **Rationale:** Test-driven validation of resolver. Depends on Task 3 interface.
+
+#### Task 11: Update `test_settings_service.py` `[SEQ: 6]`
+- **Sub-agent:** @fixer
+- **Complexity:** S (<50 LOC)
+- **Files:** `tests/unit/test_settings_service.py`
+- **Deliverable:** Update tests to match new `SettingsService` behavior (or delete if service removed)
+- **Verification:** `pytest tests/unit/test_settings_service.py -v`
+- **Rationale:** Test maintenance. Depends on Task 6.
+
+#### Task 12: Full Integration Smoke Test `[SEQ: 4,5,7,8,9]`
+- **Sub-agent:** @fixer
+- **Complexity:** S (manual verification)
+- **Files:** All modified files
+- **Deliverable:** All 7 manual smoke checklist items pass
+- **Verification:** Run `attendance-app` and `attendance-storage-init` per checklist
+- **Rationale:** End-to-end validation. Runs after all implementation tasks.
+
+#### Task 13: Senior Architect Review `[SEQ: 12]`
+- **Sub-agent:** @oracle
+- **Complexity:** S (review-only, no code)
+- **Files:** All modified files (`core/config.py`, `core/defaults.py`, `core/bootstrap.py`, `main.py`, `services/settings_service.py`, `services/ai_pipeline.py`, `ui/user_mode_view.py`, `ui/settings_widget.py`, tests)
+- **Deliverable:** Review report covering:
+  - **Correctness:** Does `SystemConfig` + `SettingsResolver` actually enforce CLI > env > DB > default precedence? Is seeding idempotent?
+  - **Simplicity/YAGNI:** Any dead code, over-abstraction, premature flexibility? Is `SettingsService` deletion justified (or transformation justified)?
+  - **Maintainability:** Are defaults discoverable? Is the resolution order documented in code (not just docs)? Will future tunables be easy to add?
+  - **Consistency:** Does `bootstrap.py` align with `main.py` resolver semantics (or are differences intentional and documented)?
+  - **Test coverage:** Do unit tests cover the actual behavior, not just happy paths? Are bootstrap mode and runtime mode both tested?
+  - **Migration safety:** Does the refactor preserve all existing behavior? Any subtle behavior change (e.g., precedence order, dotenv loading, env empty-string handling)?
+- **Verification:** `pytest tests/ -v` passes; `ruff check src/` clean; review report has 0 blocking findings (or all blocking findings fixed)
+- **Rationale:** Last-line defense against architectural drift. Multiple parallel @fixer agents can introduce subtle inconsistencies (e.g., `bootstrap.py` resolver differing from `main.py` resolver, or unit tests missing edge cases like `CAMERA_INDEX=""` empty-string handling). @oracle has 5x better decision-making and 0.8x speed of orchestrator — the right tradeoff for a final review gate.
+
+### Execution Plan
+
+| Wave | Tasks (Parallel) | Dependencies |
+|------|------------------|--------------|
+| 0 | **Task 1** (Design Grilling) | — |
+| 1 | **Task 2** (defaults.py), **Task 3** (config.py) | Task 1 |
+| 2 | **Task 4** (main.py), **Task 5** (bootstrap.py), **Task 6** (SettingsService), **Task 10** (test_config_resolver.py) | Task 2, Task 3 |
+| 3 | **Task 7** (user_mode_view.py), **Task 8** (settings_widget.py), **Task 9** (ai_pipeline.py), **Task 11** (test_settings_service.py) | Task 4, Task 6 |
+| 4 | **Task 12** (Full Integration Smoke Test) | Task 7, Task 8, Task 9 |
+| 5 | **Task 13** (Senior Architect Review) | Task 12 |
+
+**Orchestrator role:** Coordinate waves, verify each wave completes before starting next, run verification commands. No direct code implementation. **Wave 5 is mandatory** — no merge without @oracle sign-off.
