@@ -1,3 +1,13 @@
+"""Face enrollment widget: capture multiple angles, persist embeddings.
+
+Receives :class:`attendance_system.core.config.SystemConfig` from the
+admin dashboard and threads its fields (``camera_index``,
+``detection_model_path``, ``liveness_threshold``,
+``similarity_threshold``) into :class:`EnrollmentCameraThread`.  No
+hardcoded thresholds — every value is sourced from the resolved config
+object.  See plan 0005 (archived 2026-06-05).
+"""
+
 from __future__ import annotations
 
 import logging

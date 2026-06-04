@@ -1,3 +1,14 @@
+"""Top-level PyQt5 main window for the Face Attendance app.
+
+Hosts the master stacked widget that switches between ``LoginWidget``,
+``UserModeView`` (attendance) and ``AdminDashboardView``.  Receives the
+resolved :class:`attendance_system.core.config.SystemConfig` once at
+startup and propagates it to every child view so the whole UI shares a
+single source of truth for camera index, model paths and AI thresholds.
+
+See plan 0005 (archived 2026-06-05) for the resolution design.
+"""
+
 from __future__ import annotations
 
 

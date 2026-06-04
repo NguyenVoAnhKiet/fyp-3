@@ -1,3 +1,13 @@
+"""Camera + AI worker for the face-enrollment flow.
+
+Inherits :class:`ui.camera_worker_base.CameraThreadBase` (plan 0003) and
+uses :class:`attendance_system.services.ai_pipeline.AIPipeline` (plan
+0004) for per-frame inference.  Liveness and similarity thresholds are
+**required** at construction — they come from the resolved
+:class:`attendance_system.core.config.SystemConfig`, not local defaults.
+See plan 0005 (archived 2026-06-05).
+"""
+
 from __future__ import annotations
 
 import logging

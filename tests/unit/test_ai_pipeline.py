@@ -1,3 +1,11 @@
+"""Unit tests for ``attendance_system.services.ai_pipeline``.
+
+Covers ``LivenessChecker`` and ``FaceRecognizer`` ONNX wrappers.  After
+plan 0005, ``LivenessChecker.check()`` requires an explicit ``threshold``
+— no default — so this file also asserts the threshold is plumbed
+through (see ``test_liveness_checker_bypass``).
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

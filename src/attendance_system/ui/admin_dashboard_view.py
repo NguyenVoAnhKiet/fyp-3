@@ -1,3 +1,12 @@
+"""Admin dashboard view: tabs for enrollment, users, settings, history.
+
+Propagates the startup-resolved
+:class:`attendance_system.core.config.SystemConfig` to child widgets
+(``EnrollmentWidget``, ``SettingsWidget``, ...) so the admin session
+uses the same camera / model / threshold values as user mode.  See plan
+0005 (archived 2026-06-05) for the resolution design.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

@@ -1,4 +1,10 @@
-"""Comprehensive unit tests for EnrollmentAIWorker (QThread)."""
+"""Comprehensive unit tests for ``EnrollmentAIWorker`` (QThread).
+
+After plan 0005 every ``AIPipeline`` construction in this file passes
+explicit thresholds sourced from
+:class:`attendance_system.core.config.SystemConfig` rather than the
+pre-refactor hardcoded defaults.  See plan 0005 (archived 2026-06-05).
+"""
 
 from __future__ import annotations
 

@@ -1,3 +1,13 @@
+"""User mode (attendance) view: live camera + AI recognition + sidebar.
+
+Consumes the resolved :class:`attendance_system.core.config.SystemConfig`
+for ``camera_index``, ``liveness_threshold``, ``similarity_threshold``
+and ``detection_model_path``.  No hardcoded defaults — every tunable
+comes from the frozen config object built at startup by
+:class:`attendance_system.core.config.SettingsResolver`.  See plan 0005
+(archived 2026-06-05).
+"""
+
 from __future__ import annotations
 
 import logging

@@ -1,4 +1,14 @@
-"""Admin Settings widget for configuring hardware and AI parameters (UC-10)."""
+"""Admin Settings widget for configuring hardware and AI parameters (UC-10).
+
+Reads initial spinbox values from :mod:`attendance_system.core.defaults`
+(single source of truth for tunables) and persists user edits via
+:class:`attendance_system.services.settings_service.SettingsService`
+(DB CRUD wrapper).  The widget does **not** know about CLI / env
+precedence — that lives in
+:class:`attendance_system.core.config.SettingsResolver`.
+
+See plan 0005 (archived 2026-06-05) for the full design.
+"""
 
 from __future__ import annotations
 

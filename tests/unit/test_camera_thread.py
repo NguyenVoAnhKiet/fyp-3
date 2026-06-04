@@ -1,3 +1,14 @@
+"""Unit tests for ``CameraThread`` + ``AIWorker`` (attendance flow) and
+``EnrollmentCameraThread`` (enrollment flow).
+
+After plan 0005 ``EnrollmentCameraThread.__init__`` requires explicit
+``liveness_threshold`` and ``similarity_threshold`` — those values are
+plumbed in this file via a small helper that builds a
+:class:`attendance_system.core.config.SystemConfig` from
+:mod:`attendance_system.core.defaults`.  See plan 0005 (archived
+2026-06-05).
+"""
+
 from __future__ import annotations
 
 import queue

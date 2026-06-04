@@ -1,4 +1,10 @@
-"""Unit tests for AIPipeline orchestrator."""
+"""Unit tests for ``AIPipeline`` orchestrator (plan 0004).
+
+After plan 0005 the constructor requires explicit
+``liveness_threshold`` and ``similarity_threshold`` (no defaults).  The
+``test_thresholds_are_required`` test guards that contract.  See plan
+0005 (archived 2026-06-05).
+"""
 
 from __future__ import annotations
 

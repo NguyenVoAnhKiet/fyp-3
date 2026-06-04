@@ -1,3 +1,12 @@
+"""Integration tests for head-pose-driven enrollment flow.
+
+After plan 0005 every ``EnrollmentCameraThread`` construction passes
+explicit ``liveness_threshold`` and ``similarity_threshold`` (no
+defaults).  The values used here mirror the runtime defaults from
+:mod:`attendance_system.core.defaults` to keep the test behavior
+realistic.  See plan 0005 (archived 2026-06-05).
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

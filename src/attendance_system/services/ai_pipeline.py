@@ -1,4 +1,14 @@
-"""AI pipeline: liveness detection (ONNX) + face recognition (SFace) + AIPipeline orchestrator."""
+"""AI pipeline: liveness detection (ONNX) + face recognition (SFace) + AIPipeline orchestrator.
+
+Threshold parameters (``liveness_threshold``, ``similarity_threshold``)
+are **required** at construction and at inference time — there are no
+default values.  This forces every caller to source thresholds from
+:class:`attendance_system.core.config.SystemConfig` (plan 0005) so
+values stay in sync with the rest of the system and there is no silent
+drift between hardcoded literals and resolved config.
+
+See plan 0005 (archived 2026-06-05) for the rationale.
+"""
 
 from __future__ import annotations
 
