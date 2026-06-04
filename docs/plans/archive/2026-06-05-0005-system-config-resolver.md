@@ -4,7 +4,8 @@
 
 ## Status
 
-**Draft** — design pending grilling. Surfaced by `improve-codebase-architecture` skill; see friction recap in parent plan.
+**Done** — implemented, reviewed by `@oracle` (APPROVE-WITH-CHANGES), all findings
+addressed. 249/249 tests pass (12 new), `ruff check src/` clean.
 
 ## Context
 
@@ -38,15 +39,15 @@ The precedence chain (CLI > env > DB > default) is **implicit in the order of op
 
 ## Design Decisions
 
-_To be filled by grilling session. Five design questions in scope:_
+_Resolved 2026-06-05 (this implementation)._
 
-| # | Question | Constraints |
-|---|----------|-------------|
-| 1 | `SystemConfig` dataclass with all tunables, or a `ConfigResolver` with named entries? | Dataclass = data; resolver = behavior. The resolution order is the complex part; the dataclass is just the result type. |
-| 2 | Is `bootstrap.py` a different resolver, or should it share the same one? | A shared resolver that knows "I am in init mode" couples the two paths. A separate resolver makes the difference explicit. |
-| 3 | Where do defaults live — in the dataclass, in a separate `defaults.py`, or in `.env.example`? | `.env.example` is docs, not executable. Defaults must be in Python to be testable. |
-| 4 | Is the threshold-seeding pattern (env → DB on first run, then DB owns) encoded in the resolver, or in a separate seeding step? | Seeding is a one-time migration; resolution is per-read. These are different concerns. |
-| 5 | Does `SettingsService` earn its keep post-refactor? | If the resolver does the work, the service may be unnecessary. If it stays, it must add real value (caching, validation, transformation). |
+| # | Question | Decision |
+|---|----------|----------|
+| 1 | `SystemConfig` dataclass with all tunables, or a `ConfigResolver` with named entries? | **BOTH.** `SystemConfig` is a `@dataclass(slots=True, frozen=True)` holding resolved values (data). `SettingsResolver` is the class that performs the resolution work (behavior). Factory `resolve_config()` returns a `SystemConfig` instance. |
+| 2 | Is `bootstrap.py` a different resolver, or should it share the same one? | **SHARED with `mode="init"` flag.** The differences are: (a) init skips `load_dotenv()`, (b) init only needs `database_path` (other paths irrelevant for DB init). Two resolvers would duplicate the resolution logic. |
+| 3 | Where do defaults live — in the dataclass, in a separate `defaults.py`, or in `.env.example`? | **`defaults.py` module with module-level constants** (e.g., `DEFAULT_LIVENESS_THRESHOLD = 0.3`). `SystemConfig` field defaults reference these constants. `.env.example` is documentation only. |
+| 4 | Is the threshold-seeding pattern encoded in the resolver, or in a separate seeding step? | **Separate `SettingsResolver.seed_db_from_env()` method**, called once at runtime startup. Resolution is per-read; seeding is a one-time migration. The seeding method lives on the resolver (where env/DB knowledge is co-located) but is not part of the resolution path. In init mode, seeding is skipped. |
+| 5 | Does `SettingsService` earn its keep post-refactor? | **KEEP as DB CRUD wrapper.** `SystemConfig` is immutable startup-resolved config (used by services that need config at construction). `SettingsService` reads/writes mutable DB settings (used by Admin UI for runtime changes). They are complementary: `SystemConfig` knows what *should* be, `SettingsService` knows what admin *changed* it to. |
 
 ## Implementation
 
@@ -265,5 +266,31 @@ ruff check src/attendance_system/core/config.py src/attendance_system/core/defau
 | 3 | **Task 7** (user_mode_view.py), **Task 8** (settings_widget.py), **Task 9** (ai_pipeline.py), **Task 11** (test_settings_service.py) | Task 4, Task 6 |
 | 4 | **Task 12** (Full Integration Smoke Test) | Task 7, Task 8, Task 9 |
 | 5 | **Task 13** (Senior Architect Review) | Task 12 |
+
+## Implementation Note (2026-06-05)
+
+**Landed in:** branch `refactor/source-code`.
+
+### New files
+- `src/attendance_system/core/defaults.py` — single source of truth for default constants (liveness, similarity, camera, freeze, paths).
+- `src/attendance_system/core/config.py` — `@dataclass(slots=True, frozen=True) SystemConfig` + `SettingsResolver` (mode `"runtime"` / `"init"`) + `resolve_config()` factory + `seed_db_from_env()`.
+- `tests/unit/test_config_resolver.py` — 12 tests covering CLI > env > DB > default precedence, seeding idempotency, init-vs-runtime mode, frozen immutability, factory wiring.
+
+### Modified
+- `src/main.py` — two-pass resolve (provisional without DB → `initialize_storage` → `seed_db_from_env` → final DB-aware `resolve_config`).
+- `src/attendance_system/core/bootstrap.py` — shared resolver in `mode="init"` with `env={}` (hermetic, no `load_dotenv`).
+- `src/attendance_system/services/settings_service.py` — docstring clarifies it is the DB CRUD counterpart to startup-resolved `SystemConfig`.
+- `src/attendance_system/services/ai_pipeline.py` — `LivenessChecker.check(face_rgb, threshold)` and `AIPipeline.__init__` now require `liveness_threshold` and `similarity_threshold` (no defaults).
+- `src/attendance_system/ui/main_window.py`, `user_mode_view.py`, `admin_dashboard_view.py`, `enrollment_widget.py`, `settings_widget.py`, `enrollment_camera_thread.py` — accept `config: SystemConfig`; remove 4 hardcoded `0.3` defaults + 2 stale camera defaults; pass `liveness_threshold` / `similarity_threshold` / `detection_model_path` from config.
+- 5 test files updated to pass explicit thresholds / `config` to the new APIs (`test_ai_pipeline.py`, `test_ai_pipeline_orchestrator.py`, `test_enrollment_ai_worker.py`, `test_user_mode_freeze.py`, `test_attendance_callbacks.py`, `test_camera_thread.py`, integration `test_head_pose_enrollment.py`).
+
+### Verification
+- `ruff check src/` — clean.
+- `pytest tests/` — **249 passed** (237 pre-existing + 12 new in `test_config_resolver.py`).
+- `@oracle` review — APPROVE-WITH-CHANGES; 2 MAJOR + 5 MINOR + 3 NIT findings all addressed (duplicate helper functions removed, hardcoded env keys replaced with explicit `_SEEDABLE` tuple, empty-string guard for bool env values, hermetic `bootstrap.py` with `env={}`, removed default threshold values from `EnrollmentCameraThread.__init__`).
+
+### Out of scope (not done in this plan)
+- Task 11 (`test_settings_service.py`) — settings_service tests already covered by `tests/integration/test_storage_repositories.py` and `test_attendance_callbacks.py`; new dedicated test file judged YAGNI by `@oracle` (NIT #3).
+- `liveness_model_path` resolution (pre-existing; `LivenessChecker` infers via parent dir, not via config). Will surface in `improve-codebase-architecture` follow-up.
 
 **Orchestrator role:** Coordinate waves, verify each wave completes before starting next, run verification commands. No direct code implementation. **Wave 5 is mandatory** — no merge without @oracle sign-off.

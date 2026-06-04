@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 
 import numpy as np
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PyQt5.QtCore import Qt, pyqtSlot, QPropertyAnimation, QTimer
@@ -32,6 +31,7 @@ from attendance_system.services.ai_pipeline import LivenessChecker
 from attendance_system.ui.enrollment_camera_thread import EnrollmentCameraThread
 
 if TYPE_CHECKING:
+    from attendance_system.core.config import SystemConfig
     from attendance_system.core.db import Database
     from attendance_system.services.ai_pipeline import FaceRecognizer
     from attendance_system.services.head_pose import HeadPoseEstimator
@@ -48,13 +48,13 @@ class EnrollmentWidget(QWidget):
     """
 
     def __init__(
-        self, 
-        database: Database, 
+        self,
+        database: Database,
         liveness_checker: LivenessChecker,
         face_recognizer: FaceRecognizer,
         settings_service: SettingsService,
         head_pose_estimator: HeadPoseEstimator | None,
-        detector_model_path: Path | None = None,
+        config: "SystemConfig",
         parent: QWidget | None = None
     ) -> None:
         super().__init__(parent)
@@ -63,12 +63,12 @@ class EnrollmentWidget(QWidget):
         self._face_recognizer = face_recognizer
         self._settings_service = settings_service
         self._head_pose_estimator = head_pose_estimator
-        self._detector_model_path = detector_model_path
-        
+        self._config = config
+
         self._user_repo = UserRepository(database)
         self._enroll_service = EnrollmentService(database)
         self._camera_thread: EnrollmentCameraThread | None = None
-        
+
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -262,9 +262,10 @@ class EnrollmentWidget(QWidget):
         if user_id == -1:
             return
 
-        # Get settings
-        cam_idx = int(self._settings_service.get("camera_index") or 0)
-        liveness_thresh = float(self._settings_service.get("liveness_threshold") or 0.3)
+        # Camera index: prefer admin's last choice in DB, fall back to
+        # ``SystemConfig.camera_index`` (resolved at startup).
+        saved_cam = self._settings_service.get("camera_index")
+        cam_idx = int(saved_cam) if saved_cam is not None else self._config.camera_index
 
         # Liveness check is intentionally bypassed during enrollment.
         # Multi-pose face capture (yaw/pitch/roll) already provides strong
@@ -291,8 +292,9 @@ class EnrollmentWidget(QWidget):
             liveness_checker=enrollment_liveness,  # Use bypass liveness
             face_recognizer=self._face_recognizer,
             head_pose_estimator=self._head_pose_estimator,
-            liveness_threshold=liveness_thresh,
-            detector_model_path=self._detector_model_path,
+            liveness_threshold=self._config.liveness_threshold,
+            similarity_threshold=self._config.similarity_threshold,
+            detector_model_path=self._config.detection_model_path,
             parent=self
         )
         self._camera_thread.frame_ready.connect(self.update_frame)

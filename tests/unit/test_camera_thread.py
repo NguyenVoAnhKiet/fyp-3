@@ -101,6 +101,7 @@ def test_camera_thread_isolation(mock_detector_create) -> None:
         face_recognizer=recognizer,
         liveness_threshold=0.5,
         detector_model_path=Path("fake.onnx"),
+        similarity_threshold=0.6,
     )
     
     # They should have created separate detector instances

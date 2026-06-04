@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PyQt5.QtCore import Qt, pyqtSignal
@@ -39,6 +38,7 @@ from attendance_system.ui.styles import (
 
 if TYPE_CHECKING:
     from attendance_system.services.settings_service import SettingsService
+    from attendance_system.core.config import SystemConfig
     from attendance_system.core.db import Database
     from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
     from attendance_system.services.head_pose import HeadPoseEstimator
@@ -131,7 +131,7 @@ class AdminDashboardView(QWidget):
         liveness_checker: LivenessChecker,
         face_recognizer: FaceRecognizer,
         head_pose_estimator: HeadPoseEstimator | None,
-        detector_model_path: Path | None = None,
+        config: "SystemConfig",
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -140,7 +140,7 @@ class AdminDashboardView(QWidget):
         self._liveness_checker = liveness_checker
         self._face_recognizer = face_recognizer
         self._head_pose_estimator = head_pose_estimator
-        self._detector_model_path = detector_model_path
+        self._config = config
         self._nav_items: list[_NavItem] = []
         self._build_ui()
 
@@ -223,7 +223,7 @@ class AdminDashboardView(QWidget):
             face_recognizer=self._face_recognizer,
             settings_service=self._settings_service,
             head_pose_estimator=self._head_pose_estimator,
-            detector_model_path=self._detector_model_path,
+            config=self._config,
             parent=self,
         )
         enrollment_layout.addWidget(self._enrollment_widget)

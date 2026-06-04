@@ -59,7 +59,8 @@ class EnrollmentCameraThread(CameraThreadBase):
         camera_index: int,
         liveness_checker: LivenessChecker,
         face_recognizer: FaceRecognizer,
-        liveness_threshold: float = 0.3,
+        liveness_threshold: float,
+        similarity_threshold: float,
         detector_model_path: Path | str | None = None,
         head_pose_estimator: HeadPoseEstimator | None = None,
         target_count: int = 5,
@@ -72,6 +73,7 @@ class EnrollmentCameraThread(CameraThreadBase):
         self._head_pose_estimator = head_pose_estimator
         self._target_count = target_count
         self._liveness_threshold = liveness_threshold
+        self._similarity_threshold = similarity_threshold
         self._capture_cooldown = capture_cooldown
 
         # Enrollment state machine
@@ -82,7 +84,7 @@ class EnrollmentCameraThread(CameraThreadBase):
         self._consecutive_failures: int = 0
         self._frame_counter: int = 0
 
-        self._status_text = "Đang khởi động..."
+        self._status_text = "Đang khởi tạo..."
         self._angles_text = "-"
         self._hold_text = ""
         self._guidance_text = ""
@@ -95,6 +97,7 @@ class EnrollmentCameraThread(CameraThreadBase):
                 face_recognizer=self._face_recognizer,
                 head_pose_estimator=self._head_pose_estimator,
                 liveness_threshold=self._liveness_threshold,
+                similarity_threshold=self._similarity_threshold,
             )
             self._enrollment_ai_worker = EnrollmentAIWorker(
                 pipeline=pipeline,

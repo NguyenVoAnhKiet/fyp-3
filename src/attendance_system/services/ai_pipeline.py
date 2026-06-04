@@ -118,7 +118,7 @@ class LivenessChecker:
         """
         return self._preprocessor(face_rgb, bbox)
 
-    def check(self, face_rgb: np.ndarray, threshold: float = 0.3) -> LivenessResult:
+    def check(self, face_rgb: np.ndarray, threshold: float) -> LivenessResult:
         """
         Check liveness of a pre-cropped face image.
 
@@ -126,7 +126,12 @@ class LivenessChecker:
 
         Args:
             face_rgb:  H×W×3 uint8 RGB face crop.
-            threshold: Probability threshold (0–1).  Default 0.3.
+            threshold: Probability threshold (0–1).  Required — callers
+                must pass the value resolved at startup by
+                :class:`attendance_system.core.config.SettingsResolver`
+                and surfaced via :class:`SystemConfig`.  No default value
+                is provided to prevent silent drift between
+                configuration sources.
 
         Returns:
             LivenessResult with is_real flag and raw logit_diff score.
@@ -344,10 +349,22 @@ class AIPipeline:
         self,
         liveness_checker: LivenessChecker,
         face_recognizer: FaceRecognizer,
+        liveness_threshold: float,
+        similarity_threshold: float,
         head_pose_estimator: HeadPoseEstimator | None = None,
-        liveness_threshold: float = 0.3,
-        similarity_threshold: float = 0.6,
     ) -> None:
+        """
+        Args:
+            liveness_checker: Liveness detection service.
+            face_recognizer: Face recognition service.
+            head_pose_estimator: Optional head-pose estimation service
+                (required for ``run_enrollment``).
+            liveness_threshold: Decision threshold for liveness check
+                (required — pass the value resolved by
+                :class:`attendance_system.core.config.SettingsResolver`).
+            similarity_threshold: Minimum cosine similarity for recognition
+                (required — same source as ``liveness_threshold``).
+        """
         self._liveness_checker = liveness_checker
         self._face_recognizer = face_recognizer
         self._head_pose_estimator = head_pose_estimator

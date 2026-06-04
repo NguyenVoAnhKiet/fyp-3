@@ -36,6 +36,8 @@ def test_pose_sequence_advances_on_success(mock_detector_create) -> None:
         face_recognizer=recognizer,
         head_pose_estimator=head_pose,
         detector_model_path=Path("fake.onnx"),
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
     thread._current_pose_index = 0
     from attendance_system.ui.enrollment_camera_thread import _POSE_SEQUENCE
@@ -68,6 +70,8 @@ def test_pose_hold_resets_on_mismatch(mock_detector_create) -> None:
         face_recognizer=recognizer,
         head_pose_estimator=head_pose,
         detector_model_path=Path("fake.onnx"),
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
     thread._pose_hold_counter = 3
     thread._current_pose_index = 0  # Target: (0, 0)
@@ -96,6 +100,8 @@ def test_legacy_fallback_keeps_old_flow(mock_detector_create) -> None:
         face_recognizer=recognizer,
         head_pose_estimator=None,
         detector_model_path=Path("fake.onnx"),
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
     frame = np.zeros((480, 640, 3), dtype=np.uint8)
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -123,6 +129,8 @@ def test_pose_hold_resets_on_capture_failure(mock_detector_create) -> None:
         face_recognizer=recognizer,
         head_pose_estimator=head_pose,
         detector_model_path=Path("fake.onnx"),
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
     thread._pose_hold_counter = 4
     thread._current_pose_index = 0
@@ -152,6 +160,8 @@ def test_pose_hold_counter_capped_at_hold_frames(mock_detector_create) -> None:
         face_recognizer=recognizer,
         head_pose_estimator=head_pose,
         detector_model_path=Path("fake.onnx"),
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
     thread._current_pose_index = 0  # Target: (0, 0)
 
@@ -180,6 +190,8 @@ def test_enrollment_succeeds_without_liveness(mock_detector_create) -> None:
         face_recognizer=recognizer,
         head_pose_estimator=head_pose,
         detector_model_path=Path("fake.onnx"),
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
     thread._current_pose_index = 1  # "Nghiêng phải"
 
@@ -210,6 +222,8 @@ def test_enrollment_liveness_bypass_still_checks_embedding(mock_detector_create)
         face_recognizer=recognizer,
         head_pose_estimator=head_pose,
         detector_model_path=Path("fake.onnx"),
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
     thread._current_pose_index = 0
 
@@ -252,6 +266,8 @@ def test_enrollment_accepts_correct_yaw_direction(mock_detector_create) -> None:
         face_recognizer=recognizer,
         head_pose_estimator=head_pose,
         detector_model_path=Path("fake.onnx"),
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
     thread._current_pose_index = 1  # "Nghiêng phải" (yaw=30)
 
@@ -282,6 +298,8 @@ def test_enrollment_rejects_opposite_yaw_direction(mock_detector_create) -> None
         face_recognizer=recognizer,
         head_pose_estimator=head_pose,
         detector_model_path=Path("fake.onnx"),
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
     thread._current_pose_index = 1  # "Nghiêng phải" requires yaw=30
     thread._pose_hold_counter = 4

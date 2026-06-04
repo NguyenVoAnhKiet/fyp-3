@@ -126,6 +126,8 @@ class TestRunAttendance:
         pipeline = AIPipeline(
             liveness_checker=liveness,
             face_recognizer=recognizer,
+            liveness_threshold=0.5,
+            similarity_threshold=0.6,
         )
 
         frame_bgr = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -144,6 +146,7 @@ class TestRunAttendance:
             liveness_checker=liveness,
             face_recognizer=recognizer,
             liveness_threshold=0.3,
+            similarity_threshold=0.6,
         )
 
         frame_bgr = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -169,6 +172,8 @@ class TestRunAttendance:
         pipeline = AIPipeline(
             liveness_checker=liveness,
             face_recognizer=recognizer,
+            liveness_threshold=0.5,
+            similarity_threshold=0.6,
         )
 
         frame_bgr = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -205,6 +210,7 @@ class TestRunEnrollment:
             face_recognizer=recognizer,
             head_pose_estimator=head_pose,
             liveness_threshold=0.3,
+            similarity_threshold=0.6,
         )
 
         frame_bgr = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -235,6 +241,7 @@ class TestRunEnrollment:
             face_recognizer=recognizer,
             head_pose_estimator=head_pose,
             liveness_threshold=0.5,
+            similarity_threshold=0.6,
         )
 
         frame_bgr = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -260,6 +267,7 @@ class TestRunEnrollment:
             face_recognizer=recognizer,
             head_pose_estimator=head_pose,
             liveness_threshold=0.5,
+            similarity_threshold=0.6,
         )
 
         frame_bgr = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -286,6 +294,7 @@ class TestRunEnrollment:
             face_recognizer=recognizer,
             head_pose_estimator=head_pose,
             liveness_threshold=0.5,
+            similarity_threshold=0.6,
         )
 
         frame_bgr = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -307,6 +316,8 @@ class TestRunEnrollment:
             liveness_checker=liveness,
             face_recognizer=recognizer,
             head_pose_estimator=head_pose,
+            liveness_threshold=0.5,
+            similarity_threshold=0.6,
         )
 
         frame_bgr = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -324,6 +335,8 @@ class TestRunEnrollment:
             liveness_checker=liveness,
             face_recognizer=recognizer,
             head_pose_estimator=None,
+            liveness_threshold=0.5,
+            similarity_threshold=0.6,
         )
 
         frame_bgr = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -344,6 +357,8 @@ class TestRunEnrollment:
             liveness_checker=liveness,
             face_recognizer=recognizer,
             head_pose_estimator=head_pose,
+            liveness_threshold=0.5,
+            similarity_threshold=0.6,
         )
 
         frame_bgr = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -361,14 +376,14 @@ class TestRunEnrollment:
 class TestDependencyInjection:
     """Test that AIPipeline correctly composes dependencies."""
 
-    def test_default_thresholds(self) -> None:
-        """Default thresholds are 0.3 (liveness) and 0.6 (similarity)."""
-        pipeline = AIPipeline(
-            liveness_checker=MagicMock(spec=LivenessChecker),
-            face_recognizer=MagicMock(spec=FaceRecognizer),
-        )
-        assert pipeline._liveness_threshold == 0.3
-        assert pipeline._similarity_threshold == 0.6
+    def test_thresholds_are_required(self) -> None:
+        """Plan 0005: thresholds are required (no defaults) — callers must
+        thread them from the resolved :class:`SystemConfig`."""
+        with pytest.raises(TypeError):
+            AIPipeline(
+                liveness_checker=MagicMock(spec=LivenessChecker),
+                face_recognizer=MagicMock(spec=FaceRecognizer),
+            )
 
     def test_custom_thresholds(self) -> None:
         """Custom thresholds are respected."""
@@ -386,9 +401,13 @@ class TestDependencyInjection:
         p1 = AIPipeline(
             liveness_checker=MagicMock(spec=LivenessChecker),
             face_recognizer=MagicMock(spec=FaceRecognizer),
+            liveness_threshold=0.5,
+            similarity_threshold=0.6,
         )
         p2 = AIPipeline(
             liveness_checker=MagicMock(spec=LivenessChecker),
             face_recognizer=MagicMock(spec=FaceRecognizer),
+            liveness_threshold=0.5,
+            similarity_threshold=0.6,
         )
         assert p1._liveness_tracker is not p2._liveness_tracker

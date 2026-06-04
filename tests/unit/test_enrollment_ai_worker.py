@@ -35,6 +35,8 @@ def test_queue_backpressure() -> None:
         liveness_checker=MagicMock(spec=LivenessChecker),
         face_recognizer=MagicMock(spec=FaceRecognizer),
         head_pose_estimator=MagicMock(spec=HeadPoseEstimator),
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
     worker = EnrollmentAIWorker(pipeline=pipeline)
     frame_bgr = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -63,6 +65,8 @@ def test_sentinel_termination() -> None:
         liveness_checker=MagicMock(spec=LivenessChecker),
         face_recognizer=MagicMock(spec=FaceRecognizer),
         head_pose_estimator=MagicMock(spec=HeadPoseEstimator),
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
     worker = EnrollmentAIWorker(pipeline=pipeline)
     frame_bgr = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -93,6 +97,8 @@ def test_pose_estimation_only() -> None:
         liveness_checker=liveness,
         face_recognizer=recognizer,
         head_pose_estimator=head_pose,
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
     worker = EnrollmentAIWorker(pipeline=pipeline)
 
@@ -148,6 +154,7 @@ def test_capture_complete_success() -> None:
         face_recognizer=recognizer,
         head_pose_estimator=head_pose,
         liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
     worker = EnrollmentAIWorker(pipeline=pipeline)
 
@@ -202,6 +209,7 @@ def test_capture_embedding_failure() -> None:
         face_recognizer=recognizer,
         head_pose_estimator=head_pose,
         liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
     worker = EnrollmentAIWorker(pipeline=pipeline)
 
@@ -245,6 +253,8 @@ def test_circuit_breaker_pose_error() -> None:
         liveness_checker=liveness,
         face_recognizer=recognizer,
         head_pose_estimator=head_pose,
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
     worker = EnrollmentAIWorker(pipeline=pipeline)
 
@@ -317,6 +327,8 @@ def test_circuit_breaker_recovers() -> None:
         liveness_checker=liveness,
         face_recognizer=recognizer,
         head_pose_estimator=head_pose,
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
     worker = EnrollmentAIWorker(pipeline=pipeline)
 
@@ -389,6 +401,8 @@ def test_frame_copy() -> None:
         liveness_checker=MagicMock(spec=LivenessChecker),
         face_recognizer=MagicMock(spec=FaceRecognizer),
         head_pose_estimator=MagicMock(spec=HeadPoseEstimator),
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
     worker = EnrollmentAIWorker(pipeline=pipeline)
 

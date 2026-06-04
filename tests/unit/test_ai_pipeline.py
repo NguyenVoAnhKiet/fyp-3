@@ -14,11 +14,16 @@ from attendance_system.services.ai_pipeline import LivenessChecker, FaceRecogniz
 # ==============================================================================
 
 def test_liveness_checker_bypass():
-    """LivenessChecker should bypass checks if model_path is None."""
+    """LivenessChecker should bypass checks if model_path is None.
+
+    Plan 0005: ``threshold`` is now required (no default).  The bypass
+    path ignores the threshold anyway, but the caller must still pass
+    a value.
+    """
     checker = LivenessChecker(None)
     dummy_img = np.zeros((128, 128, 3), dtype=np.uint8)
-    result = checker.check(dummy_img)
-    
+    result = checker.check(dummy_img, threshold=0.3)
+
     assert result.is_real is True
     assert result.score == 1.0
 

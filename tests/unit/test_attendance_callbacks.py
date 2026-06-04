@@ -8,11 +8,14 @@ directly without a Qt event loop.
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch, call
 
 import pytest
 from PyQt5.QtWidgets import QApplication
 
+from attendance_system.core.config import SystemConfig
+from attendance_system.core import defaults
 from attendance_system.services.exceptions import SessionClosedError
 from attendance_system.ui.user_mode_view import UserModeView
 
@@ -36,6 +39,24 @@ def mock_service() -> MagicMock:
     return MagicMock()
 
 
+def _make_test_config() -> SystemConfig:
+    """Build a SystemConfig with defaults for tests."""
+    return SystemConfig(
+        database_path=Path("test.db"),
+        detection_model_path=defaults.DEFAULT_DETECTOR_MODEL_PATH,
+        recognition_model_path=defaults.DEFAULT_RECOGNITION_MODEL_PATH,
+        liveness_model_path=None,
+        headpose_model_path=defaults.DEFAULT_HEADPOSE_MODEL_PATH,
+        camera_index=0,
+        antispoof_enabled=True,
+        headpose_enabled=True,
+        liveness_threshold=defaults.DEFAULT_LIVENESS_THRESHOLD,
+        similarity_threshold=defaults.DEFAULT_SIMILARITY_THRESHOLD,
+        attendance_freeze_seconds=defaults.DEFAULT_ATTENDANCE_FREEZE_SECONDS,
+        attendance_freeze_sound_enabled=defaults.DEFAULT_ATTENDANCE_FREEZE_SOUND_ENABLED,
+    )
+
+
 @pytest.fixture
 def view(mock_service, qapp) -> UserModeView:
     """Build a UserModeView with mocked service and no real camera."""
@@ -48,8 +69,7 @@ def view(mock_service, qapp) -> UserModeView:
             settings_service=MagicMock(),
             liveness_checker=MagicMock(),
             face_recognizer=MagicMock(),
-            camera_index=0,
-            detector_model_path=None,
+            config=_make_test_config(),
         )
     # Simulate an active session
     view._session_id = 42
