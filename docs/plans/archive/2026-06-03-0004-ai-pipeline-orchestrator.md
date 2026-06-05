@@ -1,6 +1,6 @@
 # Plan 0004: Introduce `AIPipeline` Orchestrator
 
-**Parent plan:** [0002 — Architecture Deepening Checklist](../active/0002-architecture-deepening.md) (candidate #2).
+**Parent plan:** [0002 — Architecture Deepening Checklist](2026-06-06-0002-architecture-deepening.md) (candidate #2).
 
 ## Status
 
@@ -116,7 +116,7 @@ ruff check src/attendance_system/services/
 
 ## Related
 
-- Parent plan: [0002 — Architecture Deepening Checklist](0002-architecture-deepening.md)
+- Parent plan: [0002 — Architecture Deepening Checklist](2026-06-06-0002-architecture-deepening.md)
 - Implement plan: [0004-impl](../archive/2026-06-03-0004-ai-pipeline-orchestrator-implement.md) — **Done** ✅
 - Predecessor (completed): [0007 — FacePreprocessor](../archive/2026-06-03-0007-face-preprocessor.md) — pipeline consumes `PreprocessingConfig` directly.
 - Sibling: [0003 — CameraWorkerBase](0003-camera-worker-base.md) — independent; can be done before or after.

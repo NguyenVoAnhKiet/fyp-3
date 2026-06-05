@@ -1,6 +1,6 @@
 # Plan 0007: Extract `FacePreprocessor`
 
-**Parent plan:** [0002 — Architecture Deepening Checklist](../active/0002-architecture-deepening.md) (candidate #5).
+**Parent plan:** [0002 — Architecture Deepening Checklist](2026-06-06-0002-architecture-deepening.md) (candidate #5).
 
 ## Status
 
@@ -119,7 +119,7 @@ ruff check src/attendance_system/services/face_preprocessor.py
 
 ## Related
 
-- Parent plan: [0002 — Architecture Deepening Checklist](../active/0002-architecture-deepening.md) (candidate #5, marked `[x]`).
+- Parent plan: [0002 — Architecture Deepening Checklist](2026-06-06-0002-architecture-deepening.md) (candidate #5, marked `[x]`).
 - Successor (completed): [0004 — AIPipeline](../archive/2026-06-03-0004-ai-pipeline-orchestrator.md) — pipeline consumes a deep preprocessor. **Done** (2026-06-03, commit `a1590c1`).
 - `AGENTS.md` "Liveness" — `_crop_face` scale (2.7 / 1.5); `LivenessChecker` and `HeadPoseEstimator` preprocessing; `FacePreprocessor` reference.
 - `CONTEXT.md` "Preprocessing" — CLAHE (resolved: `use_clahe=False` default), crop scale, letterbox resize. New term: **FacePreprocessor**.

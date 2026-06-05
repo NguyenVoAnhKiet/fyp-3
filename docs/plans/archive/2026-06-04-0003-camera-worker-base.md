@@ -1,6 +1,6 @@
 # Plan 0003: Extract Camera Worker Base Classes
 
-**Parent plan:** [0002 — Architecture Deepening Checklist](0002-architecture-deepening.md) (candidate #1).
+**Parent plan:** [0002 — Architecture Deepening Checklist](2026-06-06-0002-architecture-deepening.md) (candidate #1).
 
 ## Status
 
@@ -231,7 +231,7 @@ Phase 1 (Parallel):
 
 ## Related
 
-- Parent plan: [0002 — Architecture Deepening Checklist](0002-architecture-deepening.md)
+- Parent plan: [0002 — Architecture Deepening Checklist](2026-06-06-0002-architecture-deepening.md)
 - ADR-0001: `docs/adr/0001-onnx-circuit-breaker.md` (no update needed — shared counter already correct)
 - `AGENTS.md` "Gotchas" — `QThread` thread-affinity rules, `EnrollmentCameraThread` flips frames (mirror), attendance `CameraThread` does not, `_COOLDOWN_SECONDS = 3.0`, `_AI_FRAME_SKIP = 3`, `_PAUSE_POLL_INTERVAL_SECONDS = 0.05`.
 - Branch: `refactor/source-code`.

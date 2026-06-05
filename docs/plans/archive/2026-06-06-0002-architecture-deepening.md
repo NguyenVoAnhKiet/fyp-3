@@ -1,12 +1,12 @@
 # Plan 0002: Architecture Deepening — Checklist
 
-**Parent tracker** for the 5 deepening opportunities surfaced by the `improve-codebase-architecture` skill. This plan **does not contain implementation details** — those live in the per-candidate plans listed below. This file is a **status board**: as each per-candidate plan is implemented and merged, mark its checkbox below.
+**Parent tracker** for the 5 deepening opportunities surfaced by the `improve-codebase-architecture` skill. This plan **does not contain implementation details** — those live in the per-candidate plans listed below. This file is a **status board**: as each per-candidate plan is implemented and merged, mark its checkbox below. **4 of 5 done as of 2026-06-06**; the file was moved to `archive/2026-06-06-0002-architecture-deepening.md` on that date. Only #3 (`SystemConfig`) remains in `active/`.
 
 See `.agents/skills/improve-codebase-architecture/LANGUAGE.md` for the architecture vocabulary (**module**, **interface**, **seam**, **adapter**, **leverage**, **locality**) and `CONTEXT.md` for the domain glossary.
 
 ## Status
 
-**In progress** — 3 of 5 candidates done (#5 2026-06-03 commit `8863ec1`, #2 2026-06-03 commit `a1590c1`, #1 2026-06-04 commit `7e0e747` on `refactor/source-code`). The remaining 2 are still in Draft.
+**Done (4 of 5 candidates)** — #5 2026-06-03 commit `8863ec1`, #2 2026-06-03 commit `a1590c1`, #1 2026-06-04 commit `7e0e747`, #4 2026-06-06 commit `68ca3fc`, all on `refactor/source-code`. Only #3 (`SystemConfig`) remains in Draft on `active/0005-system-config-resolver.md`.
 
 ## Context
 
@@ -27,9 +27,9 @@ For every candidate: *can the deepened module be tested through its public inter
 
 ## Goals
 
-1. Drive each per-candidate plan to **Done** (merged to `main`). **3 of 5 done (#5, #2 — 2026-06-03; #1 — 2026-06-04).**
+1. Drive each per-candidate plan to **Done** (merged to `main`). **4 of 5 done (#5, #2 — 2026-06-03; #1 — 2026-06-04; #4 — 2026-06-06).**
 2. Resolve the ADR-0001 circuit-breaker replication inconsistency under candidate #1.
-3. Update `CONTEXT.md` inline whenever a new domain term is named. ✅ **Done for #5 and #2** — `FacePreprocessor`, `PipelineResult`, `AIPipeline` terms added.
+3. Update `CONTEXT.md` inline whenever a new domain term is named. ✅ **Done for #5, #2, and #4** — `FacePreprocessor`, `PipelineResult`, `AIPipeline`, `CachingFaceReferenceRepository` terms added.
 4. Update `docs/adr/` whenever a decision is load-bearing enough that a future explorer would re-suggest the same refactor.
 
 ## Non-Goals
@@ -45,7 +45,7 @@ Mark each item as it is **implemented and merged to `main`**. The per-candidate 
 - [x] **#1** — Extract `CameraWorkerBase` → archived as [2026-06-04-0003-camera-worker-base.md](../archive/2026-06-04-0003-camera-worker-base.md). _Status: **Done** (2026-06-04, commit `7e0e747`). Branch `refactor/source-code`. Resolves ADR-0001 circuit-breaker inconsistency._
 - [x] **#2** — Introduce `AIPipeline` orchestrator → archived as [2026-06-03-0004-ai-pipeline-orchestrator-implement.md](../archive/2026-06-03-0004-ai-pipeline-orchestrator-implement.md). _Status: **Done** (2026-06-03, commit `a1590c1`). Branch `refactor/source-code`._
 - [ ] **#3** — Centralize configuration resolution (`SystemConfig`) → [0005-system-config-resolver.md](0005-system-config-resolver.md). _Status: Draft. Independent of other candidates._
-- [ ] **#4** — Enforce cache invalidation (`CachingFaceReferenceRepository`) → [0006-caching-face-repository.md](0006-caching-face-repository.md). _Status: Draft. Independent of other candidates._
+- [x] **#4** — Enforce cache invalidation (`CachingFaceReferenceRepository`) → archived as [2026-06-06-0006-caching-face-repository.md](../archive/2026-06-06-0006-caching-face-repository.md). _Status: **Done** (2026-06-06, commit `68ca3fc`). Branch `refactor/source-code`. Wrapper owns the cache; inner repo is a pure SQLite adapter; 14 new unit tests + 7 new integration tests (272/272 pass)._
 - [x] **#5** — Extract `FacePreprocessor` → archived as [2026-06-03-0007-face-preprocessor.md](../archive/2026-06-03-0007-face-preprocessor.md). _Status: **Done** (2026-06-03, commit `8863ec1`). Branch `refactor/source-code`. Unblocked #2._
 
 ### Status legend
@@ -62,9 +62,9 @@ Mark each item as it is **implemented and merged to `main`**. The per-candidate 
 | ~~#5 (`FacePreprocessor`)~~ | ~~#2 (`AIPipeline`)~~ | **Resolved (2026-06-03):** #2 is done. Pipeline composes `LivenessChecker` + `LivenessTracker` + `FaceRecognizer`. |
 | ~~#1 (`CameraWorkerBase`)~~ | — | **Resolved (2026-06-04):** #1 is done. Base classes live in `ui/camera_worker_base.py`. |
 | #3 (`SystemConfig`) | — | Independent. |
-| #4 (`CachingFaceReferenceRepository`) | — | Independent. The wrapper pattern may inspire a future generic `Repository[T]` port, but that's not in scope here. |
+| ~~#4 (`CachingFaceReferenceRepository`)~~ | — | **Resolved (2026-06-06):** #4 is done. `CachingFaceReferenceRepository` wrapper enforces cache invalidation by invariant. The wrapper pattern may inspire a future generic `Repository[T]` port, but that's not in scope here. |
 
-**Recommended order:** ~~#5 → #2 → #1 →~~ #3 → #4. (#3 and #4 are independent.)
+**Recommended order:** ~~#5 → #2 → #1 → #4 →~~ #3. (#3 is the last open candidate.)
 
 ## ADR conflicts
 
@@ -84,8 +84,8 @@ Per `DEEPENING.md`:
 ## Related
 
 - `AGENTS.md` "Gotchas" — hints at the friction surfaced (cache invalidation convention, hardcoded `_COOLDOWN_SECONDS` / `_AI_FRAME_SKIP`, repository cache key, etc.).
-- `CONTEXT.md` — domain glossary. Terms added: `FacePreprocessor` (#5), `PipelineResult`, `AIPipeline` (#2). Future terms from other candidates: `SystemConfig`, `CachingFaceReferenceRepository`.
+- `CONTEXT.md` — domain glossary. Terms added: `FacePreprocessor` (#5), `PipelineResult`, `AIPipeline` (#2), `CachingFaceReferenceRepository` (#4). Future terms from remaining candidate: `SystemConfig` (#3).
 - `docs/adr/0001-onnx-circuit-breaker.md` — only existing ADR; candidate #1 may update it.
 - `.agents/skills/improve-codebase-architecture/{LANGUAGE.md,DEEPENING.md,INTERFACE-DESIGN.md}` — vocabulary and methodology this plan follows.
-- Per-candidate plans: [archived 0003](../archive/2026-06-04-0003-camera-worker-base.md) (done 2026-06-04) · [archived 0004 design](../archive/2026-06-03-0004-ai-pipeline-orchestrator.md) + [archived 0004 implement](../archive/2026-06-03-0004-ai-pipeline-orchestrator-implement.md) (done 2026-06-03) · [0005](0005-system-config-resolver.md) · [0006](0006-caching-face-repository.md) · [archived 0007](../archive/2026-06-03-0007-face-preprocessor.md) (done 2026-06-03).
+- Per-candidate plans: [archived 0003](../archive/2026-06-04-0003-camera-worker-base.md) (done 2026-06-04) · [archived 0004 design](../archive/2026-06-03-0004-ai-pipeline-orchestrator.md) + [archived 0004 implement](../archive/2026-06-03-0004-ai-pipeline-orchestrator-implement.md) (done 2026-06-03) · [0005](0005-system-config-resolver.md) (active) · [archived 0006](../archive/2026-06-06-0006-caching-face-repository.md) (done 2026-06-06) · [archived 0007](../archive/2026-06-03-0007-face-preprocessor.md) (done 2026-06-03).
 - Branch: `refactor/source-code`.

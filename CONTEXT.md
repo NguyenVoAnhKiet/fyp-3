@@ -40,6 +40,8 @@
 
 **PipelineResult** — `@dataclass(slots=True)` output of a single frame through the AIPipeline (`src/attendance_system/services/pipeline_result.py`). Uses `result_type` discriminator (`"success"`, `"spoof"`, `"unrecognized"`, `"pose_only"`, `"capture_success"`, `"capture_fail"`) with optional fields for liveness, recognition, head-pose, and embedding outputs.
 
+**CachingFaceReferenceRepository** — Caching wrapper (`src/attendance_system/repositories/caching_face_reference_repository.py`) around `FaceReferenceRepository`. Sole owner of the in-memory `get_all()` cache used by `FaceRecognizer.identify()` on the per-frame AI hot path. Every public write method (`upsert`, `replace_all`, `delete_by_user_id`, `save_enrollment`) invalidates the cache after the inner call returns — invalidation is **enforced by invariant** (the wrapper owns the cache), not by convention. The inner `FaceReferenceRepository` is a pure SQLite adapter (encrypt + SQL + validation). Constructed once at the composition root (`main.py`) and threaded through `FaceRecognizer`, `EnrollmentService`, and the admin UI widgets so admin user-delete and re-enrollment both invalidate the recognizer's cache. See [plan 0006 (archived)](docs/plans/archive/2026-06-06-0006-caching-face-repository.md).
+
 ### Current Issues
 
 **Issue 1: Flicker** — In good lighting, real faces are detected correctly but bbox flickers red (spoof) every few frames.

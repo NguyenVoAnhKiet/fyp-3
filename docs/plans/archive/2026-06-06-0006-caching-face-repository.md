@@ -1,14 +1,14 @@
 # Plan 0006: Enforce Cache Invalidation (`CachingFaceReferenceRepository`)
 
-**Parent plan:** [0002 — Architecture Deepening Checklist](0002-architecture-deepening.md) (candidate #4).
+**Parent plan:** [0002 — Architecture Deepening Checklist](../archive/2026-06-06-0002-architecture-deepening.md) (candidate #4).
 
 ## Status
 
-**Draft** — design pending grilling. Surfaced by `improve-codebase-architecture` skill; see friction recap in parent plan.
+**Done** — implemented 2026-06-06, commit `68ca3fc` on `refactor/source-code`. All 5 goals met; 272/272 tests pass. Moved to [`archive/2026-06-06-0006-caching-face-repository.md`](../archive/2026-06-06-0006-caching-face-repository.md) on completion of candidate #4 from [0002 — Architecture Deepening Checklist](../archive/2026-06-06-0002-architecture-deepening.md).
 
 ## Context
 
-`FaceReferenceRepository._cache_all: ClassVar[dict[str, list[dict]]]` is invalidated on every write path, but **by convention only**. `AGENTS.md` explicitly warns "every write path must invalidate cache" — no enforcement.
+`FaceReferenceRepository._cache_all: ClassVar[dict[str, list[dict]]]` was invalidated on every write path, but **by convention only**. `AGENTS.md` explicitly warned "every write path must invalidate cache" — no enforcement.
 
 The convention is broken by `services/enrollment_service.py:50-81`, which:
 - bypasses the repository's own `replace_all()` method
@@ -270,8 +270,10 @@ ruff check src/attendance_system/repositories/
 
 ## Related
 
-- Parent plan: [0002 — Architecture Deepening Checklist](0002-architecture-deepening.md)
-- Independent of [0003 — CameraWorkerBase](0003-camera-worker-base.md), [0005 — SystemConfig](0005-system-config-resolver.md).
-- `AGENTS.md` "Gotchas" — `FaceReferenceRepository._cache_all` keyed by DB path; **every write path must invalidate cache**. (This gotcha may be removable after this plan.)
+- Parent plan: [0002 — Architecture Deepening Checklist](../archive/2026-06-06-0002-architecture-deepening.md)
+- Sibling plans: [0003 — CameraWorkerBase (archived)](../archive/2026-06-04-0003-camera-worker-base.md), [0004 — AIPipeline (archived)](../archive/2026-06-03-0004-ai-pipeline-orchestrator.md), [0005 — SystemConfig (active)](0005-system-config-resolver.md), [0007 — FacePreprocessor (archived)](../archive/2026-06-03-0007-face-preprocessor.md).
+- `AGENTS.md` "Gotchas" — the pre-existing `FaceReferenceRepository._cache_all` gotcha was **removed**; replaced with a one-liner about the new `CachingFaceReferenceRepository` wrapper ownership.
 - `AGENTS.md` "Wiring" — `attendance_records.user_id` is nullable, `ON DELETE SET NULL`. LEFT JOIN required when joining `attendance_records` → `users`. (Indirectly relevant if cache miss leads to wrong user lookup.)
-- Branch: `refactor/source-code`.
+- `CONTEXT.md` — `CachingFaceReferenceRepository` term added to the domain glossary (Pipeline Orchestration section).
+- `docs/plans/README.md` — 0002 checklist updated; 0002 + 0006 moved to archive table.
+- Branch: `refactor/source-code`. Commit: `68ca3fc`.

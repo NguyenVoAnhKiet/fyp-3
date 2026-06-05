@@ -1,6 +1,6 @@
 # Plan 0005: Centralize Configuration Resolution (`SystemConfig`)
 
-**Parent plan:** [0002 — Architecture Deepening Checklist](0002-architecture-deepening.md) (candidate #3).
+**Parent plan:** [0002 — Architecture Deepening Checklist](2026-06-06-0002-architecture-deepening.md) (candidate #3).
 
 ## Status
 
@@ -114,8 +114,8 @@ ruff check src/attendance_system/core/config.py src/attendance_system/core/defau
 
 ## Related
 
-- Parent plan: [0002 — Architecture Deepening Checklist](0002-architecture-deepening.md)
-- Independent of [0003 — CameraWorkerBase](0003-camera-worker-base.md), [0006 — CachingFaceReferenceRepository](0006-caching-face-repository.md).
+- Parent plan: [0002 — Architecture Deepening Checklist](2026-06-06-0002-architecture-deepening.md)
+- Independent of [0003 — CameraWorkerBase](2026-06-04-0003-camera-worker-base.md), [0006 — CachingFaceReferenceRepository](2026-06-06-0006-caching-face-repository.md).
 - `AGENTS.md` "Wiring" section — documents the CLI > env > default precedence.
 - `AGENTS.md` "Config" section — thresholds seed once from `.env` into DB, then Admin UI controls them.
 - `CONTEXT.md` — Phase 4 documents the 0.5→0.3 migration that touched 7 files.
