@@ -48,7 +48,7 @@ attendance-app                      # Launch application
 | Database layer | `src/attendance_system/core/db.py`, `docs/database.md` |
 | AI pipeline (liveness + recognition) | `src/attendance_system/services/ai_pipeline.py`, `docs/ai-pipeline.md` |
 | AI pipeline (head-pose) | `src/attendance_system/services/head_pose.py` |
-| Threads (camera + AI) | `src/attendance_system/ui/camera_thread.py`, `enrollment_camera_thread.py` |
+| Threads (camera + AI) | `src/attendance_system/ui/camera_worker_base.py` (base classes), `camera_thread.py`, `enrollment_camera_thread.py` |
 | UI views | `src/attendance_system/ui/` (11 widgets), `docs/modules.md` |
 | Repository layer | `src/attendance_system/repositories/` (7 repos) |
 | Service layer | `src/attendance_system/services/` (7 services) |

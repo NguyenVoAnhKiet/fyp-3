@@ -8,6 +8,9 @@ from PyQt5.QtWidgets import (
 from attendance_system.ui.constants import FONT_TITLE
 from attendance_system.repositories.user_repository import UserRepository
 from attendance_system.repositories.face_reference_repository import FaceReferenceRepository
+from attendance_system.repositories.caching_face_reference_repository import (
+    CachingFaceReferenceRepository,
+)
 from attendance_system.core.db import Database
 
 
@@ -56,11 +59,21 @@ class UserDialog(QDialog):
 
 
 class UserManagementWidget(QWidget):
-    def __init__(self, database: Database, parent=None):
+    def __init__(
+        self,
+        database: Database,
+        parent=None,
+        face_repo: FaceReferenceRepository | CachingFaceReferenceRepository | None = None,
+    ):
         super().__init__(parent)
         self.database = database
         self.user_repo = UserRepository(database)
-        self.face_repo = FaceReferenceRepository(database)
+        # If caller didn't supply a face_repo, default to a bare repo (legacy
+        # callers, tests). Production wires CachingFaceReferenceRepository in
+        # main.py so user-delete invalidates the recognizer's cache.
+        if face_repo is None:
+            face_repo = FaceReferenceRepository(database)
+        self.face_repo = face_repo
         
         self._build_ui()
         self.load_users()

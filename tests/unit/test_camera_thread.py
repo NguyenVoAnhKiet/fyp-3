@@ -1,3 +1,14 @@
+"""Unit tests for ``CameraThread`` + ``AIWorker`` (attendance flow) and
+``EnrollmentCameraThread`` (enrollment flow).
+
+After plan 0005 ``EnrollmentCameraThread.__init__`` requires explicit
+``liveness_threshold`` and ``similarity_threshold`` — those values are
+plumbed in this file via a small helper that builds a
+:class:`attendance_system.core.config.SystemConfig` from
+:mod:`attendance_system.core.defaults`.  See plan 0005 (archived
+2026-06-05).
+"""
+
 from __future__ import annotations
 
 import queue
@@ -10,9 +21,11 @@ import numpy as np
 import pytest
 from PyQt5.QtCore import Qt
 
-from attendance_system.ui.camera_thread import AIWorker, CameraThread, _SENTINEL
+from attendance_system.ui.camera_thread import AIWorker, CameraThread
+from attendance_system.ui.camera_worker_base import _SENTINEL
 from attendance_system.ui.enrollment_camera_thread import EnrollmentCameraThread
-from attendance_system.services.ai_pipeline import LivenessChecker, FaceRecognizer, LivenessResult, RecognitionResult
+from attendance_system.services.ai_pipeline import AIPipeline, LivenessChecker, FaceRecognizer, LivenessResult, RecognitionResult
+from attendance_system.services.pipeline_result import PipelineResult
 from attendance_system.services.exceptions import LivenessInferenceError
 
 def _make_face() -> np.ndarray:
@@ -26,12 +39,13 @@ def test_ai_worker_queue_backpressure() -> None:
     liveness = MagicMock(spec=LivenessChecker)
     recognizer = MagicMock(spec=FaceRecognizer)
     
-    worker = AIWorker(
-        liveness_threshold=0.5,
-        similarity_threshold=0.6,
+    pipeline = AIPipeline(
         liveness_checker=liveness,
         face_recognizer=recognizer,
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
+    worker = AIWorker(pipeline=pipeline)
     
     frame_bgr = np.zeros((480, 640, 3), dtype=np.uint8)
     frame_rgb = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -54,12 +68,13 @@ def test_ai_worker_sentinel_termination_and_drain() -> None:
     liveness = MagicMock(spec=LivenessChecker)
     recognizer = MagicMock(spec=FaceRecognizer)
     
-    worker = AIWorker(
-        liveness_threshold=0.5,
-        similarity_threshold=0.6,
+    pipeline = AIPipeline(
         liveness_checker=liveness,
         face_recognizer=recognizer,
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
+    worker = AIWorker(pipeline=pipeline)
     
     frame_bgr = np.zeros((480, 640, 3), dtype=np.uint8)
     frame_rgb = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -97,6 +112,7 @@ def test_camera_thread_isolation(mock_detector_create) -> None:
         face_recognizer=recognizer,
         liveness_threshold=0.5,
         detector_model_path=Path("fake.onnx"),
+        similarity_threshold=0.6,
     )
     
     # They should have created separate detector instances
@@ -109,12 +125,13 @@ def test_ai_worker_circuit_breaker() -> None:
     
     recognizer = MagicMock(spec=FaceRecognizer)
     
-    worker = AIWorker(
-        liveness_threshold=0.5,
-        similarity_threshold=0.6,
+    pipeline = AIPipeline(
         liveness_checker=liveness,
         face_recognizer=recognizer,
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
+    worker = AIWorker(pipeline=pipeline)
     
     camera_errors = []
     warnings = []
@@ -148,7 +165,7 @@ def test_ai_worker_circuit_breaker() -> None:
     # Once it hits 30 consecutive errors, the circuit breaker should trigger
     # Emit camera_error and stop the thread
     assert len(camera_errors) == 1
-    assert "Liveness model failed" in camera_errors[0]
+    assert "gặp lỗi" in camera_errors[0] or "failed" in camera_errors[0]
     assert worker._running is False
     worker.stop()
 
@@ -161,12 +178,13 @@ def test_ai_worker_recognition_cooldown() -> None:
     match = RecognitionResult(user_id=42, full_name="John Doe", student_id="SV001", similarity=0.85)
     recognizer.identify.return_value = match
     
-    worker = AIWorker(
-        liveness_threshold=0.5,
-        similarity_threshold=0.6,
+    pipeline = AIPipeline(
         liveness_checker=liveness,
         face_recognizer=recognizer,
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
     )
+    worker = AIWorker(pipeline=pipeline)
     
     results = []
     def on_result(result_type, user_id, name, liveness_score, sim_score):

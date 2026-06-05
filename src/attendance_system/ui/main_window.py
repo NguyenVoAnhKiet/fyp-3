@@ -1,6 +1,15 @@
-from __future__ import annotations
+"""Top-level PyQt5 main window for the Face Attendance app.
 
-from pathlib import Path
+Hosts the master stacked widget that switches between ``LoginWidget``,
+``UserModeView`` (attendance) and ``AdminDashboardView``.  Receives the
+resolved :class:`attendance_system.core.config.SystemConfig` once at
+startup and propagates it to every child view so the whole UI shares a
+single source of truth for camera index, model paths and AI thresholds.
+
+See plan 0005 (archived 2026-06-05) for the resolution design.
+"""
+
+from __future__ import annotations
 
 
 from PyQt5.QtCore import Qt
@@ -12,7 +21,14 @@ from PyQt5.QtWidgets import (
     QStackedWidget,
 )
 
+from attendance_system.core.config import SystemConfig
 from attendance_system.core.db import Database
+from attendance_system.repositories.caching_face_reference_repository import (
+    CachingFaceReferenceRepository,
+)
+from attendance_system.repositories.face_reference_repository import (
+    FaceReferenceRepository,
+)
 from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
 from attendance_system.services.head_pose import HeadPoseEstimator
 from attendance_system.services.attendance_service import AttendanceService
@@ -50,13 +66,13 @@ class MainWindow(QMainWindow):
         face_recognizer: FaceRecognizer,
         head_pose_estimator: HeadPoseEstimator | None,
         database: Database,
-        camera_index: int = 0,
-        detector_model_path: Path | None = None,
+        config: SystemConfig,
+        face_repo: FaceReferenceRepository | CachingFaceReferenceRepository | None = None,
     ) -> None:
         super().__init__()
         self._auth = authentication_service
         self._database = database
-        self._camera_index = camera_index
+        self._config = config
 
         self.setWindowTitle("Hệ Thống Điểm Danh Khuôn Mặt")
         self.setMinimumSize(1024, 720)
@@ -68,8 +84,7 @@ class MainWindow(QMainWindow):
             settings_service=settings_service,
             liveness_checker=liveness_checker,
             face_recognizer=face_recognizer,
-            camera_index=camera_index,
-            detector_model_path=detector_model_path,
+            config=config,
             parent=self,
         )
         self._login_widget = LoginWidget(parent=self)
@@ -79,7 +94,8 @@ class MainWindow(QMainWindow):
             liveness_checker=liveness_checker,
             face_recognizer=face_recognizer,
             head_pose_estimator=head_pose_estimator,
-            detector_model_path=detector_model_path,
+            config=config,
+            face_repo=face_repo,
             parent=self,
         )
 
@@ -116,7 +132,7 @@ class MainWindow(QMainWindow):
         """)
 
         db_path_str = str(self._database.config.path)
-        self._status_camera = QLabel(f"📷 Camera: {self._camera_index}")
+        self._status_camera = QLabel(f"📷 Camera: {self._config.camera_index}")
         self._status_db = QLabel(f"💾 DB: {db_path_str}")
         self._status_session = QLabel("⏸ IDLE")
 

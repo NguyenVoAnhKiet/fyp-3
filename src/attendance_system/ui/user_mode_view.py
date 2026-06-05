@@ -1,8 +1,18 @@
+"""User mode (attendance) view: live camera + AI recognition + sidebar.
+
+Consumes the resolved :class:`attendance_system.core.config.SystemConfig`
+for ``camera_index``, ``liveness_threshold``, ``similarity_threshold``
+and ``detection_model_path``.  No hardcoded defaults — every tunable
+comes from the frozen config object built at startup by
+:class:`attendance_system.core.config.SettingsResolver`.  See plan 0005
+(archived 2026-06-05).
+"""
+
 from __future__ import annotations
 
 import logging
 import time
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 
 from PyQt5.QtCore import QTimer, Qt, pyqtSignal
@@ -50,10 +60,11 @@ from attendance_system.ui.styles import (
 )
 from attendance_system.utils.time_utils import utc_now_iso, utc_to_local
 
+if TYPE_CHECKING:
+    from attendance_system.core.config import SystemConfig
+
 logger = logging.getLogger(__name__)
 
-_DEFAULT_LIVENESS_THRESHOLD = 0.3
-_DEFAULT_SIMILARITY_THRESHOLD = 0.6
 
 # Stack indices for IDLE / ACTIVE sub-panels inside UserModeView
 _IDX_IDLE = 0
@@ -79,8 +90,7 @@ class UserModeView(QWidget):
         settings_service: SettingsService,
         liveness_checker: LivenessChecker,
         face_recognizer: FaceRecognizer,
-        camera_index: int = 0,
-        detector_model_path: Path | None = None,
+        config: "SystemConfig",
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -88,8 +98,7 @@ class UserModeView(QWidget):
         self._settings = settings_service
         self._liveness_checker = liveness_checker
         self._face_recognizer = face_recognizer
-        self._camera_index = camera_index
-        self._detector_model_path = detector_model_path
+        self._config = config
         self._session_id: int | None = None
         self._camera_thread: CameraThread | None = None
         self._session_started_monotonic: float | None = None
@@ -473,12 +482,11 @@ class UserModeView(QWidget):
             )
             return
 
-        liveness_threshold = float(
-            self._settings.get("liveness_threshold") or _DEFAULT_LIVENESS_THRESHOLD
-        )
-        similarity_threshold = float(
-            self._settings.get("similarity_threshold") or _DEFAULT_SIMILARITY_THRESHOLD
-        )
+        # Thresholds come from the resolved SystemConfig (CLI > env > DB >
+        # default).  ``SettingsService`` is only consulted for the camera
+        # index, which the admin may have changed at runtime.
+        liveness_threshold = self._config.liveness_threshold
+        similarity_threshold = self._config.similarity_threshold
 
         self._session_id = self._attendance.start_session(
             subject_name=subject,
@@ -513,9 +521,12 @@ class UserModeView(QWidget):
 
         self._stack.setCurrentIndex(_IDX_ACTIVE)
 
-        # Read camera index from DB settings (admin may have changed it)
+        # Read camera index from DB settings (admin may have changed it);
+        # fall back to the value resolved at startup in SystemConfig.
         saved_cam = self._settings.get("camera_index")
-        active_camera = int(saved_cam) if saved_cam is not None else self._camera_index
+        active_camera = (
+            int(saved_cam) if saved_cam is not None else self._config.camera_index
+        )
 
         self._camera_thread = CameraThread(
             session_id=self._session_id,
@@ -524,7 +535,7 @@ class UserModeView(QWidget):
             liveness_checker=self._liveness_checker,
             face_recognizer=self._face_recognizer,
             camera_index=active_camera,
-            detector_model_path=self._detector_model_path,
+            detector_model_path=self._config.detection_model_path,
             parent=self,
         )
         self._camera_thread.frame_ready.connect(self._update_camera_frame)

@@ -1,4 +1,14 @@
-"""Admin Settings widget for configuring hardware and AI parameters (UC-10)."""
+"""Admin Settings widget for configuring hardware and AI parameters (UC-10).
+
+Reads initial spinbox values from :mod:`attendance_system.core.defaults`
+(single source of truth for tunables) and persists user edits via
+:class:`attendance_system.services.settings_service.SettingsService`
+(DB CRUD wrapper).  The widget does **not** know about CLI / env
+precedence — that lives in
+:class:`attendance_system.core.config.SettingsResolver`.
+
+See plan 0005 (archived 2026-06-05) for the full design.
+"""
 
 from __future__ import annotations
 
@@ -21,6 +31,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+from attendance_system.core import defaults
 from attendance_system.ui.constants import FONT_BODY
 from attendance_system.ui.styles import FONT_H1
 
@@ -32,13 +43,8 @@ _KEY_CAMERA_INDEX = "camera_index"
 _KEY_LIVENESS_THRESHOLD = "liveness_threshold"
 _KEY_SIMILARITY_THRESHOLD = "similarity_threshold"
 
-_DEFAULT_LIVENESS = 0.3
-_DEFAULT_SIMILARITY = 0.6
-
 _KEY_FREEZE_SECONDS = "attendance_freeze_seconds"
 _KEY_FREEZE_SOUND_ENABLED = "attendance_freeze_sound_enabled"
-_DEFAULT_FREEZE_SECONDS = 4
-_DEFAULT_FREEZE_SOUND_ENABLED = False
 
 # Range of camera indices to probe (0-4 inclusive)
 _CAMERA_SCAN_MAX = 5
@@ -168,15 +174,24 @@ class SettingsWidget(QWidget):
 
     def _load_values(self) -> None:
         liveness = self._settings.get(_KEY_LIVENESS_THRESHOLD)
-        self._liveness_spin.setValue(float(liveness) if liveness else _DEFAULT_LIVENESS)
+        self._liveness_spin.setValue(
+            float(liveness) if liveness else defaults.DEFAULT_LIVENESS_THRESHOLD
+        )
 
         similarity = self._settings.get(_KEY_SIMILARITY_THRESHOLD)
-        self._similarity_spin.setValue(float(similarity) if similarity else _DEFAULT_SIMILARITY)
+        self._similarity_spin.setValue(
+            float(similarity) if similarity else defaults.DEFAULT_SIMILARITY_THRESHOLD
+        )
 
         freeze_seconds = self._settings.get(_KEY_FREEZE_SECONDS)
-        self._freeze_spin.setValue(int(freeze_seconds) if freeze_seconds else _DEFAULT_FREEZE_SECONDS)
+        self._freeze_spin.setValue(
+            int(freeze_seconds) if freeze_seconds else defaults.DEFAULT_ATTENDANCE_FREEZE_SECONDS
+        )
         freeze_sound = self._settings.get(_KEY_FREEZE_SOUND_ENABLED)
-        self._freeze_sound_check.setChecked(freeze_sound is not None and freeze_sound.lower() in {"1", "true", "yes", "on"})
+        self._freeze_sound_check.setChecked(
+            freeze_sound is not None
+            and freeze_sound.lower() in {"1", "true", "yes", "on"}
+        )
 
     def _save(self) -> None:
         # Camera index

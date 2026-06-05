@@ -24,7 +24,7 @@ attendance-storage-init --database-path <p>   # custom path
 attendance-app                                # launch GUI
 ruff check src/                               # full lint (E501 line-length pre-existing)
 ruff check src/ --select F                    # undefined names only (fast pre-commit check)
-pytest tests/                                 # full suite (167 tests: 144 unit + 23 integration)
+pytest tests/                                 # full suite (237 tests: 185 unit + 52 integration)
 pytest tests/unit/ -v                         # fast unit-only
 pytest tests/integration/ -v                  # DB/storage integration
 PYTHONPATH=src python src/main.py             # dev run without `pip install -e .`
@@ -57,11 +57,11 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 - `QImage` crossing threads must be `.copy()`'d first.
 - Create worker `QThread`s in `__init__`, start them in `run()`.
 - `EnrollmentCameraThread` flips frames (mirror); attendance `CameraThread` does not.
-- `FaceReferenceRepository._cache_all` keyed by DB path; **every write path** must invalidate cache.
+- `CachingFaceReferenceRepository` wrapper owns the face-references cache; inner `FaceReferenceRepository` is a pure SQLite adapter. Invalidation is enforced by the wrapper — see `tests/unit/test_caching_face_reference_repository.py` (parametrized over 4 write methods).
 - `_crop_face` scale: 2.7 for liveness (broad context), 1.5 for head-pose (tight crop).
 - `_COOLDOWN_SECONDS = 3.0` in `camera_thread.py` — per-user cooldown before re-recognition. In-memory, resets on thread restart.
 - `_AI_FRAME_SKIP = 3` — full AI pipeline runs every 3rd frame (~10 Hz at 30 fps).
-- `_PAUSE_POLL_INTERVAL_SECONDS = 0.05` — `CameraThread.pause()`/`resume()` poll interval; `AIWorker` idles naturally on its own queue.
+- `_PAUSE_POLL_INTERVAL_SECONDS = 0.05` — `CameraThreadBase.pause()`/`resume()` poll interval; `AIWorker` idles naturally on its own queue.
 - `user_mode_view.py` tracks `_recognized_users` (set of `user_id`) to suppress duplicate sidebar entries + `_stats_success` increment. `_stats_total` always increments (total events).
 - `record_success()` catches `IntegrityError` internally on UNIQUE `(session_id, user_id)` — falls back to SELECT-existing, returns normally. Caller never sees a DB exception for duplicates.
 - `record_duplicate()` does **not** insert a `recognition_events` row (no audit trail for the second path — caller is expected to have already inserted one).
@@ -80,7 +80,21 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 ## Liveness (Anti-Spoofing)
 
 - **Model:** MiniFASNet V2 SE quantized (INT8, 600 KB). Best well-lit frontal <30°.
-- **Temporal smoothing:** `LivenessTracker` uses EMA (α=0.4) + hysteresis (T_HIGH=0.65, T_LOW=0.45) + IoU tracking.
+- **Temporal smoothing:** `LivenessTracker` (`src/attendance_system/services/liveness_tracker.py`, relocated from `core/` in Plan 0004) uses EMA (α=0.4) + hysteresis (T_HIGH=0.65, T_LOW=0.45) + IoU tracking.
 - **Threshold:** Default 0.3. Configurable via `FACE_ANTISPOOF_CONFIDENCE_THRESHOLD` env var or Admin UI.
-- **Crop scale:** 2.7 for liveness, 1.5 for head-pose.
+- **Preprocessing:** `FacePreprocessor` (`src/attendance_system/services/face_preprocessor.py`) with `LIVENESS_CONFIG` (scale=2.7, 128×128, [0,1], letterbox, RGB) and `HEAD_POSE_CONFIG` (scale=1.5, 224×224, ImageNet, direct resize, BGR). Defined in `preprocessing_configs.py`. CLAHE is OFF by default (`use_clahe=False`) — toggleable per config but not wired to env/UI yet. Adding a new model = define a new `PreprocessingConfig`, not duplicate preprocessing code (plan 0007).
+- **Crop scale:** 2.7 for liveness, 1.5 for head-pose (encoded in each model's `PreprocessingConfig.scale`).
 - **Known limitation:** 2D texture classifier; poor lighting still rejects ~95% real faces (model limitation).
+
+## AI Pipeline Orchestration
+
+- **AIPipeline** (`src/attendance_system/services/ai_pipeline.py`): Orchestrates per-frame AI inference. Composes `LivenessChecker`, `FaceRecognizer`, `LivenessTracker`, and optionally `HeadPoseEstimator`. Methods: `run_attendance()` → `PipelineResult`, `run_enrollment()` → `PipelineResult`.
+- **PipelineResult** (`src/attendance_system/services/pipeline_result.py`): `@dataclass(slots=True)` with `result_type` discriminator and optional fields for liveness, recognition, head-pose, and embedding outputs.
+- **Backward compat:** `core/liveness_tracker.py` re-exports from `services/liveness_tracker.py`.
+
+## Camera Worker Base Classes
+
+- **CameraThreadBase** (`src/attendance_system/ui/camera_worker_base.py`): Base `QThread` for camera capture. Provides: camera init, `_retry_read()` (exponential backoff), `pause()`/`resume()`, `_detect_faces()`, `_draw_bboxes()`, `_annotate_frame()`, `_emit_display_frame()`, `stop()`. Concrete `run()` loop calls abstract `_process_frame()`.
+- **AIWorkerBase** (`src/attendance_system/ui/camera_worker_base.py`): Base `QThread` for AI inference workers. Provides: `queue.Queue(maxsize=1)` + sentinel shutdown, `submit_task(*args)` (auto-copies numpy arrays), `is_busy()`, `stop()` (drain + sentinel + wait). Concrete `run()` loop with circuit-breaker (`_MAX_CONSECUTIVE_FAILURES = 30`). Calls abstract `_process_frame()`.
+- **Inheritance:** `CameraThread` + `EnrollmentCameraThread` inherit `CameraThreadBase`. `AIWorker` + `EnrollmentAIWorker` inherit `AIWorkerBase`.
+- **Circuit-breaker:** Shared counter in `AIWorkerBase`. ADR-0001: one broken model kills both attendance and enrollment. Override `_inference_error_types()` to specify caught exceptions per subclass.

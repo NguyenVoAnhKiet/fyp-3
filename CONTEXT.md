@@ -18,11 +18,13 @@
 
 ### Preprocessing
 
-**CLAHE** — Contrast Limited Adaptive Histogram Equalization. Improves contrast in low-light images by locally equalizing histogram. Helps with poor lighting but can add frame-to-frame variance.
+**FacePreprocessor** — Composable preprocessing pipeline (`src/attendance_system/services/face_preprocessor.py`). Steps: `crop → color → optional CLAHE → resize → normalize → to_tensor (HWC→CHW float32)`. Each ONNX model gets its own frozen `PreprocessingConfig` (see `preprocessing_configs.py`): `LIVENESS_CONFIG` for MiniFASNet (scale=2.7, 128×128, [0,1], letterbox), `HEAD_POSE_CONFIG` for MobileNetV2 (scale=1.5, 224×224, ImageNet, direct resize, BGR input). Adding a new model = define a new config, no preprocessing code duplication.
 
-**Crop Scale** — Factor controlling how much context around the face bbox is included. `scale=2.7` = large crop with background. `scale=1.5` = tight crop, mostly face.
+**CLAHE** — Contrast Limited Adaptive Histogram Equalization. Improves contrast in low-light images by locally equalizing histogram. **Status (resolved, plan 0007):** OFF by default in production (`use_clahe=False` in `LIVENESS_CONFIG` / `HEAD_POSE_CONFIG`). Toggleable per-config. Phase-1 testing showed that removing CLAHE worsened poor-light performance (99% spoof rate), but the result was kept because the MiniFASNet training pipeline does not include CLAHE — the test confirmed CLAHE was a mismatch with the training distribution, not a needed enhancement. The toggle remains available for future experimentation.
 
-**Letterbox Resize** — Resize longest side to target size, pad shorter side to make square. Preserves aspect ratio.
+**Crop Scale** — Factor controlling how much context around the face bbox is included. `scale=2.7` = large crop with background. `scale=1.5` = tight crop, mostly face. Encoded in each model's `PreprocessingConfig.scale`.
+
+**Letterbox Resize** — Resize longest side to target size, pad shorter side to make square. Preserves aspect ratio. `ResizeMode.LETTERBOX` in `FacePreprocessor` (used by liveness). `ResizeMode.DIRECT` does straight `cv2.resize` (used by head-pose, matching its training pipeline).
 
 ### Temporal Behavior
 
@@ -31,6 +33,14 @@
 **Temporal Smoothing** — Aggregating liveness decisions over multiple frames (e.g., majority vote, exponential moving average) to reduce flicker.
 
 **Hysteresis** — Using separate thresholds for real→spoof and spoof→real transitions to reduce boundary oscillation.
+
+### Pipeline Orchestration
+
+**AIPipeline** — Orchestrator class (`src/attendance_system/services/ai_pipeline.py`) that composes LivenessChecker, FaceRecognizer, LivenessTracker, and optionally HeadPoseEstimator into a single per-frame inference sequence. Provides `run_attendance()` and `run_enrollment()` methods. Each instance owns its own LivenessTracker state.
+
+**PipelineResult** — `@dataclass(slots=True)` output of a single frame through the AIPipeline (`src/attendance_system/services/pipeline_result.py`). Uses `result_type` discriminator (`"success"`, `"spoof"`, `"unrecognized"`, `"pose_only"`, `"capture_success"`, `"capture_fail"`) with optional fields for liveness, recognition, head-pose, and embedding outputs.
+
+**CachingFaceReferenceRepository** — Caching wrapper (`src/attendance_system/repositories/caching_face_reference_repository.py`) around `FaceReferenceRepository`. Sole owner of the in-memory `get_all()` cache used by `FaceRecognizer.identify()` on the per-frame AI hot path. Every public write method (`upsert`, `replace_all`, `delete_by_user_id`, `save_enrollment`) invalidates the cache after the inner call returns — invalidation is **enforced by invariant** (the wrapper owns the cache), not by convention. The inner `FaceReferenceRepository` is a pure SQLite adapter (encrypt + SQL + validation). Constructed once at the composition root (`main.py`) and threaded through `FaceRecognizer`, `EnrollmentService`, and the admin UI widgets so admin user-delete and re-enrollment both invalidate the recognizer's cache. See [plan 0006 (archived)](docs/plans/archive/2026-06-06-0006-caching-face-repository.md).
 
 ### Current Issues
 
@@ -56,7 +66,7 @@
 1. Should we use temporal smoothing? (Recommended: yes) → **CONFIRMED: YES, no temporal smoothing currently**
 2. What is the optimal crop scale for liveness? (Current: 2.7, needs validation) → **CONFIRMED: 2.7 is defensible**
 3. Should we use hysteresis thresholds? (Recommended: yes) → **PENDING: Phase 2**
-4. Should CLAHE be always-on or optional? (Current: always-on) → **CONFIRMED: Remove by default, CLAHE is mismatch**
+4. Should CLAHE be always-on or optional? (Current: always-on) → **RESOLVED (plan 0007): OFF by default, toggleable per `PreprocessingConfig.use_clahe`. Production code has CLAHE removed to match the MiniFASNet training pipeline.**
 5. Should we validate against FP model vs quantized model? → **CONFIRMED: Quantized shows no accuracy drop on benchmark**
 
 ## Phase 1 Findings
@@ -103,7 +113,7 @@
 ### Completed ✅
 - LivenessTracker class created with EMA + Hysteresis + IoU tracking
 - Integrated into camera_thread.py AIWorker
-- 33 tests pass (5 existing + 28 new)
+- 228 tests pass (176 unit + 52 integration)
 - Backward compatible
 
 ### Testing Results
@@ -122,7 +132,7 @@
 ### Quick Fix Applied
 - Reduced threshold from 0.5 → 0.3 across 7 files
 - Updated `.env.example`, UI defaults, AI worker defaults
-- 108 tests pass
+- 228 tests pass
 
 ### Results at 0.3
 - **Good lighting:** Flicker improved (2-3s intervals)
@@ -146,12 +156,17 @@
 ## Artifacts
 
 ### Code
-- `src/attendance_system/core/liveness_tracker.py` — LivenessTracker class (EMA + Hysteresis + IoU)
-- `src/attendance_system/ui/camera_thread.py` — AIWorker integration
+- `src/attendance_system/services/liveness_tracker.py` — LivenessTracker class (EMA + Hysteresis + IoU), relocated from `core/` as part of Plan 0004
+- `src/attendance_system/core/liveness_tracker.py` — Backward-compatibility re-export shim
+- `src/attendance_system/services/pipeline_result.py` — PipelineResult dataclass (structured AI pipeline output)
+- `src/attendance_system/services/ai_pipeline.py` — AIPipeline orchestrator, LivenessChecker, FaceRecognizer
+- `src/attendance_system/ui/camera_thread.py` — AIWorker integration (uses AIPipeline)
 - `scripts/tune_liveness_threshold.py` — Threshold tuning script
 
 ### Tests
 - `tests/unit/test_liveness_tracker.py` — 28 unit tests (all passing)
+- `tests/unit/test_pipeline_result.py` — 13 unit tests for PipelineResult dataclass
+- `tests/unit/test_ai_pipeline_orchestrator.py` — 16 unit tests for AIPipeline orchestrator
 
 ### Configuration
 - `.env.example` — Updated with `FACE_ANTISPOOF_CONFIDENCE_THRESHOLD=0.3`

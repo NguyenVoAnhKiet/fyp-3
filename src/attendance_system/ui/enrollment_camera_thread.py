@@ -1,3 +1,13 @@
+"""Camera + AI worker for the face-enrollment flow.
+
+Inherits :class:`ui.camera_worker_base.CameraThreadBase` (plan 0003) and
+uses :class:`attendance_system.services.ai_pipeline.AIPipeline` (plan
+0004) for per-frame inference.  Liveness and similarity thresholds are
+**required** at construction — they come from the resolved
+:class:`attendance_system.core.config.SystemConfig`, not local defaults.
+See plan 0005 (archived 2026-06-05).
+"""
+
 from __future__ import annotations
 
 import logging
@@ -7,21 +17,24 @@ from typing import Any, NamedTuple
 
 import cv2
 import numpy as np
-from PyQt5.QtCore import QThread, Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPainter, QColor, QFont
 
-from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
+from attendance_system.services.ai_pipeline import AIPipeline, FaceRecognizer, LivenessChecker
 from attendance_system.services.exceptions import LivenessInferenceError
 from attendance_system.services.head_pose import HeadPoseEstimator
+from attendance_system.ui.camera_worker_base import (
+    CameraThreadBase, _MAX_CONSECUTIVE_FAILURES, _MAX_READ_RETRIES,
+    _COLOR_SUCCESS, _COLOR_ALERT,
+)
 from attendance_system.ui.enrollment_ai_worker import EnrollmentAIWorker
-from attendance_system.utils.face_utils import _crop_face, _create_face_detector
+from attendance_system.utils.face_utils import _crop_face
 
 _COLOR_GUIDE: tuple[int, int, int] = (255, 255, 0)  # Yellow
-_COLOR_SUCCESS: tuple[int, int, int] = (0, 255, 0)   # Green
-_COLOR_ALERT: tuple[int, int, int] = (255, 0, 0)     # Red
 _POSE_TOLERANCE_DEG = 15.0
 _HOLD_FRAMES = 5
 _CAPTURE_COOLDOWN = 1.0
+
 
 class _PoseTarget(NamedTuple):
     name: str
@@ -29,9 +42,6 @@ class _PoseTarget(NamedTuple):
     yaw: float
     storage_label: str
 
-_MAX_CONSECUTIVE_FAILURES = 30  # kill thread if 30 frames in a row fail inference
-_READ_RETRY_DELAYS = [1.0, 2.0, 4.0]  # exponential backoff seconds between retries
-_MAX_READ_RETRIES = 3
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +55,8 @@ _POSE_SEQUENCE = [
     _PoseTarget("Cúi xuống", -20, 0, "down"),
 ]
 
-class EnrollmentCameraThread(QThread):
+
+class EnrollmentCameraThread(CameraThreadBase):
     frame_ready = pyqtSignal(QImage)
     capture_progress = pyqtSignal(int, int, str, str, str, str)
     camera_error = pyqtSignal(str)
@@ -58,26 +69,24 @@ class EnrollmentCameraThread(QThread):
         camera_index: int,
         liveness_checker: LivenessChecker,
         face_recognizer: FaceRecognizer,
-        liveness_threshold: float = 0.3,
+        liveness_threshold: float,
+        similarity_threshold: float,
         detector_model_path: Path | str | None = None,
         head_pose_estimator: HeadPoseEstimator | None = None,
         target_count: int = 5,
         capture_cooldown: float = _CAPTURE_COOLDOWN,
         parent: Any = None,
     ) -> None:
-        super().__init__(parent)
-        self._camera_index = camera_index
-        if detector_model_path is None:
-            detector_model_path = Path("models") / "face_detection" / "face_detection_yunet_2023mar.onnx"
-        self._detector = _create_face_detector(detector_model_path, (640, 480))
+        super().__init__(camera_index, detector_model_path, parent)
         self._face_recognizer = face_recognizer
         self._liveness_checker = liveness_checker
         self._head_pose_estimator = head_pose_estimator
         self._target_count = target_count
         self._liveness_threshold = liveness_threshold
+        self._similarity_threshold = similarity_threshold
         self._capture_cooldown = capture_cooldown
 
-        self._running = False
+        # Enrollment state machine
         self._captured_embeddings_by_pose: dict[str, np.ndarray] = {}
         self._current_pose_index = 0
         self._pose_hold_counter = 0
@@ -85,7 +94,7 @@ class EnrollmentCameraThread(QThread):
         self._consecutive_failures: int = 0
         self._frame_counter: int = 0
 
-        self._status_text = "Đang khởi động..."
+        self._status_text = "Đang khởi tạo..."
         self._angles_text = "-"
         self._hold_text = ""
         self._guidance_text = ""
@@ -93,11 +102,15 @@ class EnrollmentCameraThread(QThread):
         self._current_face_bbox: tuple[int, int, int, int] | None = None
 
         if self._head_pose_estimator is not None:
-            self._enrollment_ai_worker = EnrollmentAIWorker(
-                head_pose_estimator=self._head_pose_estimator,
+            pipeline = AIPipeline(
                 liveness_checker=self._liveness_checker,
                 face_recognizer=self._face_recognizer,
+                head_pose_estimator=self._head_pose_estimator,
                 liveness_threshold=self._liveness_threshold,
+                similarity_threshold=self._similarity_threshold,
+            )
+            self._enrollment_ai_worker = EnrollmentAIWorker(
+                pipeline=pipeline,
                 parent=None,
             )
             self._enrollment_ai_worker.pose_estimated.connect(self._on_pose_estimated)
@@ -108,8 +121,12 @@ class EnrollmentCameraThread(QThread):
             self._enrollment_ai_worker = None
         self._capture_in_progress: bool = False
 
-    def stop(self) -> None:
-        self._running = False
+    # ------------------------------------------------------------------
+    # Worker lifecycle
+    # ------------------------------------------------------------------
+
+    def _cleanup_worker(self) -> None:
+        """Disconnect and stop the enrollment AI worker."""
         if self._enrollment_ai_worker is not None:
             try:
                 self._enrollment_ai_worker.pose_estimated.disconnect()
@@ -120,32 +137,10 @@ class EnrollmentCameraThread(QThread):
                 pass
             self._enrollment_ai_worker.stop()
             self._enrollment_ai_worker = None
-        self.wait()
 
-    def _retry_read(self, cap: cv2.VideoCapture) -> tuple[bool, cv2.VideoCapture, np.ndarray | None]:
-        """Reconnect camera with exponential backoff.
-
-        Returns (success, cap, frame) where cap may be a new VideoCapture.
-        """
-        for attempt, delay in enumerate(_READ_RETRY_DELAYS, 1):
-            logger.warning(
-                "Camera read failed. Reconnecting in %ds (attempt %d/%d)...",
-                delay, attempt, _MAX_READ_RETRIES,
-            )
-            time.sleep(delay)
-            if not self._running:
-                return False, cap, None
-            cap.release()
-            cap = cv2.VideoCapture(self._camera_index)
-            if not cap.isOpened():
-                continue
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            self._detector.setInputSize((640, 480))
-            ret, frame = cap.read()
-            if ret:
-                return True, cap, frame
-        return False, cap, None
+    # ------------------------------------------------------------------
+    # QThread entry point (fully overridden — different rendering pipeline)
+    # ------------------------------------------------------------------
 
     def run(self) -> None:
         cap = cv2.VideoCapture(self._camera_index)
@@ -184,7 +179,6 @@ class EnrollmentCameraThread(QThread):
                         f"Camera read failed after {_MAX_READ_RETRIES} attempts."
                     )
                     break
-                # Reconnected successfully — continue processing this frame
 
             # Mirror horizontally so user sees themselves like in a mirror
             frame = cv2.flip(frame, 1)
@@ -222,6 +216,10 @@ class EnrollmentCameraThread(QThread):
                 break
 
         cap.release()
+
+    # ------------------------------------------------------------------
+    # Legacy path (no head-pose estimator)
+    # ------------------------------------------------------------------
 
     def _handle_legacy_frame(
         self,
@@ -300,6 +298,10 @@ class EnrollmentCameraThread(QThread):
                 self._angles_text = "-"
                 self._hold_text = ""
 
+    # ------------------------------------------------------------------
+    # Pose-based path
+    # ------------------------------------------------------------------
+
     def _handle_pose_frame(
         self,
         frame_bgr: np.ndarray,
@@ -334,6 +336,10 @@ class EnrollmentCameraThread(QThread):
             self._capture_in_progress = False
 
         return self._frame_color_from_status()
+
+    # ------------------------------------------------------------------
+    # Signal handlers
+    # ------------------------------------------------------------------
 
     def _on_pose_estimated(self, pitch: float, yaw: float, roll: float) -> None:
         """Handle pose estimation result from worker. Updates state machine."""
@@ -404,6 +410,10 @@ class EnrollmentCameraThread(QThread):
             self._enrollment_ai_worker.stop()
             self._enrollment_ai_worker = None
 
+    # ------------------------------------------------------------------
+    # Pose helpers
+    # ------------------------------------------------------------------
+
     def _pose_matches(self, target: _PoseTarget, pitch: float, yaw: float) -> bool:
         return (
             abs(pitch - target.pitch) <= _POSE_TOLERANCE_DEG
@@ -420,6 +430,10 @@ class EnrollmentCameraThread(QThread):
         if pitch - target.pitch < -_POSE_TOLERANCE_DEG:
             return "Ngửa lên một chút"
         return f"Giữ tư thế: {target.name}"
+
+    # ------------------------------------------------------------------
+    # Rendering helpers
+    # ------------------------------------------------------------------
 
     def _frame_color_from_status(self) -> tuple[int, int, int]:
         if "Hoàn tất" in self._status_text or "Đã chụp" in self._status_text:
@@ -441,7 +455,7 @@ class EnrollmentCameraThread(QThread):
     def _draw_status(self, frame_rgb: np.ndarray) -> QImage:
         h, w, ch = frame_rgb.shape
         qimg = QImage(frame_rgb.tobytes(), w, h, ch * w, QImage.Format_RGB888).copy()
-        
+
         painter = QPainter(qimg)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.TextAntialiasing)
@@ -480,11 +494,11 @@ class EnrollmentCameraThread(QThread):
             if bold:
                 font.setWeight(QFont.Bold)
             painter.setFont(font)
-            
+
             # Shadow
             painter.setPen(QColor(0, 0, 0))
             painter.drawText(x + 2, y + 2, text)
-            
+
             # Foreground
             painter.setPen(QColor(255, 255, 255))
             painter.drawText(x, y, text)

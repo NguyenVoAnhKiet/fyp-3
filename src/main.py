@@ -4,7 +4,10 @@ Entry point for the Face Attendance application.
 Bootstraps the database, loads AI models (YuNet detector, SFace recognizer,
 MiniFASNet liveness), and launches the PyQt5 main window.
 
-Configuration priority: CLI arguments > environment variables > defaults.
+Configuration priority: CLI arguments > environment variables > database
+> defaults.  Resolution is centralised in
+:class:`attendance_system.core.config.SettingsResolver`; this module
+only handles the bootstrap orchestration.
 """
 
 from __future__ import annotations
@@ -23,8 +26,18 @@ from dotenv import load_dotenv
 from PyQt5.QtWidgets import QApplication, QMessageBox
 
 from attendance_system.core.bootstrap import initialize_storage
+from attendance_system.core.config import (
+    SettingsResolver,
+    resolve_config,
+)
 from attendance_system.core.db import Database, DatabaseConfig
 from attendance_system.repositories.admin_repository import AdminRepository
+from attendance_system.repositories.caching_face_reference_repository import (
+    CachingFaceReferenceRepository,
+)
+from attendance_system.repositories.face_reference_repository import (
+    FaceReferenceRepository,
+)
 from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
 from attendance_system.services.head_pose import HeadPoseEstimator
 from attendance_system.services.attendance_service import AttendanceService
@@ -33,25 +46,19 @@ from attendance_system.services.settings_service import SettingsService
 from attendance_system.utils.time_utils import set_timezone_config
 from attendance_system.ui.main_window import MainWindow
 
-# ---------------------------------------------------------------------------
-# Default paths — used when neither CLI args nor env vars are provided
-# ---------------------------------------------------------------------------
-DEFAULT_DATABASE_PATH = Path("attendance.db")
-DEFAULT_LIVENESS_MODEL = Path("models/anti_spoof/best_model_quantized.onnx")
-DEFAULT_RECOGNITION_MODEL = Path("models/face_recognition/face_recognition_sface_2021dec.onnx")
-DEFAULT_DETECTOR_MODEL = Path("models/face_detection/face_detection_yunet_2023mar.onnx")
-DEFAULT_HEADPOSE_MODEL = Path("models/head_pose/mobilenetv2.onnx")
-
 
 # ---------------------------------------------------------------------------
 # CLI argument parser
 # ---------------------------------------------------------------------------
 
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser.
 
     All defaults are ``None`` so that resolution happens *after*
-    ``load_dotenv()`` is called — see :func:`main`.
+    ``load_dotenv()`` is called and the
+    :class:`~attendance_system.core.config.SettingsResolver` runs — see
+    :func:`main`.
     """
     parser = argparse.ArgumentParser(
         prog="attendance-app",
@@ -73,44 +80,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 # ---------------------------------------------------------------------------
-# Configuration helpers
+# Application entry point
 # ---------------------------------------------------------------------------
-
-def _resolve_path(cli_value: str | None, env_key: str, default: Path) -> Path:
-    """Return the first non-empty value from CLI arg, env var, or default."""
-    return Path(cli_value or os.getenv(env_key) or str(default))
-
-
-def _resolve_timezone() -> None:
-    """Read ``TIMEZONE`` from env and configure ``time_utils``.
-
-    Must be called **after** ``load_dotenv()`` and **before** any time display.
-    Falls back to UTC when the env var is unset or invalid.
-    """
-    set_timezone_config(os.getenv("TIMEZONE"))
-
-
-def _resolve_camera_index(cli_value: int | None) -> int:
-    """Return camera index from CLI arg, env var, or 0.
-
-    Handles the edge case where ``CAMERA_INDEX=`` (empty string) is set
-    in ``.env``, which would crash ``int()`` without this guard.
-    """
-    if cli_value is not None:
-        return cli_value
-
-    raw = os.getenv("CAMERA_INDEX")
-    if raw and raw.strip():
-        return int(raw)
-
-    return 0
-
-
-def _resolve_enabled(env_key: str, default: bool = True) -> bool:
-    raw = os.getenv(env_key)
-    if raw is None or not raw.strip():
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _validate_model(path: Path, label: str) -> str | None:
@@ -120,77 +91,28 @@ def _validate_model(path: Path, label: str) -> str | None:
     return None
 
 
-def _seed_threshold(
-    settings: SettingsService, env_key: str, setting_key: str,
-) -> None:
-    """Write an env-var value into the DB settings table on first run only.
-
-    Once a value exists in the DB it is never overwritten, allowing the
-    admin to change thresholds at runtime without the env var resetting them.
-    """
-    value = os.getenv(env_key)
-    if value and settings.get(setting_key) is None:
-        settings.set(setting_key, value, "float")
-
-
-def _seed_setting(
-    settings: SettingsService, env_key: str, setting_key: str,
-    value_type: str, default: str,
-) -> None:
-    """Write an env-var value into the DB settings table on first run only.
-
-    Unlike ``_seed_threshold`` which hard-codes ``"float"``, this helper
-    accepts an explicit *value_type* and *default* string so it works for
-    any setting type (int, bool, etc.).
-    """
-    if settings.get(setting_key) is not None:
-        return
-    value = os.getenv(env_key) or default
-    settings.set(setting_key, value, value_type)
-
-
-# ---------------------------------------------------------------------------
-# Application entry point
-# ---------------------------------------------------------------------------
-
 def main(argv: list[str] | None = None) -> int:
     """Launch the attendance application. Returns a process exit code."""
 
     # --- Phase 1: Environment & CLI -------------------------------------------
-    load_dotenv()  # must run before any os.getenv() call
+    load_dotenv()  # must run before the resolver reads env
     args = build_parser().parse_args(argv)
 
-    # --- Phase 2: Resolve configuration (CLI > env > default) -----------------
-    _resolve_timezone()  # must run before any time display/conversion
-
-    database_path = _resolve_path(
-        args.database_path, "DATABASE_PATH", DEFAULT_DATABASE_PATH,
-    )
-    recognition_model_path = _resolve_path(
-        args.recognition_model, "FACE_RECOGNITION_MODEL_PATH", DEFAULT_RECOGNITION_MODEL,
-    )
-    detector_model_path = _resolve_path(
-        args.detector_model, "FACE_DETECTOR_MODEL_PATH", DEFAULT_DETECTOR_MODEL,
-    )
-    head_pose_model_path = _resolve_path(
-        args.headpose_model, "FACE_HEADPOSE_MODEL_PATH", DEFAULT_HEADPOSE_MODEL,
-    )
-    camera_index = _resolve_camera_index(args.camera_index)
-
-    # Liveness model is optional — disabled when FACE_ANTISPOOF_ENABLED=false
-    antispoof_enabled = (
-        os.getenv("FACE_ANTISPOOF_ENABLED", "true").strip().lower() == "true"
-    )
-    head_pose_enabled = _resolve_enabled("FACE_HEADPOSE_ENABLED", True)
-    liveness_model_path: Path | None = None
-    if antispoof_enabled:
-        liveness_model_path = _resolve_path(
-            args.liveness_model, "FACE_ANTISPOOF_MODEL_PATH", DEFAULT_LIVENESS_MODEL,
-        )
+    # --- Phase 2: Resolve configuration (CLI > env > DB > default) -------------
+    # ``resolve_config`` is called twice:
+    #   (a) now, with ``db_reader=None`` because the schema does not exist yet
+    #   (b) after DB init + seeding, to fold the seeded values in
+    # The first pass gives us ``database_path`` (needed to init the schema);
+    # the second pass yields the final, DB-aware ``SystemConfig``.
+    resolver = SettingsResolver(mode="runtime")
+    provisional = resolver.resolve(cli=args, env=None, db_reader=None)
+    set_timezone_config(os.getenv("TIMEZONE"))
+    # NOTE: set_timezone_config takes the env value directly — it predates
+    # this refactor and is not a tunable in SystemConfig.
 
     # --- Phase 3: Bootstrap database ------------------------------------------
     try:
-        initialize_storage(database_path)
+        initialize_storage(provisional.database_path)
     except Exception as exc:
         QMessageBox.critical(
             None,
@@ -204,13 +126,26 @@ def main(argv: list[str] | None = None) -> int:
     qt_argv = sys.argv if argv is None else [sys.argv[0], *list(argv)]
     app = QApplication(qt_argv)
 
-    # Validate all required model files before proceeding
+    # --- Phase 5: Wire up services & launch UI --------------------------------
+    db = Database(DatabaseConfig(path=provisional.database_path))
+    settings_service = SettingsService(db)
+    resolver.seed_db_from_env(env=None, settings=settings_service)
+
+    # Now the DB is seeded — resolve the final SystemConfig that includes DB.
+    config = resolve_config(
+        cli_args=args,
+        env=None,
+        settings_service=settings_service,
+        mode="runtime",
+    )
+
+    # Validate all required model files before proceeding.
     model_checks = [
-        (recognition_model_path, "Recognition (SFace)"),
-        (detector_model_path, "Detector (YuNet)"),
+        (config.recognition_model_path, "Recognition (SFace)"),
+        (config.detection_model_path, "Detector (YuNet)"),
     ]
-    if antispoof_enabled and liveness_model_path is not None:
-        model_checks.append((liveness_model_path, "Liveness (MiniFASNet)"))
+    if config.antispoof_enabled and config.liveness_model_path is not None:
+        model_checks.append((config.liveness_model_path, "Liveness (MiniFASNet)"))
 
     for path, label in model_checks:
         error = _validate_model(path, label)
@@ -218,17 +153,18 @@ def main(argv: list[str] | None = None) -> int:
             QMessageBox.critical(None, "Model Not Found", error)
             return 1
 
+    # Optional: head-pose estimator (falls back to legacy mode on error).
     head_pose_estimator: HeadPoseEstimator | None = None
     head_pose_warning: str | None = None
-    if head_pose_enabled:
-        if not head_pose_model_path.exists():
+    if config.headpose_enabled:
+        if not config.headpose_model_path.exists():
             head_pose_warning = (
-                f"Head pose model not found:\n{head_pose_model_path}\n\n"
+                f"Head pose model not found:\n{config.headpose_model_path}\n\n"
                 "Enrollment will continue in legacy mode."
             )
         else:
             try:
-                head_pose_estimator = HeadPoseEstimator(head_pose_model_path)
+                head_pose_estimator = HeadPoseEstimator(config.headpose_model_path)
             except Exception as exc:  # pragma: no cover - startup fallback path
                 head_pose_warning = (
                     "Head pose guidance could not be initialized.\n\n"
@@ -236,28 +172,17 @@ def main(argv: list[str] | None = None) -> int:
                     "Enrollment will continue in legacy mode."
                 )
 
-
-    # --- Phase 5: Wire up services & launch UI --------------------------------
-    db = Database(DatabaseConfig(path=database_path))
+    # Build services
     attendance_service = AttendanceService(db)
-    settings_service = SettingsService(db)
     authentication_service = AuthenticationService(AdminRepository(db))
-
-    # Seed default thresholds from .env on first run (DB values take precedence)
-    _seed_threshold(settings_service, "FACE_ANTISPOOF_CONFIDENCE_THRESHOLD", "liveness_threshold")
-    _seed_threshold(settings_service, "FACE_SIMILARITY_THRESHOLD", "similarity_threshold")
-
-    # Seed camera index so the Settings UI shows the correct startup value
-    if settings_service.get("camera_index") is None:
-        settings_service.set("camera_index", str(camera_index), "int")
-
-    # Seed attendance freeze settings from .env on first run
-    _seed_setting(settings_service, "ATTENDANCE_FREEZE_SECONDS", "attendance_freeze_seconds", "int", "4")
-    _seed_setting(settings_service, "ATTENDANCE_FREEZE_SOUND_ENABLED", "attendance_freeze_sound_enabled", "bool", "false")
-
-    # Build AI components
-    liveness_checker = LivenessChecker(liveness_model_path)
-    face_recognizer = FaceRecognizer(db, recognition_model_path)
+    liveness_checker = LivenessChecker(config.liveness_model_path)
+    # Wrap the face-refs repo in a caching layer so the recognizer (per-frame
+    # .get_all() calls) shares one cache and stays fresh across writes from
+    # EnrollmentService, the admin UI, or any other consumer.
+    face_refs = CachingFaceReferenceRepository(FaceReferenceRepository(db))
+    face_recognizer = FaceRecognizer(
+        db, config.recognition_model_path, face_refs=face_refs
+    )
 
     if head_pose_warning is not None:
         QMessageBox.warning(None, "Head Pose Guidance Disabled", head_pose_warning)
@@ -271,8 +196,8 @@ def main(argv: list[str] | None = None) -> int:
         face_recognizer=face_recognizer,
         head_pose_estimator=head_pose_estimator,
         database=db,
-        camera_index=camera_index,
-        detector_model_path=detector_model_path,
+        config=config,
+        face_repo=face_refs,
     )
     window.show()
     return app.exec_()

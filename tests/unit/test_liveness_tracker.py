@@ -6,7 +6,7 @@ import math
 
 import pytest
 
-from attendance_system.core.liveness_tracker import (
+from attendance_system.services.liveness_tracker import (
     ALPHA,
     IOU_THRESHOLD,
     MAX_MISSES,

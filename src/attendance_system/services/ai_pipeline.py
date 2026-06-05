@@ -1,9 +1,26 @@
-"""AI pipeline: liveness detection (ONNX) + face recognition (SFace)."""
+"""AI pipeline: liveness detection (ONNX) + face recognition (SFace) + AIPipeline orchestrator.
+
+Threshold parameters (``liveness_threshold``, ``similarity_threshold``)
+are **required** at construction and at inference time — there are no
+default values.  This forces every caller to source thresholds from
+:class:`attendance_system.core.config.SystemConfig` (plan 0005) so
+values stay in sync with the rest of the system and there is no silent
+drift between hardcoded literals and resolved config.
+
+See plan 0005 (archived 2026-06-05) for the rationale.
+"""
 
 from __future__ import annotations
- 
-__all__ = ["LivenessResult", "RecognitionResult", "LivenessChecker", "FaceRecognizer"]
 
+__all__ = [
+    "LivenessResult",
+    "RecognitionResult",
+    "LivenessChecker",
+    "FaceRecognizer",
+    "AIPipeline",
+]
+
+import logging
 import math
 from pathlib import Path
 from typing import NamedTuple
@@ -14,12 +31,25 @@ import onnxruntime as ort
 
 from attendance_system.core.db import Database
 from attendance_system.services.exceptions import LivenessInferenceError
+from attendance_system.services.face_preprocessor import FacePreprocessor
+from attendance_system.services.head_pose import HeadPoseEstimator
+from attendance_system.services.liveness_tracker import (
+    LivenessTracker,
+    compute_iou,
+    IOU_THRESHOLD,
+)
+from attendance_system.services.pipeline_result import PipelineResult
+from attendance_system.services.preprocessing_configs import LIVENESS_CONFIG
+from attendance_system.repositories.caching_face_reference_repository import (
+    CachingFaceReferenceRepository,
+)
 from attendance_system.repositories.face_reference_repository import (
     FaceReferenceRepository,
 )
 from attendance_system.repositories.user_repository import UserRepository
+from attendance_system.utils.face_utils import _crop_face
 
-_LIVENESS_IMG_SIZE = 128
+logger = logging.getLogger(__name__)
 
 
 class LivenessResult(NamedTuple):
@@ -69,6 +99,11 @@ class LivenessChecker:
             self._input_name = None
             self._model_path = ""
 
+        # Composable preprocessing pipeline (extracted from this class as
+        # part of plan 0007). Owns crop -> resize -> normalize -> to_tensor.
+        # `_preprocess` below is now a one-liner that delegates here.
+        self._preprocessor = FacePreprocessor(LIVENESS_CONFIG)
+
     @property
     def is_enabled(self) -> bool:
         """Whether a real ONNX model is loaded (vs. disabled/bypassed).
@@ -79,41 +114,24 @@ class LivenessChecker:
         """
         return self._session is not None
 
-    def _preprocess(self, face_rgb: np.ndarray) -> np.ndarray:
-        """Letterbox-resize and normalize face crop to model input tensor [1, 3, H, W].
+    def _preprocess(
+        self,
+        face_rgb: np.ndarray,
+        bbox: tuple[int, int, int, int] | None = None,
+    ) -> np.ndarray:
+        """Preprocess a face crop into the MiniFASNet input tensor.
 
-        Pipeline (matches MiniFASNet training preprocessing without CLAHE):
-            1. Resize longest side to 128px (keep aspect ratio)
-            2. Reflect-pad to 128×128
-            3. Transpose HWC → CHW and normalize to [0, 1]
+        Delegates to the shared `FacePreprocessor` (plan 0007). The
+        optional `bbox` argument enables the crop step; existing
+        callers pre-crop with `_crop_face` and pass ``bbox=None``,
+        so behavior is unchanged.
+
+        Returns:
+            float32 tensor of shape ``(1, 3, 128, 128)``, values in [0, 1].
         """
-        #=======================================================================
-        # Step 1: Scale the longest side down to 128px, keep aspect ratio
-        #=======================================================================
-        old_size = face_rgb.shape[:2]  # (H, W)
-        ratio = float(_LIVENESS_IMG_SIZE) / max(old_size)
-        scaled_shape = (int(old_size[0] * ratio), int(old_size[1] * ratio))
-        interp = cv2.INTER_LANCZOS4 if ratio > 1.0 else cv2.INTER_AREA
-        img = cv2.resize(face_rgb, (scaled_shape[1], scaled_shape[0]), interpolation=interp)
+        return self._preprocessor(face_rgb, bbox)
 
-        #=======================================================================
-        # Step 2: Pad the shorter side to make a 128×128 square
-        #=======================================================================
-        # BORDER_REFLECT_101 avoids hard edge artifacts at the padding boundary.
-        delta_h = _LIVENESS_IMG_SIZE - scaled_shape[0]
-        delta_w = _LIVENESS_IMG_SIZE - scaled_shape[1]
-        top, bottom = delta_h // 2, delta_h - (delta_h // 2)
-        left, right = delta_w // 2, delta_w - (delta_w // 2)
-        img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_REFLECT_101)
-
-        #=======================================================================
-        # Step 3: HWC uint8 → CHW float32 in [0, 1] (model training range)
-        #=======================================================================
-        # NOTE: Do NOT normalize to [-1, 1]; this model was trained with [0, 1] inputs.
-        arr = img.transpose(2, 0, 1).astype(np.float32) / 255.0
-        return arr[np.newaxis]  # add batch dim → [1, 3, H, W]
-
-    def check(self, face_rgb: np.ndarray, threshold: float = 0.3) -> LivenessResult:
+    def check(self, face_rgb: np.ndarray, threshold: float) -> LivenessResult:
         """
         Check liveness of a pre-cropped face image.
 
@@ -121,7 +139,12 @@ class LivenessChecker:
 
         Args:
             face_rgb:  H×W×3 uint8 RGB face crop.
-            threshold: Probability threshold (0–1).  Default 0.3.
+            threshold: Probability threshold (0–1).  Required — callers
+                must pass the value resolved at startup by
+                :class:`attendance_system.core.config.SettingsResolver`
+                and surfaced via :class:`SystemConfig`.  No default value
+                is provided to prevent silent drift between
+                configuration sources.
 
         Returns:
             LivenessResult with is_real flag and raw logit_diff score.
@@ -170,7 +193,10 @@ class FaceRecognizer:
     """
 
     def __init__(
-        self, database: Database, model_path: Path | str | None = None
+        self,
+        database: Database,
+        model_path: Path | str | None = None,
+        face_refs: FaceReferenceRepository | CachingFaceReferenceRepository | None = None,
     ) -> None:
         """
         Initializes the face recognizer with a database and optional model path.
@@ -178,11 +204,16 @@ class FaceRecognizer:
         Args:
             database: Database instance for retrieving user and face data.
             model_path: Path to the SFace ONNX model file.
+            face_refs: Optional pre-built face reference repository (e.g. wrapped in
+                CachingFaceReferenceRepository). If None, a bare FaceReferenceRepository
+                is constructed — used by tests that don't need caching.
         """
         #=======================================================================
         # Step 1: Initialize database repositories
         #=======================================================================
-        self._face_refs = FaceReferenceRepository(database)
+        if face_refs is None:
+            face_refs = FaceReferenceRepository(database)
+        self._face_refs = face_refs
         self._users = UserRepository(database)
         
         #=======================================================================
@@ -304,3 +335,244 @@ class FaceRecognizer:
             similarity=best_sim,
             matched_pose_label=matched_pose_label,
         )
+
+
+class AIPipeline:
+    """Orchestrates per-frame AI inference: liveness, recognition, head-pose.
+
+    Composes ``LivenessChecker``, ``FaceRecognizer``, ``LivenessTracker``,
+    and optionally ``HeadPoseEstimator`` as injected dependencies.  Each
+    ``AIPipeline`` instance owns its own ``LivenessTracker`` state (one
+    tracker per worker thread).
+
+    Usage::
+
+        pipeline = AIPipeline(
+            liveness_checker=checker,
+            face_recognizer=recognizer,
+            liveness_threshold=0.3,
+            similarity_threshold=0.6,
+        )
+        result = pipeline.run_attendance(frame_bgr, frame_rgb, face_row, 42)
+        if result.result_type == "success":
+            print(f"Recognised user {result.user_id}")
+
+    Args:
+        liveness_checker: Liveness detection service.
+        face_recognizer: Face recognition service.
+        head_pose_estimator: Optional head-pose estimation service
+            (required for ``run_enrollment``).
+        liveness_threshold: Decision threshold for liveness check.
+        similarity_threshold: Minimum cosine similarity for recognition.
+    """
+
+    def __init__(
+        self,
+        liveness_checker: LivenessChecker,
+        face_recognizer: FaceRecognizer,
+        liveness_threshold: float,
+        similarity_threshold: float,
+        head_pose_estimator: HeadPoseEstimator | None = None,
+    ) -> None:
+        """
+        Args:
+            liveness_checker: Liveness detection service.
+            face_recognizer: Face recognition service.
+            head_pose_estimator: Optional head-pose estimation service
+                (required for ``run_enrollment``).
+            liveness_threshold: Decision threshold for liveness check
+                (required — pass the value resolved by
+                :class:`attendance_system.core.config.SettingsResolver`).
+            similarity_threshold: Minimum cosine similarity for recognition
+                (required — same source as ``liveness_threshold``).
+        """
+        self._liveness_checker = liveness_checker
+        self._face_recognizer = face_recognizer
+        self._head_pose_estimator = head_pose_estimator
+        self._liveness_threshold = liveness_threshold
+        self._similarity_threshold = similarity_threshold
+        self._liveness_tracker = LivenessTracker()
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def run_attendance(
+        self,
+        frame_bgr: np.ndarray,
+        frame_rgb: np.ndarray,
+        face_row: np.ndarray,
+        frame_counter: int,
+    ) -> PipelineResult:
+        """Run attendance pipeline: liveness → temporal smoothing → recognition.
+
+        Args:
+            frame_bgr: BGR frame from camera (for SFace alignment).
+            frame_rgb: RGB frame (for liveness crop).
+            face_row: YuNet detection result ``[15]`` for the largest face.
+            frame_counter: Current frame number (for metadata).
+
+        Returns:
+            ``PipelineResult`` with ``result_type`` ``"success"``,
+            ``"spoof"``, or ``"unrecognized"``.
+
+        Raises:
+            LivenessInferenceError: If liveness ONNX inference fails.
+        """
+        x, y, w, h = face_row[:4].astype(int)
+
+        # Step 1: Crop face for liveness (scale=2.7)
+        face_crop = _crop_face(frame_rgb, (x, y, w, h), scale=2.7)
+
+        # Step 2: Liveness check
+        liveness = self._liveness_checker.check(
+            face_crop, self._liveness_threshold
+        )
+
+        # Step 3: Temporal smoothing via EMA + hysteresis tracker
+        bbox_float = (float(x), float(y), float(w), float(h))
+        tracked_faces = self._liveness_tracker.update(
+            [bbox_float], [liveness.score]
+        )
+
+        state = "SPOOF"
+        ema_score = liveness.score
+        for tb, ts, tes in tracked_faces:
+            if compute_iou(bbox_float, tb) >= IOU_THRESHOLD:
+                state = ts
+                ema_score = tes
+                break
+
+        if state == "SPOOF":
+            return PipelineResult(
+                result_type="spoof",
+                frame_counter=frame_counter,
+                liveness_score=ema_score,
+            )
+
+        # Step 4: Recognition
+        match = self._face_recognizer.identify(
+            frame_bgr, face_row, self._similarity_threshold
+        )
+
+        if match is None:
+            return PipelineResult(
+                result_type="unrecognized",
+                frame_counter=frame_counter,
+                liveness_score=ema_score,
+            )
+
+        return PipelineResult(
+            result_type="success",
+            frame_counter=frame_counter,
+            liveness_score=ema_score,
+            user_id=match.user_id,
+            full_name=match.full_name,
+            student_id=match.student_id,
+            similarity=match.similarity,
+            matched_pose_label=match.matched_pose_label,
+        )
+
+    def run_enrollment(
+        self,
+        frame_bgr: np.ndarray,
+        face_row: np.ndarray,
+        frame_counter: int,
+        do_capture: bool = False,
+    ) -> PipelineResult:
+        """Run enrollment pipeline: head-pose → liveness → embedding.
+
+        Args:
+            frame_bgr: BGR frame from camera.
+            face_row: YuNet detection result ``[15]``.
+            frame_counter: Current frame number.
+            do_capture: If ``True``, also run liveness + embedding extraction.
+
+        Returns:
+            ``PipelineResult`` with head-pose results and optionally
+            embedding.
+
+        Raises:
+            PoseInferenceError: If head-pose ONNX inference fails.
+            LivenessInferenceError: If liveness ONNX inference fails.
+        """
+        if self._head_pose_estimator is None:
+            raise RuntimeError(
+                "HeadPoseEstimator required for run_enrollment()"
+            )
+
+        # Step 1: Head-pose estimation (default crop scale=1.5)
+        face_crop_pose = _crop_face(
+            frame_bgr, face_row[:4].astype(int)
+        )
+        if face_crop_pose.size == 0:
+            return PipelineResult(
+                result_type="capture_fail",
+                frame_counter=frame_counter,
+            )
+
+        pitch, yaw, roll = self._head_pose_estimator.estimate(
+            face_crop_pose
+        )
+
+        if not do_capture:
+            return PipelineResult(
+                result_type="pose_only",
+                frame_counter=frame_counter,
+                pitch=pitch,
+                yaw=yaw,
+                roll=roll,
+            )
+
+        # Step 2: Liveness check (scale=2.7)
+        face_crop_capture = _crop_face(
+            frame_bgr, face_row[:4].astype(int), scale=2.7
+        )
+        if face_crop_capture.size == 0:
+            return PipelineResult(
+                result_type="capture_fail",
+                frame_counter=frame_counter,
+                pitch=pitch,
+                yaw=yaw,
+                roll=roll,
+            )
+
+        liveness = self._liveness_checker.check(
+            face_crop_capture, self._liveness_threshold
+        )
+
+        if not liveness.is_real:
+            return PipelineResult(
+                result_type="capture_fail",
+                frame_counter=frame_counter,
+                liveness_score=liveness.score,
+                pitch=pitch,
+                yaw=yaw,
+                roll=roll,
+            )
+
+        # Step 3: Embedding extraction
+        emb = self._face_recognizer.get_embedding(frame_bgr, face_row)
+        if emb is None:
+            return PipelineResult(
+                result_type="capture_fail",
+                frame_counter=frame_counter,
+                liveness_score=liveness.score,
+                pitch=pitch,
+                yaw=yaw,
+                roll=roll,
+            )
+
+        return PipelineResult(
+            result_type="capture_success",
+            frame_counter=frame_counter,
+            liveness_score=liveness.score,
+            pitch=pitch,
+            yaw=yaw,
+            roll=roll,
+            embedding=emb,
+        )
+
+    def reset_tracker(self) -> None:
+        """Reset the LivenessTracker state. Call when starting a new session."""
+        self._liveness_tracker.tracks.clear()

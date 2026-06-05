@@ -1,3 +1,11 @@
+"""Unit tests for ``attendance_system.services.ai_pipeline``.
+
+Covers ``LivenessChecker`` and ``FaceRecognizer`` ONNX wrappers.  After
+plan 0005, ``LivenessChecker.check()`` requires an explicit ``threshold``
+— no default — so this file also asserts the threshold is plumbed
+through (see ``test_liveness_checker_bypass``).
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -14,11 +22,16 @@ from attendance_system.services.ai_pipeline import LivenessChecker, FaceRecogniz
 # ==============================================================================
 
 def test_liveness_checker_bypass():
-    """LivenessChecker should bypass checks if model_path is None."""
+    """LivenessChecker should bypass checks if model_path is None.
+
+    Plan 0005: ``threshold`` is now required (no default).  The bypass
+    path ignores the threshold anyway, but the caller must still pass
+    a value.
+    """
     checker = LivenessChecker(None)
     dummy_img = np.zeros((128, 128, 3), dtype=np.uint8)
-    result = checker.check(dummy_img)
-    
+    result = checker.check(dummy_img, threshold=0.3)
+
     assert result.is_real is True
     assert result.score == 1.0
 
@@ -251,8 +264,9 @@ def test_identify_skips_corrupt_embeddings_gracefully(mock_sface_create, databas
     mock_sface.feature.return_value = [valid_emb[np.newaxis]]
     
     recognizer = FaceRecognizer(database, "fake.onnx")
-    # Invalidate cache to force reloading from DB
-    face_repo._invalidate_cache(str(database.config.path))
+    # No cache invalidation needed: FaceRecognizer now reads fresh from DB
+    # each time (caching is handled by the CachingFaceReferenceRepository
+    # wrapper, which is not used here).
     
     dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
     dummy_face = np.zeros((1, 15), dtype=np.float32)
@@ -264,44 +278,51 @@ def test_identify_skips_corrupt_embeddings_gracefully(mock_sface_create, databas
 
 
 def test_face_reference_repository_cache_invalidation(database):
-    """FaceReferenceRepository cache should be invalidated on every write path."""
+    """CachingFaceReferenceRepository cache should be invalidated on every write path."""
     from attendance_system.repositories.user_repository import UserRepository
-    from attendance_system.repositories.face_reference_repository import FaceReferenceRepository, POSE_LABELS
-    
+    from attendance_system.repositories.face_reference_repository import (
+        FaceReferenceRepository,
+        POSE_LABELS,
+    )
+    from attendance_system.repositories.caching_face_reference_repository import (
+        CachingFaceReferenceRepository,
+    )
+
     users = UserRepository(database)
-    faces = FaceReferenceRepository(database)
-    
+    faces = CachingFaceReferenceRepository(FaceReferenceRepository(database))
+
     u_id = users.create("S003", "Charlie")
     emb = np.zeros(128, dtype=np.float32).tobytes()
-    
-    # 1. Initially cache is empty
+
     cache_key = str(database.config.path)
-    assert cache_key not in FaceReferenceRepository._cache_all
-    
+
+    # 1. Initially cache is empty
+    assert cache_key not in faces._cache
+
     # 2. get_all caches the results
     faces.get_all()
-    assert cache_key in FaceReferenceRepository._cache_all
-    
+    assert cache_key in faces._cache
+
     # 3. upsert invalidates cache
     faces.upsert(u_id, emb, "model-v1", 128, "center")
-    assert cache_key not in FaceReferenceRepository._cache_all
-    
+    assert cache_key not in faces._cache
+
     # 4. get_all caches again
     faces.get_all()
-    assert cache_key in FaceReferenceRepository._cache_all
-    
+    assert cache_key in faces._cache
+
     # 5. replace_all invalidates cache
     pose_embeddings = {pose: emb for pose in POSE_LABELS}
     faces.replace_all(u_id, pose_embeddings, "model-v1", 128)
-    assert cache_key not in FaceReferenceRepository._cache_all
-    
+    assert cache_key not in faces._cache
+
     # 6. get_all caches again
     faces.get_all()
-    assert cache_key in FaceReferenceRepository._cache_all
-    
+    assert cache_key in faces._cache
+
     # 7. delete_by_user_id invalidates cache
     faces.delete_by_user_id(u_id)
-    assert cache_key not in FaceReferenceRepository._cache_all
+    assert cache_key not in faces._cache
 
 
 @patch("onnxruntime.InferenceSession")

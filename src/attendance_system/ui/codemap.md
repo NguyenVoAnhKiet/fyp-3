@@ -10,9 +10,10 @@
 
 | File | Role |
 |---|---|
-| `camera_thread.py` | **Attendance camera** — captures webcam frames, runs YuNet face detection, delegates liveness + recognition to `AIWorker` (inner QThread), emits annotated `QImage` frames. No frame mirroring. |
-| `enrollment_camera_thread.py` | **Enrollment camera** — captures webcam frames, **flips horizontally** (`cv2.flip(frame, 1)`), guides user through a 5-pose sequence (center, left, right, up, down) with head-pose estimation. Delegates async AI work to `EnrollmentAIWorker`. |
-| `enrollment_ai_worker.py` | **Enrollment AI worker** — background QThread that runs head-pose estimation, anti-spoofing (liveness), and face embedding extraction for enrollment. Queue size 1 for backpressure. |
+| `camera_worker_base.py` | **Base classes** — `CameraThreadBase(QThread)` (camera init, `_retry_read()`, pause/resume, bbox drawing, display emission) and `AIWorkerBase(QThread)` (queue+sentinel, `submit_task()`, circuit-breaker, stop). Both define abstract `_process_frame()` for subclass override. |
+| `camera_thread.py` | **Attendance camera** — `CameraThread(CameraThreadBase)` captures webcam frames, runs YuNet face detection, delegates liveness + recognition to `AIWorker(AIWorkerBase)` (inner QThread), emits annotated `QImage` frames. No frame mirroring. |
+| `enrollment_camera_thread.py` | **Enrollment camera** — `EnrollmentCameraThread(CameraThreadBase)` captures webcam frames, **flips horizontally** (`cv2.flip(frame, 1)`), guides user through a 5-pose sequence (center, left, right, up, down) with head-pose estimation. Delegates async AI work to `EnrollmentAIWorker`. |
+| `enrollment_ai_worker.py` | **Enrollment AI worker** — `EnrollmentAIWorker(AIWorkerBase)` background QThread that runs head-pose estimation, anti-spoofing (liveness), and face embedding extraction for enrollment. Queue size 1 for backpressure. |
 
 ### Widgets
 
@@ -33,19 +34,21 @@
 
 ## Camera Thread Gotchas
 
-1. **`QImage.copy()` before cross-thread emission** — Both `CameraThread._emit_display_frame()` and `EnrollmentCameraThread._emit_frame()` call `.copy()` on the `QImage` before emitting via `pyqtSignal(QImage)`. Without this, Qt's implicit sharing would reference released buffer memory, causing garbage frames or crashes.
+1. **`QImage.copy()` before cross-thread emission** — Both `CameraThreadBase._emit_display_frame()` and `EnrollmentCameraThread._emit_frame()` call `.copy()` on the `QImage` before emitting via `pyqtSignal(QImage)`. Without this, Qt's implicit sharing would reference released buffer memory, causing garbage frames or crashes.
 
 2. **`import cv2.data`** — `camera_thread.py` explicitly imports `cv2.data` (`import cv2.data`). This is required because OpenCV's Python bindings do not always expose the `cv2.data` submodule automatically. The enrollment camera thread does not need it because it does not use `cv2.data`.
 
 3. **`onnxruntime` before `PyQt5`** — Per project-wide rule (see `src/main.py` and `tests/conftest.py`), `import onnxruntime` must precede any `PyQt5` import on Windows to avoid DLL-load-order crashes. This is handled at the application entry point, not in individual UI modules.
 
-4. **Frame buffer ownership in AI workers** — Both `AIWorker.submit_task()` and `EnrollmentAIWorker.submit_task()` call `.copy()` on numpy arrays before pushing to the internal queue. This prevents the worker from reading a frame that has already been overwritten by the camera loop.
+4. **Frame buffer ownership in AI workers** — Both `AIWorkerBase.submit_task()` and `EnrollmentAIWorker.submit_task()` call `.copy()` on numpy arrays before pushing to the internal queue. This prevents the worker from reading a frame that has already been overwritten by the camera loop.
 
 5. **Frame flip difference** — `EnrollmentCameraThread` mirrors the frame horizontally (`cv2.flip(frame, 1)`) so the user sees a natural mirror reflection. `CameraThread` does **not** flip — the attendance view shows the raw camera feed.
 
-6. **Exponential backoff on read failures** — Both camera threads implement `_retry_read()` with 3 attempts at 1s/2s/4s delays, recreating the `cv2.VideoCapture` each time.
+6. **Exponential backoff on read failures** — `CameraThreadBase._retry_read()` provides 3 attempts at 1s/2s/4s delays, recreating the `cv2.VideoCapture` each time. Used by both `CameraThread` and `EnrollmentCameraThread` via inheritance.
 
-7. **Backpressure** — Both camera threads use a `queue.Queue(maxsize=1)` to submit frames to the AI worker. If the queue is full the frame is dropped (non-blocking). This prevents unbounded memory growth when AI inference is slower than the camera framerate.
+7. **Backpressure** — Both AI workers use a `queue.Queue(maxsize=1)` to submit frames. If the queue is full the frame is dropped (non-blocking). This prevents unbounded memory growth when AI inference is slower than the camera framerate.
+
+8. **Circuit-breaker threshold** — `_MAX_CONSECUTIVE_FAILURES = 30` is defined once in `AIWorkerBase`. One broken model kills both attendance and enrollment (shared counter, ADR-0001). Override `_inference_error_types()` in subclass to specify caught exceptions.
 
 ---
 
@@ -55,15 +58,15 @@
 Main Thread (GUI)              Worker Thread(s)
 ─────────────────              ────────────────
 UserModeView
-  └─ CameraThread (QThread) ──┐
-       ├─ frame capture        │  AIWorker (QThread)
+  └─ CameraThread(CameraThreadBase) ──┐
+       ├─ frame capture        │  AIWorker(AIWorkerBase) (QThread)
        ├─ face detection       │    ├─ anti-spoofing (MiniFASNet ONNX)
        ├─ draw bboxes          │    └─ recognition (SFace ONNX)
        └─ emit QImage ────────→ UserModeView._update_camera_frame()
 
 EnrollmentWidget
-  └─ EnrollmentCameraThread ──┐
-       ├─ frame capture        │  EnrollmentAIWorker (QThread)
+  └─ EnrollmentCameraThread(CameraThreadBase) ──┐
+       ├─ frame capture        │  EnrollmentAIWorker(AIWorkerBase) (QThread)
        ├─ flip (mirror)        │    ├─ head-pose estimation
        ├─ face detection       │    ├─ anti-spoofing
        └─ emit QImage ────────→ EnrollmentWidget.update_frame()
@@ -76,9 +79,9 @@ SettingsWidget
 
 Key rules:
 - Workers are created in `__init__`, started in `run()` (per project convention).
-- AI workers use a `queue.Queue(maxsize=1)` with sentinel-based shutdown.
-- On stop: drain queue, push sentinel, disconnect signals, `wait(3000)`.
-- Camera thread `stop()` propagates to its AI worker, then waits on itself.
+- AI workers use a `queue.Queue(maxsize=1)` with sentinel-based shutdown (managed by `AIWorkerBase`).
+- On stop: drain queue, push sentinel, disconnect signals, `wait(3000)` (handled by `AIWorkerBase.stop()`).
+- Camera thread `stop()` propagates to its AI worker via `_cleanup_worker()`, then waits on itself.
 
 ---
 
@@ -95,7 +98,7 @@ Key rules:
 | `repositories.user_repository` (`UserRepository`) | `UserManagementWidget` (CRUD), `EnrollmentWidget` (list unregistered users) |
 | `repositories.face_reference_repository` (`FaceReferenceRepository`) | `UserManagementWidget` (delete face on user delete) |
 | `core.db` (`Database`) | `MainWindow` (status bar DB path), `AdminDashboardView` (dashboard stats queries), `AttendanceHistoryWidget` (direct queries) |
-| `utils.face_utils` (`_crop_face`, `_create_face_detector`) | `CameraThread`, `EnrollmentCameraThread`, `AIWorker`, `EnrollmentAIWorker` |
+| `utils.face_utils` (`_crop_face`, `_create_face_detector`) | `CameraThreadBase`, `EnrollmentCameraThread` |
 | `utils.time_utils` (`utc_now_iso`, `utc_to_local`, `local_to_utc`) | `UserModeView`, `AttendanceHistoryWidget` |
 
 ---
@@ -106,10 +109,11 @@ Key rules:
 __init__.py                    # Package docstring
 admin_dashboard_view.py        # Admin dashboard shell with sidebar nav
 attendance_history_widget.py   # Attendance history browser + export
-camera_thread.py               # Attendance camera QThread + AIWorker
+camera_worker_base.py          # CameraThreadBase + AIWorkerBase (shared infrastructure)
+camera_thread.py               # Attendance camera CameraThread + AIWorker
 constants.py                   # Re-exported style constants
-enrollment_ai_worker.py        # Enrollment AI inference worker QThread
-enrollment_camera_thread.py    # Enrollment camera QThread (mirrored)
+enrollment_ai_worker.py        # Enrollment AI inference worker EnrollmentAIWorker
+enrollment_camera_thread.py    # Enrollment camera EnrollmentCameraThread (mirrored)
 enrollment_widget.py           # Face enrollment UI widget
 login_widget.py                # Admin login form
 main_window.py                 # Root QMainWindow + view router

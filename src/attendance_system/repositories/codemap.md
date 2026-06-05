@@ -19,16 +19,18 @@ All repositories inherit from `BaseRepository`, a `@dataclass(slots=True)` holdi
 
 Validation helpers (`require_positive_int`, `require_non_empty_text`) are called by every public method before touching the DB. `StorageError` and `DuplicateAttendanceError` are defined here as well.
 
-### FaceReferenceRepository class-level cache (`face_reference_repository.py`)
+### Caching wrapper for face references (`caching_face_reference_repository.py`)
 
-The most notable design choice: `_cache_all` is a **`ClassVar[dict[str, list[dict]]]` keyed by database path** (from `self.database.config.path`). This means:
+`FaceReferenceRepository` is a **pure SQLite adapter** — encrypt/decrypt + SQL + validation, no caching. The cache is owned by a separate `CachingFaceReferenceRepository` wrapper that:
 
-- Every `FaceReferenceRepository` instance (across `FaceRecognizer`, `EnrollmentService`, `UserManagementWidget`) shares the same cached data automatically — no singleton or dependency-injection container needed.
-- `get_all()` reads from cache if present, otherwise fetches from DB and populates the cache.
-- Every write path (`upsert()`, `delete_by_user_id()`) calls `_invalidate_cache()` to clear the entry for that database path.
-- **Must be invalidated on every write path** — the AGENTS.md hard-gotcha explicitly warns about this.
+- Holds the inner `FaceReferenceRepository` and consults the cache on `get_all()`.
+- **Invalidates the cache after every public write method** (`upsert`, `replace_all`, `delete_by_user_id`, `save_enrollment`). Forgetting to invalidate is impossible because the wrapper is the only code that touches the cache.
+- Cache is a per-instance `dict` keyed by `inner.database.config.path`. Two wrapper instances on the same DB intentionally do *not* share state — production builds exactly one wrapper per process at the composition root (`main.py`).
+- Non-cached reads (`get_by_user_id`, `get_by_user_id_and_pose`) and any other attribute are passed through to the inner repo via `__getattr__`.
 
-Encryption is handled transparently: if `FACE_EMBEDDING_FERNET_KEY` is set, embeddings are encrypted/decrypted on-the-fly using `cryptography.fernet`.
+`FaceReferenceRepository` also exposes `save_enrollment(user_id, pose_embeddings, model_name, vector_length)` — a single atomic method that does `DELETE` + 5 `INSERT` into `face_references` + `UPDATE users.face_registered` in one transaction. `EnrollmentService.save_face_references` is now a thin delegation.
+
+Encryption is handled transparently inside the inner repo: if `FACE_EMBEDDING_FERNET_KEY` is set, embeddings are encrypted/decrypted on-the-fly using `cryptography.fernet`.
 
 ## Key Files
 
@@ -37,7 +39,8 @@ Encryption is handled transparently: if `FACE_EMBEDDING_FERNET_KEY` is set, embe
 | `base_repository.py` | `BaseRepository` | — | Shared CRUD primitives, validation, errors |
 | `admin_repository.py` | `AdminRepository` | `admin_credentials` | `get_by_username()`, `create()` |
 | `attendance_repository.py` | `AttendanceRepository` | `attendance_records` | `record()`, `get()`, `correct()`, `list_by_session()`, `get_records_with_users()` |
-| `face_reference_repository.py` | `FaceReferenceRepository` | `face_references` | `upsert()`, `get_by_user_id()`, `get_all()`, `delete_by_user_id()` |
+| `face_reference_repository.py` | `FaceReferenceRepository` | `face_references` | `upsert()`, `get_by_user_id()`, `get_all()`, `delete_by_user_id()`, `save_enrollment()` |
+| `caching_face_reference_repository.py` | `CachingFaceReferenceRepository` | — (cache only) | Caching wrapper around `FaceReferenceRepository`; invalidates on every write |
 | `recognition_event_repository.py` | `RecognitionEventRepository` | `recognition_events` | `create()`, `list_by_session()` |
 | `session_repository.py` | `SessionRepository` | `sessions` | `create()`, `get_by_id()`, `update_status()`, `close()`, `list_active()`, `get_sessions()` |
 | `system_setting_repository.py` | `SystemSettingRepository` | `system_settings` | `upsert()`, `get()`, `list_all()`, `delete()` |
