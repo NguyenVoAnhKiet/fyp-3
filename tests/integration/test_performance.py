@@ -40,8 +40,9 @@ def test_identify_performance_benchmark(mock_sface_create, database) -> None:
                     (i, emb, "SFace", 128, pose, "2026-04-24T09:00:00Z")
                 )
     
-    # Invalidate cache
-    faces._invalidate_cache(str(database.config.path))
+    # No cache invalidation needed: FaceRecognizer reads fresh from DB
+    # each time (caching is handled by CachingFaceReferenceRepository
+    # wrapper, which is not used in this benchmark).
     
     # Setup mock SFace
     mock_sface = MagicMock()

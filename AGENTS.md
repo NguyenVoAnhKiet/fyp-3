@@ -57,7 +57,7 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 - `QImage` crossing threads must be `.copy()`'d first.
 - Create worker `QThread`s in `__init__`, start them in `run()`.
 - `EnrollmentCameraThread` flips frames (mirror); attendance `CameraThread` does not.
-- `FaceReferenceRepository._cache_all` keyed by DB path; **every write path** must invalidate cache.
+- `CachingFaceReferenceRepository` wrapper owns the face-references cache; inner `FaceReferenceRepository` is a pure SQLite adapter. Invalidation is enforced by the wrapper — see `tests/unit/test_caching_face_reference_repository.py` (parametrized over 4 write methods).
 - `_crop_face` scale: 2.7 for liveness (broad context), 1.5 for head-pose (tight crop).
 - `_COOLDOWN_SECONDS = 3.0` in `camera_thread.py` — per-user cooldown before re-recognition. In-memory, resets on thread restart.
 - `_AI_FRAME_SKIP = 3` — full AI pipeline runs every 3rd frame (~10 Hz at 30 fps).

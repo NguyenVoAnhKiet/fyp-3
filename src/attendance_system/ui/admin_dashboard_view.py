@@ -46,6 +46,12 @@ from attendance_system.ui.styles import (
 )
 
 if TYPE_CHECKING:
+    from attendance_system.repositories.caching_face_reference_repository import (
+        CachingFaceReferenceRepository,
+    )
+    from attendance_system.repositories.face_reference_repository import (
+        FaceReferenceRepository,
+    )
     from attendance_system.services.settings_service import SettingsService
     from attendance_system.core.config import SystemConfig
     from attendance_system.core.db import Database
@@ -141,6 +147,7 @@ class AdminDashboardView(QWidget):
         face_recognizer: FaceRecognizer,
         head_pose_estimator: HeadPoseEstimator | None,
         config: "SystemConfig",
+        face_repo: FaceReferenceRepository | CachingFaceReferenceRepository | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -150,6 +157,7 @@ class AdminDashboardView(QWidget):
         self._face_recognizer = face_recognizer
         self._head_pose_estimator = head_pose_estimator
         self._config = config
+        self._face_repo = face_repo
         self._nav_items: list[_NavItem] = []
         self._build_ui()
 
@@ -220,7 +228,9 @@ class AdminDashboardView(QWidget):
         users_page = QWidget()
         users_layout = QVBoxLayout(users_page)
         users_layout.setContentsMargins(32, 32, 32, 32)
-        users_layout.addWidget(UserManagementWidget(self._database, parent=self))
+        users_layout.addWidget(
+            UserManagementWidget(self._database, parent=self, face_repo=self._face_repo)
+        )
         self._content_stack.addWidget(users_page)
 
         enrollment_page = QWidget()
@@ -233,6 +243,7 @@ class AdminDashboardView(QWidget):
             settings_service=self._settings_service,
             head_pose_estimator=self._head_pose_estimator,
             config=self._config,
+            face_refs=self._face_repo,
             parent=self,
         )
         enrollment_layout.addWidget(self._enrollment_widget)

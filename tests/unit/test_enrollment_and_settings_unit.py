@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from attendance_system.repositories.face_reference_repository import FaceReferenceRepository
@@ -71,3 +73,49 @@ def test_enrollment_atomic_rollback_on_failure(database, monkeypatch) -> None:
     user = users.get_by_id(user_id)
     assert user is not None
     assert user["face_registered"] == 0
+    # Verify _encrypt_embedding was called exactly 3 times before failure
+    assert call_count[0] == 3
+
+
+def test_save_face_references_delegates_to_repository(database) -> None:
+    """Verify the service is a thin wrapper that delegates to the repository."""
+    from attendance_system.repositories.face_reference_repository import POSE_LABELS
+
+    users = UserRepository(database)
+    inner = FaceReferenceRepository(database)
+    mock_repo = MagicMock(spec=FaceReferenceRepository, wraps=inner)
+    enrollment = EnrollmentService(database, references=mock_repo)
+
+    user_id = users.create("SV099", "Delegate User")
+    pose_embeddings = {pose: f"{pose}-emb".encode() for pose in POSE_LABELS}
+    enrollment.save_face_references(user_id, pose_embeddings, "m", 8)
+
+    # Delegation contract
+    mock_repo.save_enrollment.assert_called_once_with(user_id, pose_embeddings, "m", 8)
+
+    # Service must NOT call private methods directly
+    mock_repo._encrypt_embedding.assert_not_called()
+    # Only save_enrollment should have been called on the mock
+    assert len(mock_repo.mock_calls) == 1
+
+
+def test_enrollment_service_accepts_caching_wrapper(database) -> None:
+    """Verify the CachingFaceReferenceRepository wrapper works via the service."""
+    from attendance_system.repositories.caching_face_reference_repository import (
+        CachingFaceReferenceRepository,
+    )
+    from attendance_system.repositories.face_reference_repository import POSE_LABELS
+
+    users = UserRepository(database)
+    inner = FaceReferenceRepository(database)
+    wrapper = CachingFaceReferenceRepository(inner)
+    enrollment = EnrollmentService(database, references=wrapper)
+
+    user_id = users.create("SV100", "Caching User")
+    pose_embeddings = {pose: f"{pose}-emb".encode() for pose in POSE_LABELS}
+    enrollment.save_face_references(user_id, pose_embeddings, "model-v1", 8)
+
+    # Verify wrapper was called by checking get_all returns 5 rows (cache populated)
+    rows = wrapper.get_all()
+    user_rows = [r for r in rows if r["user_id"] == user_id]
+    assert len(user_rows) == 5

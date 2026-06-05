@@ -23,6 +23,12 @@ from PyQt5.QtWidgets import (
 
 from attendance_system.core.config import SystemConfig
 from attendance_system.core.db import Database
+from attendance_system.repositories.caching_face_reference_repository import (
+    CachingFaceReferenceRepository,
+)
+from attendance_system.repositories.face_reference_repository import (
+    FaceReferenceRepository,
+)
 from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
 from attendance_system.services.head_pose import HeadPoseEstimator
 from attendance_system.services.attendance_service import AttendanceService
@@ -61,6 +67,7 @@ class MainWindow(QMainWindow):
         head_pose_estimator: HeadPoseEstimator | None,
         database: Database,
         config: SystemConfig,
+        face_repo: FaceReferenceRepository | CachingFaceReferenceRepository | None = None,
     ) -> None:
         super().__init__()
         self._auth = authentication_service
@@ -88,6 +95,7 @@ class MainWindow(QMainWindow):
             face_recognizer=face_recognizer,
             head_pose_estimator=head_pose_estimator,
             config=config,
+            face_repo=face_repo,
             parent=self,
         )
 

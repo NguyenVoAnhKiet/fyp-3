@@ -35,6 +35,12 @@ from PyQt5.QtWidgets import (
 
 from attendance_system.ui.constants import FONT_BODY, FONT_TITLE
 from attendance_system.ui.styles import BG_CARD, BG_INPUT, STATUS_INFO, STATUS_SUCCESS, TEXT_MUTED, TEXT_SECONDARY
+from attendance_system.repositories.caching_face_reference_repository import (
+    CachingFaceReferenceRepository,
+)
+from attendance_system.repositories.face_reference_repository import (
+    FaceReferenceRepository,
+)
 from attendance_system.repositories.user_repository import UserRepository
 from attendance_system.services.enrollment_service import EnrollmentService
 from attendance_system.services.ai_pipeline import LivenessChecker
@@ -65,6 +71,7 @@ class EnrollmentWidget(QWidget):
         settings_service: SettingsService,
         head_pose_estimator: HeadPoseEstimator | None,
         config: "SystemConfig",
+        face_refs: FaceReferenceRepository | CachingFaceReferenceRepository | None = None,
         parent: QWidget | None = None
     ) -> None:
         super().__init__(parent)
@@ -76,7 +83,10 @@ class EnrollmentWidget(QWidget):
         self._config = config
 
         self._user_repo = UserRepository(database)
-        self._enroll_service = EnrollmentService(database)
+        # Pass the shared CachingFaceReferenceRepository from the composition
+        # root so enrollment invalidates the recognizer's cache atomically.
+        # Fall back to a bare repo for tests / legacy callers.
+        self._enroll_service = EnrollmentService(database, references=face_refs)
         self._camera_thread: EnrollmentCameraThread | None = None
 
         self._build_ui()

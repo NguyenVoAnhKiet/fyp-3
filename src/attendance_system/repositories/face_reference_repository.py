@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from typing import Any, ClassVar
+from typing import Any
 
 from attendance_system.core.db import Database
 from attendance_system.utils.time_utils import utc_now_iso
@@ -14,11 +14,6 @@ POSE_LABELS: tuple[str, ...] = ("center", "right", "left", "up", "down")
 
 
 class FaceReferenceRepository(BaseRepository):
-    # Class-level cache for get_all(), keyed by database path.
-    # Invalidated on upsert/delete so that every repository instance
-    # (FaceRecognizer, EnrollmentService, UserManagementWidget)
-    # shares the same cached data without needing a shared instance.
-    _cache_all: ClassVar[dict[str, list[dict[str, Any]]]] = {}
 
     def __init__(self, database: Database) -> None:
         super().__init__(database)
@@ -82,7 +77,6 @@ class FaceReferenceRepository(BaseRepository):
             """,
             (user_id, encrypted_embedding, model_name, vector_length, pose_label, timestamp),
         )
-        self._invalidate_cache(str(self.database.config.path))
         return result
 
     def get_by_user_id(self, user_id: int) -> list[dict[str, Any]]:
@@ -148,37 +142,80 @@ class FaceReferenceRepository(BaseRepository):
                     """,
                     (user_id, encrypted, model_name, vector_length, pose_label, timestamp),
                 )
-        self._invalidate_cache(str(self.database.config.path))
+
+    def save_enrollment(
+        self,
+        user_id: int,
+        pose_embeddings: dict[str, bytes],
+        model_name: str,
+        vector_length: int,
+    ) -> None:
+        """Atomically replace all five pose-specific face references for a user
+        **and** mark the user as face_registered in a single transaction.
+
+        Single repository method that owns the full enrollment write so callers
+        (e.g. ``EnrollmentService``) do not need to open their own transaction
+        or reach into private methods. Validation mirrors ``replace_all``.
+
+        Args:
+            user_id: The user to enroll.
+            pose_embeddings: Mapping of pose_label -> raw embedding bytes.
+                Must contain exactly all five :data:`POSE_LABELS`.
+            model_name: Name of the embedding model (e.g. 'SFace').
+            vector_length: Dimension of the embedding vector.
+
+        Raises:
+            ValueError: If inputs are invalid or pose labels are incomplete.
+        """
+        self.require_positive_int(user_id, "user_id")
+        self.require_non_empty_text(model_name, "model_name")
+        self.require_positive_int(vector_length, "vector_length")
+        if set(pose_embeddings.keys()) != set(POSE_LABELS):
+            raise ValueError(
+                f"pose_embeddings must contain exactly all five pose labels: {POSE_LABELS}. "
+                f"Got: {set(pose_embeddings.keys())}"
+            )
+        for pose, emb in pose_embeddings.items():
+            if not isinstance(emb, bytes) or len(emb) == 0:
+                raise ValueError(f"embedding for pose {pose!r} must be non-empty bytes")
+
+        timestamp = utc_now_iso()
+        with self.connection() as conn:
+            conn.execute("DELETE FROM face_references WHERE user_id = ?", (user_id,))
+            for pose_label in POSE_LABELS:
+                encrypted = self._encrypt_embedding(pose_embeddings[pose_label])
+                conn.execute(
+                    """
+                    INSERT INTO face_references
+                        (user_id, embedding, model_name, vector_length,
+                         pose_label, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        user_id,
+                        encrypted,
+                        model_name,
+                        vector_length,
+                        pose_label,
+                        timestamp,
+                    ),
+                )
+            conn.execute(
+                "UPDATE users SET face_registered = 1, updated_at = ? WHERE id = ?",
+                (timestamp, user_id),
+            )
 
     def get_all(self) -> list[dict[str, Any]]:
-        """Return all face references, using a class-level cache.
-
-        Cache is keyed by database path so that different databases
-        (e.g. per-test tmp directories) do not interfere.
-        Invalidated automatically by upsert(), replace_all(), and delete_by_user_id().
-        """
-        cache_key = str(self.database.config.path)
-        cached = type(self)._cache_all.get(cache_key)
-        if cached is not None:
-            return cached
-
+        """Return all face references as a list of dicts (decrypted if fernet key is set)."""
         rows = self.fetch_all("SELECT * FROM face_references")
         if not self._fernet_key:
-            result = [dict(r) for r in rows]
-        else:
-            result = []
-            for row in rows:
-                decrypted = self._decrypt_embedding(row["embedding"])
-                result.append({**dict(row), "embedding": decrypted})
-
-        type(self)._cache_all[cache_key] = result
+            return [dict(r) for r in rows]
+        result = []
+        for row in rows:
+            decrypted = self._decrypt_embedding(row["embedding"])
+            result.append({**dict(row), "embedding": decrypted})
         return result
-
-    @classmethod
-    def _invalidate_cache(cls, database_path: str) -> None:
-        cls._cache_all.pop(database_path, None)
 
     def delete_by_user_id(self, user_id: int) -> None:
         self.require_positive_int(user_id, "user_id")
         self.execute("DELETE FROM face_references WHERE user_id = ?", (user_id,))
-        self._invalidate_cache(str(self.database.config.path))

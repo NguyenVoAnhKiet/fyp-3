@@ -32,6 +32,12 @@ from attendance_system.core.config import (
 )
 from attendance_system.core.db import Database, DatabaseConfig
 from attendance_system.repositories.admin_repository import AdminRepository
+from attendance_system.repositories.caching_face_reference_repository import (
+    CachingFaceReferenceRepository,
+)
+from attendance_system.repositories.face_reference_repository import (
+    FaceReferenceRepository,
+)
 from attendance_system.services.ai_pipeline import FaceRecognizer, LivenessChecker
 from attendance_system.services.head_pose import HeadPoseEstimator
 from attendance_system.services.attendance_service import AttendanceService
@@ -170,7 +176,13 @@ def main(argv: list[str] | None = None) -> int:
     attendance_service = AttendanceService(db)
     authentication_service = AuthenticationService(AdminRepository(db))
     liveness_checker = LivenessChecker(config.liveness_model_path)
-    face_recognizer = FaceRecognizer(db, config.recognition_model_path)
+    # Wrap the face-refs repo in a caching layer so the recognizer (per-frame
+    # .get_all() calls) shares one cache and stays fresh across writes from
+    # EnrollmentService, the admin UI, or any other consumer.
+    face_refs = CachingFaceReferenceRepository(FaceReferenceRepository(db))
+    face_recognizer = FaceRecognizer(
+        db, config.recognition_model_path, face_refs=face_refs
+    )
 
     if head_pose_warning is not None:
         QMessageBox.warning(None, "Head Pose Guidance Disabled", head_pose_warning)
@@ -185,6 +197,7 @@ def main(argv: list[str] | None = None) -> int:
         head_pose_estimator=head_pose_estimator,
         database=db,
         config=config,
+        face_repo=face_refs,
     )
     window.show()
     return app.exec_()

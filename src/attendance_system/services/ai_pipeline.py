@@ -40,6 +40,9 @@ from attendance_system.services.liveness_tracker import (
 )
 from attendance_system.services.pipeline_result import PipelineResult
 from attendance_system.services.preprocessing_configs import LIVENESS_CONFIG
+from attendance_system.repositories.caching_face_reference_repository import (
+    CachingFaceReferenceRepository,
+)
 from attendance_system.repositories.face_reference_repository import (
     FaceReferenceRepository,
 )
@@ -190,7 +193,10 @@ class FaceRecognizer:
     """
 
     def __init__(
-        self, database: Database, model_path: Path | str | None = None
+        self,
+        database: Database,
+        model_path: Path | str | None = None,
+        face_refs: FaceReferenceRepository | CachingFaceReferenceRepository | None = None,
     ) -> None:
         """
         Initializes the face recognizer with a database and optional model path.
@@ -198,11 +204,16 @@ class FaceRecognizer:
         Args:
             database: Database instance for retrieving user and face data.
             model_path: Path to the SFace ONNX model file.
+            face_refs: Optional pre-built face reference repository (e.g. wrapped in
+                CachingFaceReferenceRepository). If None, a bare FaceReferenceRepository
+                is constructed — used by tests that don't need caching.
         """
         #=======================================================================
         # Step 1: Initialize database repositories
         #=======================================================================
-        self._face_refs = FaceReferenceRepository(database)
+        if face_refs is None:
+            face_refs = FaceReferenceRepository(database)
+        self._face_refs = face_refs
         self._users = UserRepository(database)
         
         #=======================================================================
