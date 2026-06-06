@@ -57,6 +57,7 @@ def _make_test_config() -> SystemConfig:
         similarity_threshold=defaults.DEFAULT_SIMILARITY_THRESHOLD,
         attendance_freeze_seconds=defaults.DEFAULT_ATTENDANCE_FREEZE_SECONDS,
         attendance_freeze_sound_enabled=defaults.DEFAULT_ATTENDANCE_FREEZE_SOUND_ENABLED,
+        timezone=defaults.DEFAULT_TIMEZONE,
     )
 
 

@@ -58,7 +58,11 @@ from attendance_system.ui.styles import (
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
-from attendance_system.utils.time_utils import utc_now_iso, utc_to_local
+from attendance_system.utils.time_utils import (
+    _signals as timezone_signals,
+    utc_now_iso,
+    utc_to_local,
+)
 
 if TYPE_CHECKING:
     from attendance_system.core.config import SystemConfig
@@ -114,6 +118,7 @@ class UserModeView(QWidget):
         self._freeze_timer: QTimer | None = None
 
         self._build_ui()
+        timezone_signals.timezone_changed.connect(self._on_timezone_changed)
         self._stats_timer = QTimer(self)
         self._stats_timer.setInterval(1000)
         self._stats_timer.timeout.connect(self._refresh_stats_display)
@@ -519,6 +524,8 @@ class UserModeView(QWidget):
         except Exception:
             pass
 
+        self._camera_label.clear()
+        self._camera_label.setText("[ Đang khởi động camera… ]")
         self._stack.setCurrentIndex(_IDX_ACTIVE)
 
         # Read camera index from DB settings (admin may have changed it);
@@ -560,6 +567,9 @@ class UserModeView(QWidget):
         if self._camera_thread is not None:
             self._camera_thread.stop()
             self._camera_thread = None
+
+        self._camera_label.clear()
+        self._camera_label.setText("[ Đang khởi động camera… ]")
 
         self._attendance.end_session(self._session_id, end_time=utc_now_iso())
         self._session_id = None
@@ -673,5 +683,26 @@ class UserModeView(QWidget):
     def _on_camera_error(self, message: str) -> None:
         QMessageBox.critical(self, "Lỗi Camera", message)
         self._end_session()
+
+    def _on_timezone_changed(self, new_tz_name: str) -> None:
+        """Re-render sidebar entries with the newly active timezone."""
+        if self._session_id is None:
+            return
+        self._attendance_list.clear()
+        try:
+            records = self._attendance.attendance.fetch_all(
+                """
+                SELECT u.full_name, ar.recorded_at
+                FROM attendance_records ar
+                JOIN users u ON ar.user_id = u.id
+                WHERE ar.session_id = ? AND ar.status = 'success'
+                ORDER BY ar.recorded_at DESC
+                """,
+                (self._session_id,),
+            )
+            for rec in reversed(records):
+                self._add_to_sidebar(rec["full_name"], rec["recorded_at"])
+        except Exception:
+            pass
 
 

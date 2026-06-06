@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt5.QtCore import QDate, Qt
+from PyQt5.QtCore import QDate, QPoint, Qt
 from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
     QAbstractItemView,
@@ -26,7 +26,7 @@ from PyQt5.QtWidgets import (
 from attendance_system.core.db import Database
 from attendance_system.services.attendance_service import AttendanceService
 from attendance_system.ui.styles import BG_CARD, BORDER, FONT_H1, FONT_H3, FONT_SMALL, TEXT_SECONDARY
-from attendance_system.utils.time_utils import local_to_utc, utc_to_local
+from attendance_system.utils.time_utils import local_to_utc, timezone_signals, utc_to_local
 
 
 class AttendanceHistoryWidget(QWidget):
@@ -36,6 +36,7 @@ class AttendanceHistoryWidget(QWidget):
         self._build_ui()
         self.load_filters()
         self.search_sessions()
+        timezone_signals.timezone_changed.connect(self._on_timezone_changed)
 
     def _build_ui(self):
         self.layout = QVBoxLayout(self)
@@ -173,8 +174,7 @@ class AttendanceHistoryWidget(QWidget):
         self.export_menu.addAction(self.export_csv_action)
 
         self.export_button = QPushButton("Xuất Báo Cáo")
-        self.export_button.setMenu(self.export_menu)
-        self.export_button.setStyleSheet("font-size: 15px;")
+        self.export_button.clicked.connect(self._show_export_menu)
         self.export_button.setEnabled(False)
 
         self.export_layout.addWidget(self.export_button)
@@ -246,6 +246,18 @@ class AttendanceHistoryWidget(QWidget):
         if not selected_rows:
             return None
         return int(self.session_table.item(selected_rows[0].row(), 0).text())
+
+    def _on_timezone_changed(self, new_tz_name: str) -> None:
+        """Re-render attendance history when timezone changes."""
+        if self.session_table.rowCount() == 0:
+            return
+        self.search_sessions()
+
+    def _show_export_menu(self) -> None:
+        """Show the export menu below the button (manual exec, no triangle)."""
+        self.export_menu.exec_(
+            self.export_button.mapToGlobal(QPoint(0, self.export_button.height()))
+        )
 
     def export_excel(self):
         session_id = self.get_selected_session_id()

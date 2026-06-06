@@ -74,3 +74,10 @@ DEFAULT_ANTISPOOF_ENABLED: bool = True
 
 #: Whether the MobileNetV2 head-pose estimator is loaded for enrollment.
 DEFAULT_HEADPOSE_ENABLED: bool = True
+
+# ---------------------------------------------------------------------------
+# Timezone
+# ---------------------------------------------------------------------------
+
+#: IANA timezone name used when no env/DB value is set.
+DEFAULT_TIMEZONE: str = "Asia/Ho_Chi_Minh"

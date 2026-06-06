@@ -29,6 +29,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from . import defaults
 
@@ -91,6 +92,9 @@ class SystemConfig:
     liveness_threshold: float
     similarity_threshold: float
 
+    # --- Timezone (mutable via Admin UI) ---
+    timezone: str
+
     # --- Attendance UX (mutable via Admin UI) ---
     attendance_freeze_seconds: int
     attendance_freeze_sound_enabled: bool
@@ -105,6 +109,7 @@ class SystemConfig:
 #: tunable only touches one place.  Env-var names mirror ``.env.example``.
 _SEEDABLE: tuple[tuple[str, str, str], ...] = (
     # (env_var, db_key, value_type)
+    ("TIMEZONE", "timezone", "str"),
     ("FACE_ANTISPOOF_CONFIDENCE_THRESHOLD", "liveness_threshold", "float"),
     ("FACE_SIMILARITY_THRESHOLD", "similarity_threshold", "float"),
     ("ATTENDANCE_FREEZE_SECONDS", "attendance_freeze_seconds", "int"),
@@ -236,6 +241,7 @@ class SettingsResolver:
                 headpose_enabled=headpose_enabled,
                 liveness_threshold=defaults.DEFAULT_LIVENESS_THRESHOLD,
                 similarity_threshold=defaults.DEFAULT_SIMILARITY_THRESHOLD,
+                timezone=defaults.DEFAULT_TIMEZONE,
                 attendance_freeze_seconds=defaults.DEFAULT_ATTENDANCE_FREEZE_SECONDS,
                 attendance_freeze_sound_enabled=(
                     defaults.DEFAULT_ATTENDANCE_FREEZE_SOUND_ENABLED
@@ -254,6 +260,13 @@ class SettingsResolver:
             env_map.get("FACE_SIMILARITY_THRESHOLD"),
             read_db("similarity_threshold"),
             defaults.DEFAULT_SIMILARITY_THRESHOLD,
+        )
+
+        # --- Timezone (DB > env > default; no CLI) ---
+        timezone = self._resolve_timezone(
+            env_map.get("TIMEZONE"),
+            read_db("timezone"),
+            defaults.DEFAULT_TIMEZONE,
         )
 
         # --- Attendance UX (CLI > env > DB > default) ---
@@ -290,6 +303,7 @@ class SettingsResolver:
             headpose_enabled=headpose_enabled,
             liveness_threshold=liveness_threshold,
             similarity_threshold=similarity_threshold,
+            timezone=timezone,
             attendance_freeze_seconds=attendance_freeze_seconds,
             attendance_freeze_sound_enabled=attendance_freeze_sound_enabled,
         )
@@ -389,6 +403,26 @@ class SettingsResolver:
                 return float(db_value.strip())
             except ValueError:
                 pass
+        return default
+
+    @staticmethod
+    def _resolve_timezone(
+        env_value: str | None,
+        db_value: str | None,
+        default: str,
+    ) -> str:
+        """DB > env > default.  Validates against :class:`zoneinfo.ZoneInfo`.
+
+        Unlike int/float/bool resolvers, timezone is a string that must be a
+        valid IANA name.  Invalid values fall back to the default.
+        """
+        for candidate in (db_value, env_value):
+            if candidate and candidate.strip():
+                try:
+                    ZoneInfo(candidate.strip())
+                    return candidate.strip()
+                except (ZoneInfoNotFoundError, Exception):
+                    pass
         return default
 
     @staticmethod

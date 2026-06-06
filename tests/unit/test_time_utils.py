@@ -3,14 +3,27 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pytest
+from PyQt5.QtWidgets import QApplication
 
 from attendance_system.utils.time_utils import (
+    get_timezone_config,
+    get_timezone_name,
     local_now_iso,
     local_to_utc,
     set_timezone_config,
+    timezone_signals,
     utc_now_iso,
     utc_to_local,
 )
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    """Return a shared QApplication instance (created once per session)."""
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    return app
 
 
 # ==============================================================================
@@ -196,3 +209,100 @@ def test_local_now_iso_is_valid_format():
     set_timezone_config("UTC")
     parsed = datetime.fromisoformat(result)
     assert parsed.tzinfo is not None
+
+
+# ==============================================================================
+# get_timezone_name / get_timezone_config
+# ==============================================================================
+
+
+class TestTimezoneGetters:
+    def test_get_timezone_name_default_is_utc(self):
+        """Default timezone name is UTC."""
+        set_timezone_config("UTC")
+        assert get_timezone_name() == "UTC"
+
+    def test_get_timezone_name_after_set(self):
+        """get_timezone_name() returns the configured IANA name."""
+        set_timezone_config("Asia/Tokyo")
+        assert get_timezone_name() == "Asia/Tokyo"
+
+    def test_get_timezone_name_invalid_fallback(self):
+        """After invalid timezone, name should be UTC."""
+        set_timezone_config("Invalid/Timezone")
+        assert get_timezone_name() == "UTC"
+
+    def test_get_timezone_config_returns_zoneinfo(self):
+        """get_timezone_config() returns a ZoneInfo instance."""
+        from zoneinfo import ZoneInfo
+
+        set_timezone_config("Europe/Paris")
+        tz = get_timezone_config()
+        assert isinstance(tz, ZoneInfo)
+        assert tz.key == "Europe/Paris"
+
+    def test_get_timezone_config_default(self):
+        """get_timezone_config() returns UTC initially (non-ZoneInfo)."""
+        set_timezone_config("UTC")
+        tz = get_timezone_config()
+        # When set to UTC, it may be ZoneInfo("UTC") or timezone.utc
+        # Either is fine — just verify it's usable
+        from datetime import timezone as dt_timezone
+        from zoneinfo import ZoneInfo
+
+        assert isinstance(tz, (ZoneInfo, dt_timezone))
+
+
+# ==============================================================================
+# Signal emission
+# ==============================================================================
+
+
+class TestTimezoneSignals:
+    """Requires ``qapp`` fixture (QApplication for QObject signals)."""
+
+    def test_signal_emitted_on_change(self, qapp):
+        """set_timezone_config emits ``timezone_changed`` with new IANA name."""
+        set_timezone_config("UTC")  # ensure starting at UTC
+        hits: list[str] = []
+
+        def _record(name: str) -> None:
+            hits.append(name)
+
+        timezone_signals.timezone_changed.connect(_record)
+        try:
+            set_timezone_config("Asia/Tokyo")
+            assert hits == ["Asia/Tokyo"]
+        finally:
+            timezone_signals.timezone_changed.disconnect(_record)
+
+    def test_signal_not_emitted_on_same_value(self, qapp):
+        """set_timezone_config with the same value does NOT re-emit."""
+        set_timezone_config("Asia/Tokyo")  # set first
+        hits: list[str] = []
+
+        def _record(name: str) -> None:
+            hits.append(name)
+
+        timezone_signals.timezone_changed.connect(_record)
+        try:
+            set_timezone_config("Asia/Tokyo")  # same value again
+            assert hits == []  # no emission
+        finally:
+            timezone_signals.timezone_changed.disconnect(_record)
+
+    def test_signal_emitted_on_fallback(self, qapp):
+        """Invalid timezone triggers a fallback signal with the resulting name."""
+        set_timezone_config("Asia/Tokyo")  # set to non-UTC first
+        hits: list[str] = []
+
+        def _record(name: str) -> None:
+            hits.append(name)
+
+        timezone_signals.timezone_changed.connect(_record)
+        try:
+            set_timezone_config("Invalid/Timezone")
+            # Falls back to UTC — signal should carry the new name
+            assert hits == ["UTC"]
+        finally:
+            timezone_signals.timezone_changed.disconnect(_record)
