@@ -25,8 +25,7 @@ class _TimezoneSignals(QObject):
 
 
 # Module-level singleton — safe to create before QApplication (only widgets need it).
-_signals = _TimezoneSignals()
-timezone_signals = _signals  # public alias for external connection
+timezone_signals = _TimezoneSignals()
 
 # Module-level timezone: defaults to UTC, overridden by set_timezone_config()
 _tz = timezone.utc
@@ -72,7 +71,7 @@ def set_timezone_config(tz_name: str | None) -> None:
     old_name = str(old_tz.key) if hasattr(old_tz, "key") else "UTC"
     new_name = str(_tz.key) if hasattr(_tz, "key") else "UTC"
     if new_name != old_name:
-        _signals.timezone_changed.emit(new_name)
+        timezone_signals.timezone_changed.emit(new_name)
 
 
 # ---------------------------------------------------------------------------
@@ -139,3 +138,25 @@ def local_to_utc(iso_str: str) -> str:
     except (ValueError, TypeError):
         logger.warning("Cannot parse timestamp '%s', returning as-is", iso_str)
         return iso_str
+
+
+def format_tz_label(name: str) -> str:
+    """Format IANA name with UTC offset, e.g. ``Asia/Ho_Chi_Minh (UTC+07:00)``.
+
+    Reuses :func:`_load_zoneinfo` for the lazy import so the function works
+    on Python < 3.9 (returning the raw name as the safe fallback).
+    """
+    ZoneInfo = _load_zoneinfo()
+    if ZoneInfo is None:
+        return name
+    try:
+        offset = ZoneInfo(name).utcoffset(None)
+    except (KeyError, OSError, TypeError):
+        return name
+    if offset is None:
+        return name
+    total_minutes = int(offset.total_seconds() // 60)
+    sign = "+" if total_minutes >= 0 else "-"
+    total_minutes = abs(total_minutes)
+    hours, minutes = divmod(total_minutes, 60)
+    return f"{name} (UTC{sign}{hours:02d}:{minutes:02d})"

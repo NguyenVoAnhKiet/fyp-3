@@ -59,7 +59,7 @@ from attendance_system.ui.styles import (
     TEXT_SECONDARY,
 )
 from attendance_system.utils.time_utils import (
-    _signals as timezone_signals,
+    timezone_signals,
     utc_now_iso,
     utc_to_local,
 )
@@ -524,8 +524,7 @@ class UserModeView(QWidget):
         except Exception:
             pass
 
-        self._camera_label.clear()
-        self._camera_label.setText("[ Đang khởi động camera… ]")
+        self._reset_camera_preview()
         self._stack.setCurrentIndex(_IDX_ACTIVE)
 
         # Read camera index from DB settings (admin may have changed it);
@@ -568,8 +567,7 @@ class UserModeView(QWidget):
             self._camera_thread.stop()
             self._camera_thread = None
 
-        self._camera_label.clear()
-        self._camera_label.setText("[ Đang khởi động camera… ]")
+        self._reset_camera_preview()
 
         self._attendance.end_session(self._session_id, end_time=utc_now_iso())
         self._session_id = None
@@ -599,6 +597,16 @@ class UserModeView(QWidget):
             Qt.TransformationMode.SmoothTransformation,
         )
         self._camera_label.setPixmap(pixmap)
+
+    def _reset_camera_preview(self) -> None:
+        """Clear the stale frame and show the placeholder text.
+
+        Single source of truth for the camera-preview reset, called by both
+        ``_start_session`` and ``_end_session`` so the placeholder text stays
+        in sync.
+        """
+        self._camera_label.clear()
+        self._camera_label.setText("[ Đang khởi động camera… ]")
 
     def _add_to_sidebar(self, name: str, time_str: str) -> None:
         """Prepend a check-in record to the sidebar list."""

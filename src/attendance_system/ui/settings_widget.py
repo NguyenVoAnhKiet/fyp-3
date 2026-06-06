@@ -34,7 +34,7 @@ from PyQt5.QtWidgets import (
 from attendance_system.core import defaults
 from attendance_system.ui.constants import FONT_BODY
 from attendance_system.ui.styles import FONT_H1
-from attendance_system.utils.time_utils import set_timezone_config
+from attendance_system.utils.time_utils import format_tz_label, set_timezone_config
 
 if TYPE_CHECKING:
     from attendance_system.services.settings_service import SettingsService
@@ -67,23 +67,6 @@ TIMEZONE_CHOICES: list[str] = [
     "America/Los_Angeles",
     "UTC",
 ]
-
-
-def format_tz_label(name: str) -> str:
-    """Format IANA name with UTC offset, e.g. ``Asia/Ho_Chi_Minh (UTC+07:00)``."""
-    from zoneinfo import ZoneInfo
-
-    try:
-        offset = ZoneInfo(name).utcoffset(None)
-    except Exception:
-        return name
-    if offset is None:
-        return name
-    total_minutes = int(offset.total_seconds() // 60)
-    sign = "+" if total_minutes >= 0 else "-"
-    total_minutes = abs(total_minutes)
-    hours, minutes = divmod(total_minutes, 60)
-    return f"{name} (UTC{sign}{hours:02d}:{minutes:02d})"
 
 
 class _CameraScanThread(QThread):

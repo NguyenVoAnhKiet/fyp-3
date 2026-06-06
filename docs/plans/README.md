@@ -23,7 +23,7 @@ This folder tracks in-flight and archived feature plans — work-in-progress des
 
 | ID | Title | Status | Branch |
 |----|-------|--------|--------|
-| 0005 | [Centralize Configuration Resolution](active/0005-system-config-resolver.md) | Draft (candidate #3) | `refactor/source-code` |
+| 0008 | [Address code-review findings for `feat/ui-polish`](active/0008-ui-polish-review-cleanups.md) | Draft | `feat/ui-polish` |
 
 ## Archive
 

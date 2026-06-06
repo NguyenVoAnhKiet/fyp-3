@@ -421,7 +421,7 @@ class SettingsResolver:
                 try:
                     ZoneInfo(candidate.strip())
                     return candidate.strip()
-                except (ZoneInfoNotFoundError, Exception):
+                except ZoneInfoNotFoundError:
                     pass
         return default
 
