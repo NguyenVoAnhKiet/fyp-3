@@ -13,7 +13,6 @@ only handles the bootstrap orchestration.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from pathlib import Path
 
@@ -106,9 +105,6 @@ def main(argv: list[str] | None = None) -> int:
     # the second pass yields the final, DB-aware ``SystemConfig``.
     resolver = SettingsResolver(mode="runtime")
     provisional = resolver.resolve(cli=args, env=None, db_reader=None)
-    set_timezone_config(os.getenv("TIMEZONE"))
-    # NOTE: set_timezone_config takes the env value directly — it predates
-    # this refactor and is not a tunable in SystemConfig.
 
     # --- Phase 3: Bootstrap database ------------------------------------------
     try:
@@ -138,6 +134,9 @@ def main(argv: list[str] | None = None) -> int:
         settings_service=settings_service,
         mode="runtime",
     )
+
+    # Apply the resolved timezone immediately (DB > env > default).
+    set_timezone_config(config.timezone)
 
     # Validate all required model files before proceeding.
     model_checks = [

@@ -34,6 +34,7 @@ from PyQt5.QtWidgets import (
 from attendance_system.core import defaults
 from attendance_system.ui.constants import FONT_BODY
 from attendance_system.ui.styles import FONT_H1
+from attendance_system.utils.time_utils import format_tz_label, set_timezone_config
 
 if TYPE_CHECKING:
     from attendance_system.services.settings_service import SettingsService
@@ -42,12 +43,30 @@ if TYPE_CHECKING:
 _KEY_CAMERA_INDEX = "camera_index"
 _KEY_LIVENESS_THRESHOLD = "liveness_threshold"
 _KEY_SIMILARITY_THRESHOLD = "similarity_threshold"
+_KEY_TIMEZONE = "timezone"
 
 _KEY_FREEZE_SECONDS = "attendance_freeze_seconds"
 _KEY_FREEZE_SOUND_ENABLED = "attendance_freeze_sound_enabled"
 
 # Range of camera indices to probe (0-4 inclusive)
 _CAMERA_SCAN_MAX = 5
+
+# Timezone choices in display order (first is default, UTC is last)
+TIMEZONE_CHOICES: list[str] = [
+    "Asia/Ho_Chi_Minh",
+    "Asia/Bangkok",
+    "Asia/Singapore",
+    "Asia/Tokyo",
+    "Asia/Seoul",
+    "Asia/Shanghai",
+    "Asia/Kolkata",
+    "Australia/Sydney",
+    "Europe/London",
+    "Europe/Paris",
+    "America/New_York",
+    "America/Los_Angeles",
+    "UTC",
+]
 
 
 class _CameraScanThread(QThread):
@@ -112,6 +131,20 @@ class SettingsWidget(QWidget):
 
         root.addWidget(cam_group)
 
+        # --- Display group ---
+        display_group = QGroupBox("Hiển Thị")
+        display_group.setFont(FONT_BODY)
+        display_form = QFormLayout(display_group)
+
+        self._tz_combo = QComboBox()
+        self._tz_combo.setFont(FONT_BODY)
+        self._tz_combo.setEditable(False)
+        for name in TIMEZONE_CHOICES:
+            self._tz_combo.addItem(format_tz_label(name), userData=name)
+        display_form.addRow("Múi giờ:", self._tz_combo)
+
+        root.addWidget(display_group)
+
         # --- AI thresholds group ---
         ai_group = QGroupBox("Ngưỡng AI")
         ai_group.setFont(FONT_BODY)
@@ -173,6 +206,14 @@ class SettingsWidget(QWidget):
     # ------------------------------------------------------------------
 
     def _load_values(self) -> None:
+        tz_raw = self._settings.get(_KEY_TIMEZONE)
+        tz_name = tz_raw if tz_raw else defaults.DEFAULT_TIMEZONE
+        try:
+            idx = TIMEZONE_CHOICES.index(tz_name)
+        except ValueError:
+            idx = 0  # fall back to first choice
+        self._tz_combo.setCurrentIndex(idx)
+
         liveness = self._settings.get(_KEY_LIVENESS_THRESHOLD)
         self._liveness_spin.setValue(
             float(liveness) if liveness else defaults.DEFAULT_LIVENESS_THRESHOLD
@@ -218,6 +259,11 @@ class SettingsWidget(QWidget):
             "true" if self._freeze_sound_check.isChecked() else "false",
             "bool",
         )
+
+        # Timezone — persist & apply immediately
+        tz_iana = self._tz_combo.currentData()
+        self._settings.set(_KEY_TIMEZONE, tz_iana, "str")
+        set_timezone_config(tz_iana)
 
         QMessageBox.information(self, "Cài Đặt", "Đã lưu cài đặt thành công.")
 

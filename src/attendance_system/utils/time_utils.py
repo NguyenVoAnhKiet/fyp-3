@@ -13,7 +13,19 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
+from PyQt5.QtCore import QObject, pyqtSignal
+
 logger = logging.getLogger(__name__)
+
+
+class _TimezoneSignals(QObject):
+    """Module-level signal bus for timezone changes."""
+
+    timezone_changed = pyqtSignal(str)
+
+
+# Module-level singleton — safe to create before QApplication (only widgets need it).
+timezone_signals = _TimezoneSignals()
 
 # Module-level timezone: defaults to UTC, overridden by set_timezone_config()
 _tz = timezone.utc
@@ -34,23 +46,47 @@ def set_timezone_config(tz_name: str | None) -> None:
 
     Falls back to UTC when *tz_name* is empty or invalid.
     Logs a warning when the fallback is used.
+
+    Emits :attr:`_TimezoneSignals.timezone_changed` when the effective
+    timezone differs from the previous value.
     """
     global _tz
+    old_tz = _tz
+
     if not tz_name:
         _tz = timezone.utc
-        return
+    else:
+        ZoneInfo = _load_zoneinfo()
+        if ZoneInfo is None:
+            logger.warning("zoneinfo not available (Python < 3.9), falling back to UTC")
+            _tz = timezone.utc
+        else:
+            try:
+                _tz = ZoneInfo(tz_name)
+            except (KeyError, OSError, TypeError):
+                logger.warning("Unknown timezone '%s', falling back to UTC", tz_name)
+                _tz = timezone.utc
 
-    ZoneInfo = _load_zoneinfo()
-    if ZoneInfo is None:
-        logger.warning("zoneinfo not available (Python < 3.9), falling back to UTC")
-        _tz = timezone.utc
-        return
+    # Emit signal when the resolved timezone changes
+    old_name = str(old_tz.key) if hasattr(old_tz, "key") else "UTC"
+    new_name = str(_tz.key) if hasattr(_tz, "key") else "UTC"
+    if new_name != old_name:
+        timezone_signals.timezone_changed.emit(new_name)
 
-    try:
-        _tz = ZoneInfo(tz_name)
-    except (KeyError, OSError, TypeError):
-        logger.warning("Unknown timezone '%s', falling back to UTC", tz_name)
-        _tz = timezone.utc
+
+# ---------------------------------------------------------------------------
+# Getters
+# ---------------------------------------------------------------------------
+
+
+def get_timezone_name() -> str:
+    """Return the current IANA timezone name (e.g. ``"Asia/Ho_Chi_Minh"``)."""
+    return str(_tz.key) if hasattr(_tz, "key") else "UTC"
+
+
+def get_timezone_config():
+    """Return the current timezone object (a :class:`zoneinfo.ZoneInfo`)."""
+    return _tz
 
 
 # ---------------------------------------------------------------------------
@@ -102,3 +138,25 @@ def local_to_utc(iso_str: str) -> str:
     except (ValueError, TypeError):
         logger.warning("Cannot parse timestamp '%s', returning as-is", iso_str)
         return iso_str
+
+
+def format_tz_label(name: str) -> str:
+    """Format IANA name with UTC offset, e.g. ``Asia/Ho_Chi_Minh (UTC+07:00)``.
+
+    Reuses :func:`_load_zoneinfo` for the lazy import so the function works
+    on Python < 3.9 (returning the raw name as the safe fallback).
+    """
+    ZoneInfo = _load_zoneinfo()
+    if ZoneInfo is None:
+        return name
+    try:
+        offset = ZoneInfo(name).utcoffset(None)
+    except (KeyError, OSError, TypeError):
+        return name
+    if offset is None:
+        return name
+    total_minutes = int(offset.total_seconds() // 60)
+    sign = "+" if total_minutes >= 0 else "-"
+    total_minutes = abs(total_minutes)
+    hours, minutes = divmod(total_minutes, 60)
+    return f"{name} (UTC{sign}{hours:02d}:{minutes:02d})"

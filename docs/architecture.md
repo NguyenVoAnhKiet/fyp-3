@@ -33,18 +33,23 @@ Face attendance system with anti-spoofing — a single-process Python desktop ap
 ## Startup Sequence (`main.py`)
 
 1. **Phase 1: Environment** — `load_dotenv()`, parse CLI args
-2. **Phase 2: Configuration** — Resolve paths (CLI > `.env` > defaults)
+2. **Phase 2: Configuration** — `SettingsResolver` class in `core/config.py` builds a frozen `SystemConfig` from **CLI > env > DB > default**. `set_timezone_config(config.timezone)` applies the resolved timezone to the global `time_utils._tz`.
 3. **Phase 3: Bootstrap** — `initialize_storage()` creates schema + seeds admin
 4. **Phase 4: Validate models** — Check ONNX files exist; graceful fallback for head-pose
 5. **Phase 5: Wire services** — Build `FaceRecognizer`, `LivenessChecker`, `HeadPoseEstimator`, `Database`, all service classes
 6. **Phase 6: Launch UI** — `MainWindow` with `QStackedWidget` routing
+7. **Phase 7: Seed DB from env** — `SettingsResolver.seed_db_from_env()` writes env values into `system_settings` (idempotent: only writes if DB has no value yet; admin UI wins after first run).
 
 ```
 main()
 ├── load_dotenv()
 ├── build_parser().parse_args()
+├── SettingsResolver.resolve() → provisional SystemConfig
 ├── initialize_storage()
 ├── QApplication()
+├── SettingsResolver.seed_db_from_env()
+├── resolve_config() → final SystemConfig (includes DB)
+├── set_timezone_config(config.timezone)
 ├── validate model files
 ├── HeadPoseEstimator (optional, graceful fallback)
 ├── Database, Services, AI components
@@ -110,7 +115,7 @@ UI sub-views inside `AdminDashboardView` content area:
 - `UserManagementWidget` — CRUD dialog, student_id is immutable after creation
 - `EnrollmentWidget` — camera, progress bar, guidance text; auto-saves embedding
 - `AttendanceHistoryWidget` — date/class/subject filters, export CSV/Excel
-- `SettingsWidget` — camera scan thread, liveness/similarity spinboxes
+- `SettingsWidget` — camera scan thread, liveness/similarity spinboxes, timezone QComboBox (13 IANA choices, applies immediately via `set_timezone_config` + `timezone_signals.timezone_changed` signal), attendance-freeze QSpinBox (seconds) + QCheckBox (sound enabled)
 
 ### 5. Utils Layer (`attendance_system/utils/`)
 
@@ -160,15 +165,44 @@ SFace FaceRecognizer
 
 ## Configuration Resolution
 
-Priority: **CLI args > `.env` vars > code defaults**
+The resolution logic lives in `attendance_system/core/config.py` as the `SettingsResolver` class. It builds a frozen `SystemConfig` dataclass using this priority order:
 
-```python
-_resolve_path(cli_value, env_key, default)  # Path
-_resolve_camera_index(cli_value)            # int
-_resolve_enabled(env_key, default)          # bool
-```
+**CLI > env > DB > default**
 
-Thresholds are seeded from `.env` into `system_settings` on first run only — subsequent changes go through the Settings UI.
+Per-type resolvers:
+
+| Resolver | Signature | Priority |
+|----------|-----------|----------|
+| `_resolve_path` | `(cli_value, env_key, default) → Path` | CLI > env > default (DB not consulted for paths) |
+| `_resolve_int` | `(cli_value, env_value, db_value, default) → int` | CLI > env > DB > default |
+| `_resolve_float` | `(cli_value, env_value, db_value, default) → float` | CLI > env > DB > default |
+| `_resolve_bool` | `(cli_value, env_value, db_value, default) → bool` | CLI > env > DB > default |
+| `_resolve_timezone` | `(env_value, db_value, default) → str` | **DB > env > default** (no CLI flag); validated against `zoneinfo.ZoneInfo` |
+
+Key notes:
+
+- **Timezone** has no CLI flag; its order is **DB > env > default** (env from `.env`, DB from admin UI change). Invalid IANA names fall back to the default.
+- `_resolve_timezone` catches only `ZoneInfoNotFoundError` (not bare `Exception`) — narrowed per plan 0008 to expose real bugs.
+- `seed_db_from_env()` performs idempotent one-time seeding: if `system_settings` already has a value for a key, the env var is **not** written (admin UI wins after first run). Seeds: `TIMEZONE`, `FACE_ANTISPOOF_CONFIDENCE_THRESHOLD`, `FACE_SIMILARITY_THRESHOLD`, `ATTENDANCE_FREEZE_SECONDS`, `ATTENDANCE_FREEZE_SOUND_ENABLED`.
+- `SystemConfig` is `@dataclass(slots=True, frozen=True)` and is passed to services and UI as a single injected value.
+
+## Timezone Subsystem
+
+The timezone feature spans multiple files and is tied together by the module-level singleton in `time_utils.py`:
+
+- **Storage**: All DB timestamps are UTC ISO-8601 (`utc_now_iso` from `utils/time_utils.py`).
+- **Display**: Conversion to the configured local timezone is done at the presentation layer (`utc_to_local()`, `local_now_iso()`).
+- **Configuration**: `set_timezone_config(tz_name)` mutates the module-level `_tz`. Called once at startup (from `main.py`) and again at runtime (from `SettingsWidget._save()`).
+- **Cross-widget signal**: `time_utils.timezone_signals.timezone_changed` is a `pyqtSignal(str)` that fires on effective timezone change. `UserModeView` and `AttendanceHistoryWidget` connect to it to re-render their displays immediately.
+- **Admin UX**: 13 curated IANA choices in `TIMEZONE_CHOICES` (Asia, Australia, Europe, America, UTC). `SettingsWidget` renders labels via `format_tz_label()` (e.g. `"Asia/Ho_Chi_Minh (UTC+07:00)"`).
+- **Pre-existing stdlib quirk**: `ZoneInfo(name).utcoffset(None)` returns `None` for fixed-offset zones in Python's stdlib `zoneinfo`, so non-UTC dropdown labels currently render as the raw IANA name. The UTC entry is the only one that shows the offset. This is a pre-existing behavior; not addressed by plan 0008.
+
+## Attendance Freeze UX
+
+After a successful check-in, the camera feed freezes for `attendance_freeze_seconds` (default 4, 0 = disabled) and a green "✓ ĐIỂM DANH THÀNH CÔNG" overlay appears:
+
+- **Optional sound**: `attendance_freeze_sound_enabled` plays a platform-default beep at the start of the freeze.
+- **Persistence**: Both tunables are persisted via `SettingsService` and seeded from `.env` on first run via `SettingsResolver.seed_db_from_env()`.
 
 ## Key Design Decisions
 
@@ -180,3 +214,5 @@ Thresholds are seeded from `.env` into `system_settings` on first run only — s
 | Embedding encryption (Fernet) | Optional, privacy-by-design; lazy import `cryptography` |
 | Multi-pose enrollment bypasses liveness | Pose sequence provides implicit anti-spoofing |
 | Enrollment frame mirrored horizontally | Mirror-like UX for natural head turns |
+| `SystemConfig` is `frozen=True` and threaded through services/UI as a single value | Replaces the legacy "read from DB at every call site" pattern. See plan 0005 (archived 2026-06-05). |
+| `timezone_signals.timezone_changed` decouples timezone-source widgets (Settings UI) from timezone-consumer widgets (User Mode, History) | No direct cross-widget coupling; consumer widgets connect to the signal once and re-render immediately. |

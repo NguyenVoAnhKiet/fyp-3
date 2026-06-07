@@ -26,6 +26,24 @@
 
 **Letterbox Resize** — Resize longest side to target size, pad shorter side to make square. Preserves aspect ratio. `ResizeMode.LETTERBOX` in `FacePreprocessor` (used by liveness). `ResizeMode.DIRECT` does straight `cv2.resize` (used by head-pose, matching its training pipeline).
 
+### Timezone
+
+**Timezone** — An IANA timezone identifier (e.g. `"Asia/Ho_Chi_Minh"`, `"UTC"`) used to convert between UTC (storage) and local time (display). The application stores all DB timestamps in UTC and converts at the presentation layer using the configured timezone.
+
+**`set_timezone_config(tz_name)`** — Function in `src/attendance_system/utils/time_utils.py` that mutates the module-level `_tz` to the named IANA zone. Falls back to UTC on invalid input. Called once at startup (from `main.py`) and again at runtime (from `SettingsWidget._save()`).
+
+**`timezone_signals`** — Module-level singleton of `_TimezoneSignals(QObject)` in `time_utils.py`. Exposes a `pyqtSignal(str) timezone_changed` that fires when the effective timezone changes. Decouples the timezone-source widget (Admin Settings) from the timezone-consumer widgets (User Mode sidebar, Attendance History). Safe to construct before `QApplication` exists.
+
+**`SystemConfig.timezone`** — The resolved IANA name as a `str` field on the frozen `SystemConfig` dataclass (`src/attendance_system/core/config.py`). Populated by `SettingsResolver._resolve_timezone` with order `DB > env > default`. Validated against `zoneinfo.ZoneInfo`; invalid names fall back to the default and the catch is narrowed to `ZoneInfoNotFoundError` to surface real bugs.
+
+**`format_tz_label(name)`** — Helper in `time_utils.py` that formats an IANA name as e.g. `"UTC (UTC+00:00)"`. Used by the Admin Settings timezone dropdown.
+
+**`TIMEZONE_CHOICES`** — The 13 curated IANA choices exposed in the Admin Settings UI: `Asia/Ho_Chi_Minh` (default), `Asia/Bangkok`, `Asia/Singapore`, `Asia/Tokyo`, `Asia/Seoul`, `Asia/Shanghai`, `Asia/Kolkata`, `Australia/Sydney`, `Europe/London`, `Europe/Paris`, `America/New_York`, `America/Los_Angeles`, `UTC`.
+
+**Storage/Display split** — All DB writes use UTC ISO-8601 (`utc_now_iso`); all UI reads convert to local via `utc_to_local`; date-range filters go from local picker → `local_to_utc` → DB query.
+
+**Pre-existing stdlib quirk** — `ZoneInfo(name).utcoffset(None)` returns `None` for fixed-offset zones in Python's stdlib `zoneinfo`, so non-UTC dropdown labels currently render as the raw IANA name. The UTC entry is the only one that shows the offset. This is a pre-existing behavior preserved by the verbatim move in plan 0008; not in scope for fix.
+
 ### Temporal Behavior
 
 **Flicker** — Rapid alternation between real/spoof decisions on consecutive frames. Caused by model output oscillating around the decision threshold.

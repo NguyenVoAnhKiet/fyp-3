@@ -20,13 +20,13 @@
 | File | Role |
 |---|---|
 | `main_window.py` | Root `QMainWindow`. Houses a `QStackedWidget` routing between: `UserModeView` (index 0), `LoginWidget` (index 1), `AdminDashboardView` (index 2). Wires navigation signals; handles global quit (Q key). |
-| `user_mode_view.py` | IDLE/ACTIVE dual-state widget. IDLE: subject + class input form. ACTIVE: camera feed, stats grid, attendance sidebar list, end-session button. Creates and controls `CameraThread`. Emits `login_requested`. |
+| `user_mode_view.py` | IDLE/ACTIVE dual-state widget. IDLE: subject + class input form. ACTIVE: camera feed, stats grid, attendance sidebar list, end-session button. Creates and controls `CameraThread`. Emits `login_requested`. Connects to `timezone_signals.timezone_changed` to re-render the sidebar mid-session. Clears stale camera pixmap and resets placeholder text on session start AND end (single helper `_reset_camera_preview()`). |
 | `login_widget.py` | Admin login card with username/password inputs. Emits `login_requested(username, password)` or `cancel_requested()`. No direct DB access — the parent `MainWindow` authenticates via `AuthenticationService`. |
 | `admin_dashboard_view.py` | Dashboard shell with dark sidebar nav + content `QStackedWidget`. Contains sub-pages: welcome/overview, Settings, User Management, Enrollment, Attendance History. Emits `logout_requested`. |
 | `enrollment_widget.py` | Face enrollment UI. User dropdown, camera feed, 5-step progress circles, pose guidance icon, progress bar. Creates/manages `EnrollmentCameraThread`. Saves face reference via `EnrollmentService`. |
-| `settings_widget.py` | Form for camera index (background-thread scan) and AI thresholds (liveness, similarity). Persists via `SettingsService`. |
+| `settings_widget.py` | Form for camera index (background-thread scan), AI thresholds (liveness, similarity), timezone (`QComboBox` of 13 curated IANA choices, applies immediately via `set_timezone_config` + signal emission), and attendance-freeze UX (freeze-seconds `QSpinBox` + freeze-sound `QCheckBox`). Persists via `SettingsService`. Imports `format_tz_label` from `utils.time_utils`. |
 | `user_management_widget.py` | CRUD table for users (add/edit/delete with soft-delete). Uses `UserRepository` + `FaceReferenceRepository`. Inline search/filter. |
-| `attendance_history_widget.py` | Session browser with date-range, class, subject filters. Split view: session list (left) → attendance records (right). Export to Excel (.xlsx) or CSV via `AttendanceService`. |
+| `attendance_history_widget.py` | Session browser with date-range, class, subject filters. Split view: session list (left) → attendance records (right). Export to Excel (.xlsx) or CSV via `AttendanceService` — uses a plain `QPushButton` + manual `QMenu.exec_()` (no `setStyleSheet` override, no custom triangle; clicking anywhere on the button opens the menu). Connects to `timezone_signals.timezone_changed` to re-run the search on timezone change. |
 | `constants.py` | Re-exports all style constants from `styles.py` for convenience. Also defines `FONT_TITLE`, `FONT_STATUS`. |
 | `styles.py` | Color palette, font helpers (`_make_font`), and `GLOBAL_QSS` (full Qt stylesheet with push buttons, inputs, tables, lists, scrollbars, etc.). |
 
@@ -99,7 +99,8 @@ Key rules:
 | `repositories.face_reference_repository` (`FaceReferenceRepository`) | `UserManagementWidget` (delete face on user delete) |
 | `core.db` (`Database`) | `MainWindow` (status bar DB path), `AdminDashboardView` (dashboard stats queries), `AttendanceHistoryWidget` (direct queries) |
 | `utils.face_utils` (`_crop_face`, `_create_face_detector`) | `CameraThreadBase`, `EnrollmentCameraThread` |
-| `utils.time_utils` (`utc_now_iso`, `utc_to_local`, `local_to_utc`) | `UserModeView`, `AttendanceHistoryWidget` |
+| `utils.time_utils` (`utc_now_iso`, `utc_to_local`, `local_to_utc`, `set_timezone_config`, `format_tz_label`, `timezone_signals`) | `UserModeView`, `AttendanceHistoryWidget`, `SettingsWidget` — `set_timezone_config` called by `SettingsWidget._save()`; `format_tz_label` imported by `SettingsWidget`; `timezone_signals.timezone_changed` connected by `UserModeView.__init__` and `AttendanceHistoryWidget.__init__`. |
+| `core.config` (`SystemConfig`, `SettingsResolver`, `resolve_config`) | `MainWindow` (config building), `UserModeView` (thresholds from frozen config, not DB), `EnrollmentWidget` (camera index fallback) |
 
 ---
 
