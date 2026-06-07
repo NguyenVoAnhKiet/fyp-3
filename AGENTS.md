@@ -6,9 +6,10 @@ Python 3.11+ offline face-attendance desktop app. PyQt5 UI, SQLite/WAL, ONNX Run
 
 1. `pyproject.toml` — deps, entry points, build config
 2. `src/main.py` — app bootstrap (import order matters: onnxruntime before PyQt5)
-3. `src/attendance_system/core/db.py` — SQLite connection (WAL, foreign keys, `check_same_thread=False`)
-4. `src/attendance_system/core/bootstrap.py` — storage initializer (no `load_dotenv()`, uses CLI args)
-5. `.env.example` — all configurable env vars (4 sections: Core, AI, Admin, Attendance UX)
+3. `src/attendance_system/core/config.py` — `SettingsResolver` + frozen `SystemConfig` (CLI > env > DB > default; `seed_db_from_env` is idempotent)
+4. `src/attendance_system/core/db.py` — SQLite connection (WAL, foreign keys, `check_same_thread=False`)
+5. `src/attendance_system/core/bootstrap.py` — storage initializer (no `load_dotenv()`, uses CLI args)
+6. `.env.example` — all configurable env vars (4 sections: Security & Encryption, Database & Hardware, AI Models, Attendance UX)
 6. `codemap.md` + per-module `codemap.md` files — directory map with entrypoints
 7. `docs/README.md` — doc index (architecture, ai-pipeline, database, modules, adr, plans, agents)
 
@@ -24,7 +25,7 @@ attendance-storage-init --database-path <p>   # custom path
 attendance-app                                # launch GUI
 ruff check src/                               # full lint (E501 line-length pre-existing)
 ruff check src/ --select F                    # undefined names only (fast pre-commit check)
-pytest tests/                                 # full suite (237 tests: 185 unit + 52 integration)
+pytest tests/                                 # full suite (280 tests: 250 unit + 30 integration)
 pytest tests/unit/ -v                         # fast unit-only
 pytest tests/integration/ -v                  # DB/storage integration
 PYTHONPATH=src python src/main.py             # dev run without `pip install -e .`
@@ -36,10 +37,10 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 ## Wiring
 
 - **Entry points:** `attendance-app` → `main:main`; `attendance-storage-init` → `attendance_system.core.bootstrap:main`.
-- **Startup order:** `load_dotenv()` → resolve CLI/env config → `initialize_storage()` → validate ONNX models → wire services → launch `MainWindow`.
+- **Startup order:** `load_dotenv()` → `SettingsResolver.resolve()` (builds frozen `SystemConfig`, CLI > env > DB > default) → `set_timezone_config(config.timezone)` → `initialize_storage()` → `SettingsResolver.seed_db_from_env()` (idempotent env→DB seeding) → validate ONNX models → wire services → launch `MainWindow`.
 - **`bootstrap.py`** uses raw CLI args + `DATABASE_PATH` env var, **not** `load_dotenv()`.
 - **`db.py`** connections: WAL journal, `synchronous=NORMAL`, `foreign_keys=ON`, `check_same_thread=False`. Path traversal guard in `DatabaseConfig`.
-- **Config priority:** CLI arg > env var > default. Thresholds seed once from `.env` into DB, then Admin UI controls them.
+- **Config priority:** CLI arg > env var > DB > default (timezone is the exception — DB > env > default, no CLI flag). Resolved by `SettingsResolver` in `core/config.py`. Seed-once env→DB flow: `SettingsResolver.seed_db_from_env()` only writes if the DB key is unset, so Admin UI changes survive.
 
 ## Related agent files
 
@@ -98,3 +99,13 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 - **AIWorkerBase** (`src/attendance_system/ui/camera_worker_base.py`): Base `QThread` for AI inference workers. Provides: `queue.Queue(maxsize=1)` + sentinel shutdown, `submit_task(*args)` (auto-copies numpy arrays), `is_busy()`, `stop()` (drain + sentinel + wait). Concrete `run()` loop with circuit-breaker (`_MAX_CONSECUTIVE_FAILURES = 30`). Calls abstract `_process_frame()`.
 - **Inheritance:** `CameraThread` + `EnrollmentCameraThread` inherit `CameraThreadBase`. `AIWorker` + `EnrollmentAIWorker` inherit `AIWorkerBase`.
 - **Circuit-breaker:** Shared counter in `AIWorkerBase`. ADR-0001: one broken model kills both attendance and enrollment. Override `_inference_error_types()` to specify caught exceptions per subclass.
+
+## Timezone
+
+- **Storage:** all DB timestamps are UTC ISO-8601 (`utc_now_iso` from `utils/time_utils.py`).
+- **Display:** UI converts via `utc_to_local`; date-range filters go from local picker → `local_to_utc` → DB query.
+- **Configuration:** `set_timezone_config(name)` in `utils/time_utils.py` mutates the module-level `_tz` (default UTC, falls back on invalid input). Called once at startup (from `main.py`) and again at runtime (from `SettingsWidget._save()`).
+- **Cross-widget signal:** `time_utils.timezone_signals` is a module-level `_TimezoneSignals(QObject)` singleton exposing `pyqtSignal(str) timezone_changed`. Safe to construct before `QApplication` exists. `UserModeView` and `AttendanceHistoryWidget` connect in `__init__` and re-render on change.
+- **Admin UI:** 13 curated IANA choices in `TIMEZONE_CHOICES` (`Asia/Ho_Chi_Minh` is the default; `UTC` is last). Dropdown labels rendered via `format_tz_label(name)`.
+- **Resolution:** `SettingsResolver._resolve_timezone` in `core/config.py` validates IANA names against `zoneinfo.ZoneInfo`; order is DB > env > default (no CLI flag). Catches only `ZoneInfoNotFoundError` (narrowed from bare `Exception` per plan 0008) to surface real bugs.
+- **Pre-existing stdlib quirk:** `ZoneInfo(name).utcoffset(None)` returns `None` for fixed-offset zones in Python's stdlib `zoneinfo`, so non-UTC dropdown labels currently render as the raw IANA name — `UTC` is the only entry that shows an offset. Tracked outside plan 0008.
