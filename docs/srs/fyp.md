@@ -1,102 +1,4 @@
-  
-
-TRƯỜNG ĐẠI HỌC XÂY DỰNG MIỀN TRUNG
-
-KHOA KỸ THUẬT CÔNG NGHỆ
-
-**BỘ MÔN CÔNG NGHỆ THÔNG TIN**
-
-**HỌ VÀ TÊN SINH VIÊN**
-
-# ĐỒ ÁN TỐT NGHIỆP ĐẠI HỌC
-
-NGÀNH CÔNG NGHỆ THÔNG TIN
-
-HỆ ĐÀO TẠO: ĐẠI HỌC CHÍNH QUY
-
-ĐỀ TÀI:
-
-**TÊN ĐỀ TÀI**
-
-**Đắk Lắk, Năm 202…**
-
-TRƯỜNG ĐẠI HỌC XÂY DỰNG MIỀN TRUNG
-
-KHOA KỸ THUẬT CÔNG NGHỆ
-
-**BỘ MÔN CÔNG NGHỆ THÔNG TIN**
-
-# ĐỒ ÁN TỐT NGHIỆP ĐẠI HỌC
-
-**NGÀNH CÔNG NGHỆ THÔNG TIN**
-
-TÊN ĐỀ TÀI
-
-### Sinh viên thực hiện         :  
-
-### Mã số sinh viên     :  
-
-### Khóa :  2022 - 2026
-
-|   |   |   |
-|---|---|---|
-|\|   \|   \|   \|<br>\|---\|---\|---\|<br>\|**CBPB**<br><br>_(Ký, ghi rõ họ và tên)_\|**CBHD**<br><br>_(Ký, ghi rõ họ và tên)_<br><br>**ThS. Nguyễn Lê Tín**\|<br>\||||
-
-**Đắk Lắk****, Năm 202…**
-
-  
-
-**LỜI CẢM ƠN**
-
-  
-
-**LỜI CAM ĐOAN**
-
-  
-
-  
-
-**MỤC LỤC**
-
-[ĐỒ ÁN TỐT NGHIỆP ĐẠI HỌC.. 1](#_Toc224240593)
-
-[ĐỒ ÁN TỐT NGHIỆP ĐẠI HỌC.. 3](#_Toc224240594)
-
-[Sinh viên thực hiện     : 3](#_Toc224240595)
-
-[Mã số sinh viên     : 3](#_Toc224240596)
-
-[Khóa              :  2022 - 2026. 3](#_Toc224240597)
-
-LỜI NÓI ĐẦU
-
-Giới thiệu về bản thân, về Nhà trường, Công ty thực tập dự án liên quan đến đồ án tốt nghiệp (nếu có), về lý do chọn tên đề tài, Công nghệ, công cụ sử dụng và hướng giải quyết vấn đề, …
-
-  
-
-BẢNG KÝ HIỆU
-
-|   |   |   |
-|---|---|---|
-|**TT**|**KÝ HIỆU**|**DIỄN GIẢI**|
-||||
-||||
-||||
-||||
-
-DANH MỤC CÁC THUẬT NGỮ VIẾT TẮT
-
-**Danh mục các thuật ngữ viết tắt** (nếu có): Liệt kê và giải thích ngắn gọn các thuật ngữ viết tắt theo thứ tự Aphabet (a, b, c, …) với cỡ chữ 13pt, giãn dòng Multiple = 1.3
-
-DANH MỤC HÌNH
-
-**Danh mục hình:** Lập danh mục hình theo thứ tự với định dạng tự động, cỡ chữ 13, giãn dòng đơn (Simple)
-
-DANH MỤC BẢNG BIỂU
-
-**Danh mục bảng biểu** (nếu có): Lập danh mục bảng biểu theo thứ tự với định dạng tự động, cỡ chữ 13, giãn dòng đơn
-
-# Chương 1.      GIỚI THIỆU ĐỀ TÀI
+# Chương 1.      GIỚI THIỆU ĐỀ TÀI
 
 ## 1.1.     Lý do chọn đề tài
 
@@ -126,7 +28,7 @@ Cụ thể, đề tài tập trung vào các mục tiêu sau:
 
 -       Đánh giá hiệu quả hoạt động của hệ thống trong môi trường thực tế. ✅ **Đang tiến hành** — Phase 4 (Threshold Tuning) đang chờ validation data
 
-## 1.3.     Đối tượng và phạm vi nghiên cứu
+## 1.3.     Đối tượng và phạm vi nghiên cứu
 
 **Đối tượng nghiên cứu** của đề tài là các phương pháp và công nghệ nhận diện khuôn mặt, phát hiện giả mạo khuôn mặt và ứng dụng chúng trong bài toán điểm danh tự động.
 
@@ -232,9 +134,9 @@ Cụ thể:
 
 Thông qua việc kết hợp giữa nhận diện khuôn mặt và phát hiện giả mạo, hệ thống hướng tới mục tiêu đảm bảo tính chính xác, hạn chế gian lận điểm danh và nâng cao hiệu quả quản lý trong môi trường giáo dục.
 
-# Chương 2.     CƠ SỞ LÝ THUYẾT
+# Chương 2.     CƠ SỞ LÝ THUYẾT
 
-## 2.1.     Tổng quan về thị giác máy tính (Computer Vision)
+## 2.1.     Tổng quan về thị giác máy tính (Computer Vision)
 
 Thị giác máy tính (Computer Vision) là một lĩnh vực của trí tuệ nhân tạo (Artificial Intelligence – AI) cho phép máy tính thu nhận, xử lý và phân tích thông tin từ hình ảnh hoặc video. Mục tiêu của thị giác máy tính là giúp máy tính có khả năng "nhìn" và hiểu nội dung hình ảnh tương tự như con người.
 
@@ -242,13 +144,13 @@ Trong nhiều năm gần đây, sự phát triển của học sâu (Deep Learni
 
 Trong phạm vi đề tài này, thị giác máy tính được sử dụng để thực hiện các nhiệm vụ chính gồm:
 
--       Phát hiện khuôn mặt trong hình ảnh
+-       Phát hiện khuôn mặt trong hình ảnh
 
--       Trích xuất đặc trưng khuôn mặt
+-       Trích xuất đặc trưng khuôn mặt
 
--       Nhận diện danh tính người dùng
+-       Nhận diện danh tính người dùng
 
--       Phát hiện giả mạo khuôn mặt
+-       Phát hiện giả mạo khuôn mặt
 
 Những kỹ thuật này đóng vai trò quan trọng trong việc xây dựng hệ thống điểm danh tự động dựa trên nhận diện khuôn mặt.
 
@@ -466,24 +368,10 @@ Chương này đã trình bày các cơ sở lý thuyết và công nghệ thự
 
 Những cơ sở lý thuyết và công nghệ này là nền tảng quan trọng để xây dựng và triển khai hệ thống điểm danh bằng nhận diện khuôn mặt được trình bày chi tiết trong các chương tiếp theo của đồ án.
 
-# Chương 3.     PHÂN TÍCH VÀ THIẾT KẾ HỆ THỐNG
+# Chương 3.     PHÂN TÍCH VÀ THIẾT KẾ HỆ THỐNG
 
 Trình bày các mô hình phân tích và thiết kế đồ án
 
-# Chương 4.     XÂY DỰNG VÀ ĐÁNH GIÁ HỆ THỐNG
+# Chương 4.     XÂY DỰNG VÀ ĐÁNH GIÁ HỆ THỐNG
 
 - Trình bày kết quả hệ thống đã xây dựng và đánh giá kết quả đạt được
-
-# Phần III: KẾT LUẬN
-
-·         Tổng kết kết quả đạt được.
-
-·         Ưu điểm và hạn chế.
-
-·         Đề xuất hướng phát triển cho đề tài.
-
-**PHỤ LỤC** (nếu có)
-
-TÀI LIỆU THAM KHẢO
-
-[1]
