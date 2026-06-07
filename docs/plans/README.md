@@ -23,7 +23,8 @@ This folder tracks in-flight and archived feature plans — work-in-progress des
 
 | ID | Title | Status | Branch |
 |----|-------|--------|--------|
-| 0008 | [Address code-review findings for `feat/ui-polish`](active/0008-ui-polish-review-cleanups.md) | Draft | `feat/ui-polish` |
+
+*No active plans at the moment — all in-flight work has been archived.*
 
 ## Archive
 
@@ -38,3 +39,4 @@ Browse `docs/plans/archive/` for completed plans. Date prefix sorts chronologica
 | 0003 | [Extract `CameraWorkerBase`](archive/2026-06-04-0003-camera-worker-base.md) | 2026-06-04 | `refactor/source-code` |
 | 0006 | [Enforce Cache Invalidation](archive/2026-06-06-0006-caching-face-repository.md) — candidate #4 | 2026-06-06 | `refactor/source-code` |
 | 0002 | [Architecture Deepening — Checklist](archive/2026-06-06-0002-architecture-deepening.md) — 4/5 done (#3 still active) | 2026-06-06 | `refactor/source-code` |
+| 0008 | [Address code-review findings for `feat/ui-polish`](archive/2026-06-07-0008-ui-polish-review-cleanups.md) | 2026-06-07 | `feat/ui-polish` |

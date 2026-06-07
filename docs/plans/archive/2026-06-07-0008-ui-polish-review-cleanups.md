@@ -2,7 +2,7 @@
 
 ## Status
 
-**Draft** — design complete; implementation has not yet started. Targets branch `feat/ui-polish` (commit `c36555b`), the same branch that introduced the 3 UX changes under review.
+**Done** — implemented 2026-06-07 on branch `feat/ui-polish` (4 commits: `c36555b` feature, `fd2f5c5` review-fixup, `32d66f4` docs context, `311ad0f` AGENTS.md sync). All 4 critical issues fixed; `@oracle` review returned LGTM; 280 tests pass (250 unit + 30 integration); `ruff check src/ --select F` clean. Branch is merge-ready. Moved to [`archive/2026-06-07-0008-ui-polish-review-cleanups.md`](2026-06-07-0008-ui-polish-review-cleanups.md) on completion.
 
 ## Context
 
