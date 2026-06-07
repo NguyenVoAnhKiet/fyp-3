@@ -8,6 +8,7 @@ src/
 └── attendance_system/
     ├── __init__.py
     ├── core/
+    │   ├── config.py                   # SettingsResolver + SystemConfig (CLI > env > DB > default)
     │   ├── db.py                        # Database + DatabaseConfig + session()
     │   ├── schema.py                    # DDL + migration helpers
     │   ├── bootstrap.py                 # CLI entry point for DB init
@@ -45,7 +46,7 @@ src/
     │   └── user_mode_view.py            # Attendance session UI
     └── utils/
         ├── face_utils.py                # _crop_face(), _create_face_detector()
-        └── time_utils.py                # utc_now_iso()
+        └── time_utils.py                # set_timezone_config, get_timezone_name, utc_to_local, local_to_utc, format_tz_label, timezone_signals
 ```
 
 ## Entry Points
@@ -72,12 +73,9 @@ The application entry point. Accepts optional `argv` list for testability (never
 | `--camera-index` | `CAMERA_INDEX` | `0` | Camera device index |
 
 **Key functions:**
-- `_resolve_path()` — CLI > env > default resolution for paths
-- `_resolve_camera_index()` — Handles empty-string edge case
-- `_resolve_enabled()` — Parses boolean env vars
-- `_validate_model()` — Returns error string if model file missing
-- `_seed_threshold()` — One-time seed from env to DB
-- `main(argv=None)` — Full application lifecycle
+- `main(argv=None)` — Full application lifecycle: parses CLI args, builds a `SystemConfig` via `resolve_config(...)`, applies timezone via `set_timezone_config(config.timezone)`, validates model files, initializes storage, wires services, and launches `MainWindow`.
+- Note: The per-type resolvers (`_resolve_path`, `_resolve_int`, `_resolve_float`, `_resolve_bool`, `_resolve_timezone`) live in `attendance_system.core.config.SettingsResolver`, not in `main.py`.
+- First-run seeding from env is done by `SettingsResolver.seed_db_from_env()` (not `_seed_threshold`).
 
 ### `src/attendance_system/core/`
 
@@ -92,6 +90,14 @@ The application entry point. Accepts optional `argv` list for testability (never
 #### `bootstrap.py`
 - Standalone CLI entry point (`attendance-storage-init`)
 - Does NOT call `load_dotenv()` — reads `DATABASE_PATH` from env directly if not passed as CLI arg
+
+#### `config.py`
+- `SystemConfig` — frozen dataclass (`slots=True, frozen=True`) with all resolved tunables: paths, camera index, feature flags, AI thresholds, timezone, attendance-freeze UX. Single source of truth passed to services and UI.
+- `SettingsResolver` — class that performs `CLI > env > DB > default` resolution. Two modes: `"runtime"` (default, used by `main.py`) and `"init"` (used by `bootstrap.py`).
+  - `resolve(cli, env, db_reader)` → `SystemConfig`
+  - `seed_db_from_env(settings, env)` — idempotent one-time env→DB seeding
+  - Per-type resolvers: `_resolve_path`, `_resolve_int`, `_resolve_float`, `_resolve_bool`, `_resolve_timezone` (validates against `zoneinfo.ZoneInfo`, catches `ZoneInfoNotFoundError`)
+- `resolve_config(cli_args, env, settings_service, mode)` — convenience factory wiring `SettingsService.get` as the DB reader.
 
 #### `storage_manager.py`
 - `StorageManager.initialize()` — schema + seed admin
@@ -208,6 +214,8 @@ ONNXInferenceError(message, input_shape=None, model_path=None)
 - Two-panel: IDLE (subject/class input) → ACTIVE (camera + sidebar)
 - Keyboard shortcuts: `S` start, `E` end, `Ctrl+L` admin login
 - Reads thresholds from `system_settings` at session start
+- Connects to `timezone_signals.timezone_changed` to re-render the attendance sidebar mid-session
+- Clears the camera preview pixmap + resets placeholder text on both session start and session end (extracted to `_reset_camera_preview()` helper)
 
 #### `admin_dashboard_view.py`
 - Sidebar navigation with emoji icons
@@ -223,7 +231,10 @@ ONNXInferenceError(message, input_shape=None, model_path=None)
 
 #### `settings_widget.py`
 - Camera scanner (`_CameraScanThread` — probes indices 0–4 in background)
-- Liveness threshold + similarity threshold spinboxes
+- AI thresholds: liveness + similarity spinboxes
+- Display: timezone `QComboBox` (13 curated IANA choices; on save applies immediately via `set_timezone_config` + `timezone_signals.timezone_changed` signal)
+- Attendance Freeze: `QSpinBox` (seconds, 0=disabled) + `QCheckBox` (sound enabled)
+- Imports `format_tz_label` from `utils.time_utils`
 
 #### `user_management_widget.py`
 - QTableWidget with Add/Edit/Delete buttons
@@ -234,6 +245,8 @@ ONNXInferenceError(message, input_shape=None, model_path=None)
 - Split pane: session list (left) + records (right)
 - Date range, class, subject filters
 - Export to CSV/Excel per session
+- Connects to `timezone_signals.timezone_changed` to re-run the search when the user switches timezone
+- Export button uses a plain `QPushButton` + manual `QMenu.exec_()` (no `setStyleSheet` override, no custom triangle — click anywhere on the button opens the menu)
 
 ### `src/attendance_system/utils/`
 
@@ -242,14 +255,23 @@ ONNXInferenceError(message, input_shape=None, model_path=None)
 - `_create_face_detector(model_path, input_size, score_threshold, nms_threshold)` — Creates YuNet `cv2.FaceDetectorYN`
 
 #### `time_utils.py`
+- `set_timezone_config(tz_name)` — Configure the local timezone. Falls back to UTC on invalid input. Emits `timezone_signals.timezone_changed` iff the effective timezone differs.
+- `get_timezone_name()` → IANA name string
+- `get_timezone_config()` → `zoneinfo.ZoneInfo` object
+- `format_tz_label(name)` → IANA name with UTC offset (e.g. `"UTC (UTC+00:00)"`)
 - `utc_now_iso()` → ISO 8601 UTC timestamp string
+- `local_now_iso()` → ISO 8601 in configured local timezone
+- `utc_to_local(iso_str)` / `local_to_utc(iso_str)` — display/storage conversions
+- `timezone_signals` — module-level `QObject` singleton exposing `pyqtSignal(str) timezone_changed` for cross-widget timezone-change notifications
+- `_TimezoneSignals` — private `QObject` class (module-internal) — wrapped by `timezone_signals`
+- `_load_zoneinfo()` — lazy loader for `zoneinfo.ZoneInfo` (module-internal; safe-import on Python < 3.9)
 
 ## Test Structure
 
 ```
 tests/
 ├── conftest.py       # database fixture (tmp_path SQLite, full schema)
-├── unit/             # 9 files — fast, no camera/GUI
+├── unit/             # 10 files — fast, no camera/GUI
 │   ├── test_ai_pipeline.py
 │   ├── test_attendance_history_service.py
 │   ├── test_attendance_service.py
@@ -258,7 +280,8 @@ tests/
 │   ├── test_head_pose.py
 │   ├── test_recognition_event_repository.py
 │   ├── test_storage_repositories.py
-│   └── test_time_utils.py
+│   ├── test_time_utils.py          # set_timezone_config, signal emission, conversions, invalid-input fallbacks
+│   └── test_user_mode_freeze.py    # Freeze delay + camera preview reset (exercised indirectly)
 ├── integration/      # 9 files — DB, storage, offline behavior
 │   ├── test_attendance_audit.py
 │   ├── test_attendance_history.py
