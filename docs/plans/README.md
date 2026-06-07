@@ -16,6 +16,7 @@ This folder tracks in-flight and archived feature plans — work-in-progress des
   - `## Goals` — Concrete success criteria.
   - `## Non-Goals` — Explicit out-of-scope items (anti-scope-creep).
   - `## Design Decisions` — Table of decision points, options considered, and final answers (capture the "why").
+  - `## Tasks` — Break the plan into concrete tasks, assign each task to the best-fit sub-agent, and capture dependencies/status when relevant.
   - `## Implementation` — File change list with brief description per change.
   - `## Testing` — Unit tests to add + manual smoke checklist.
 
