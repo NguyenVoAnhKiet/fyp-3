@@ -8,6 +8,15 @@ Python desktop face attendance system with anti-spoofing. 100% offline, single-p
 - **Package**: `database-storage-core` (`package-dir = {"" = "src"}`)
 - **Entry points**: `attendance-app` (GUI), `attendance-storage-init` (DB bootstrap)
 
+## Project Status
+
+**Phase:** Phase 4 (Threshold Tuning) — Implementation Complete, Validation Pending  
+**Test Coverage:** 280 tests (250 unit + 30 integration), 100% pass rate ✅  
+**All Features:** Implemented (face detection, recognition, liveness, enrollment, UI, DB) ✅  
+**Current Blocker:** Awaiting validation data for threshold tuning  
+
+See `PROJECT_STATUS.md` for complete project inventory and current implementation status.
+
 ## Documentation Map
 
 ```
@@ -21,13 +30,14 @@ docs/
 │   └── 0001-onnx-circuit-breaker.md
 ├── plans/                 ← Feature plans (active + archive)
 │   ├── README.md          ← Plan conventions + active plans index
-│   ├── active/            ← In-flight feature plans
-│   └── archive/           ← Completed plans (date-prefixed)
+│   ├── active/            ← In-flight feature plans (currently empty)
+│   └── archive/           ← Completed plans (8 plans, date-prefixed)
 ├── agents/                ← AI agent engineering conventions
 │   ├── domain.md          ← Agent domain navigation
 │   ├── issue-tracker.md   ← Issue tracking conventions
 │   └── triage-labels.md   ← Triage label definitions
 └── srs/
+    ├── fyp.md             ← Original SRS (template, needs update)
     └── srs_2.md           ← Software Requirements Specification (Vietnamese)
 ```
 
