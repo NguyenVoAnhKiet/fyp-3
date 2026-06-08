@@ -109,3 +109,14 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 - **Admin UI:** 13 curated IANA choices in `TIMEZONE_CHOICES` (`Asia/Ho_Chi_Minh` is the default; `UTC` is last). Dropdown labels rendered via `format_tz_label(name)`.
 - **Resolution:** `SettingsResolver._resolve_timezone` in `core/config.py` validates IANA names against `zoneinfo.ZoneInfo`; order is DB > env > default (no CLI flag). Catches only `ZoneInfoNotFoundError` (narrowed from bare `Exception` per plan 0008) to surface real bugs.
 - **Pre-existing stdlib quirk:** `ZoneInfo(name).utcoffset(None)` returns `None` for fixed-offset zones in Python's stdlib `zoneinfo`, so non-UTC dropdown labels currently render as the raw IANA name — `UTC` is the only entry that shows an offset. Tracked outside plan 0008.
+
+## Repository Map
+
+A full codemap is available at `codemap.md` in the project root.
+
+Before working on any task, read `codemap.md` to understand:
+- Project architecture and entry points
+- Directory responsibilities and design patterns
+- Data flow and integration points between modules
+
+For deep work on a specific folder, also read that folder's `codemap.md`.

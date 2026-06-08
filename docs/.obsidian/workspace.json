@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "srs/fyp.md",
+                "file": "srs/chuong_1.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "fyp"
+              "title": "chuong_1"
             }
           }
         ]
@@ -156,13 +156,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "srs/fyp.md",
+                "file": "srs/chuong_1.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of fyp"
+              "title": "Outline of chuong_1"
             }
           }
         ],
@@ -183,6 +183,13 @@
       "bases:Create new base": false
     }
   },
-  "active": "1a64747536a93aff",
-  "lastOpenFiles": []
+  "active": "ce36ab3423cb64e5",
+  "lastOpenFiles": [
+    "srs/fyp.md",
+    "srs/index.md",
+    "srs/chuong_4.md",
+    "srs/chuong_3.md",
+    "srs/chuong_2.md",
+    "srs/chuong_1.md"
+  ]
 }

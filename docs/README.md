@@ -37,7 +37,11 @@ docs/
 │   ├── issue-tracker.md   ← Issue tracking conventions
 │   └── triage-labels.md   ← Triage label definitions
 └── srs/
-    ├── fyp.md             ← Original SRS (template, needs update)
+    ├── index.md           ← SRS Table of Contents & overview
+    ├── chuong_1.md        ← Chapter 1: Introduction
+    ├── chuong_2.md        ← Chapter 2: Theory
+    ├── chuong_3.md        ← Chapter 3: System Design
+    ├── chuong_4.md        ← Chapter 4: Construction & Evaluation
     └── srs_2.md           ← Software Requirements Specification (Vietnamese)
 ```
 
