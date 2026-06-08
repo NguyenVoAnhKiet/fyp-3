@@ -48,9 +48,8 @@ htmlcov/
 *-wal
 *-shm
 
-# Obsidian plugin binaries (tracked via manifest only)
-docs/.obsidian/plugins/*/main.js
-docs/.obsidian/plugins/*/styles.css
+# Obsidian workspace (local editor config — not part of the project)
+docs/.obsidian/
 
 # Copilot conversation history (transient)
 docs/copilot/copilot-conversations/
