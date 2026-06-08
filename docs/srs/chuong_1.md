@@ -20,7 +20,7 @@ Cụ thể, đề tài hướng tới các mục tiêu thành phần sau:
 1. **Nghiên cứu lý thuyết:** Tìm hiểu sâu về các phương pháp phát hiện khuôn mặt, trích xuất đặc trưng sinh trắc học và các mô hình phát hiện giả mạo khuôn mặt dựa trên mạng nơ-ron tích chập (CNN).
 2. **Xây dựng đường ống xử lý (AI Pipeline):** Thiết kế luồng xử lý khép kín từ khâu nhận luồng video đầu vào, phát hiện khuôn mặt thời gian thực, lọc giả mạo và định danh sinh viên dựa trên cơ sở dữ liệu có sẵn.
 3. **Phát triển ứng dụng hoàn chỉnh:** Xây dựng phần mềm desktop sử dụng ngôn ngữ Python, framework giao diện PyQt5, hệ quản trị cơ sở dữ liệu SQLite và tích hợp các mô hình AI định dạng ONNX chạy trực tiếp trên CPU.
-4. **Đánh giá hiệu năng:** Thử nghiệm độ chính xác của hệ thống chống giả mạo, tốc độ nhận diện và độ ổn định của hệ thống trong môi trường lớp học thực tế.
+4. **Đánh giá hiệu năng:** Đánh giá định lượng hiệu năng của hệ thống bao gồm tốc độ suy luận (độ trễ xử lý) và độ chính xác của hệ thống thông qua các chỉ số sinh trắc học chuẩn hóa: tỷ lệ chấp nhận/từ chối sai (FAR, FRR) cho phần nhận diện và tỷ lệ lỗi phân loại giả mạo (APCER, BPCER, ACER) cho phần chống giả mạo, kiểm thử thực tế độ ổn định trong môi trường lớp học.
 
 ## 1.3. Đối tượng và phạm vi nghiên cứu
 
@@ -50,46 +50,39 @@ Trong những năm gần đây, bài toán nhận dạng khuôn mặt đã đạ
 
 Đối với bài toán phát hiện giả mạo khuôn mặt (Face Anti-Spoofing), các nghiên cứu ban đầu thường dựa trên chuyển động chủ động (Active Liveness) như yêu cầu người dùng nháy mắt, nghiêng đầu hoặc đọc chữ. Phương pháp này làm chậm trải nghiệm của người dùng. Xu hướng hiện đại chuyển sang phát hiện giả mạo thụ động (Passive Liveness) sử dụng mạng CNN phân tích các chi tiết kết cấu siêu nhỏ (micro-texture) như vân ảnh in, phản xạ ánh sáng màn hình và độ sâu 3D của khuôn mặt thật so với cấu trúc phẳng của ảnh/video giả mạo. Các mô hình như **MiniFASNet** ra đời giúp thực hiện tác vụ này với độ trễ cực thấp (dưới 50ms) trên các cấu hình máy tính văn phòng thông thường.
 
-## 1.6. Đặc tả bài toán
+## 1.6. Mô tả bài toán và Luồng hoạt động tổng quan
 
-Bài toán của đề tài được định nghĩa chính thức bằng ngôn ngữ toán học như sau:
+Để người đọc dễ dàng tiếp cận dự án một cách nhanh chóng nhất, phần này sẽ mô tả bài toán và luồng hoạt động cốt lõi của hệ thống bằng ngôn ngữ tự nhiên, lược bỏ các công thức toán học và chi tiết kỹ thuật phức tạp (các chi tiết này sẽ được trình bày sâu hơn ở Chương 2 và Chương 3).
 
-Gọi $U = \{u_1, u_2, ..., u_N\}$ là tập hợp gồm $N$ sinh viên đã đăng ký thông tin trong hệ thống. Với mỗi sinh viên $u_i$, hệ thống lưu trữ một tập hợp các vector đặc trưng khuôn mặt mẫu đã đăng ký:
-$$E_i = \{e_{i, 1}, e_{i, 2}, ..., e_{i, k}\} \subset \mathbb{R}^{128}$$
-trong đó $e_{i, j}$ là vector đặc trưng 128 chiều biểu diễn khuôn mặt mẫu thứ $j$ của sinh viên $u_i$.
+Về cơ bản, hệ thống điểm danh tự động hoạt động dựa trên các thông tin đầu vào và đầu ra như sau:
+*   **Đầu vào (Input):** Luồng hình ảnh/video trực tiếp thu nhận từ camera giám sát trong môi trường lớp học (sử dụng các thiết bị ghi hình thông thường như RGB Webcam).
+*   **Đầu ra (Output):** 
+    *   Trạng thái điểm danh thành công của từng sinh viên được tự động ghi nhận vào cơ sở dữ liệu.
+    *   Phản hồi trực quan trên giao diện màn hình cho người quản lý (bao gồm Tên, Mã số sinh viên, Ảnh đại diện và Trạng thái xác thực).
+    *   Cảnh báo tức thời nếu phát hiện hành vi gian lận (giả mạo khuôn mặt).
 
-Gọi $I$ là khung hình ảnh đầu vào định dạng BGR thu nhận từ camera tại thời điểm $t$. Luồng xử lý của hệ thống được mô tả qua các hàm ánh xạ toán học sau:
+Hệ thống được thiết kế với hai luồng hoạt động độc lập nhưng bổ trợ chặt chẽ cho nhau:
 
-### Bước 1: Phát hiện khuôn mặt (Face Detection)
-Mô hình phát hiện khuôn mặt YuNet (ký hiệu là hàm $D$) nhận đầu vào là ảnh $I$ và trả về danh sách các khuôn mặt được phát hiện:
-$$D(I) = \{ (B_m, L_m) \}_{m=1}^{M}$$
-*   Trong đó $M$ là số khuôn mặt phát hiện được trong khung hình.
-*   $B_m = (x_m, y_m, w_m, h_m) \in \mathbb{Z}^4$ là hộp giới hạn (Bounding Box) xác định tọa độ và kích thước khuôn mặt thứ $m$.
-*   $L_m = \{(x_{m,p}, y_{m,p})\}_{p=1}^{5}$ là tập hợp tọa độ của 5 điểm mốc đặc trưng (mắt trái, mắt phải, mũi, khóe miệng trái, khóe miệng phải) phục vụ căn chỉnh ảnh.
+### 1.6.1. Luồng Đăng ký thông tin (Enrollment Pipeline)
 
-### Bước 2: Kiểm tra chống giả mạo (Liveness Detection)
-Với khuôn mặt chính diện lớn nhất phát hiện được, mô hình MiniFASNet (ký hiệu là hàm $F$) nhận ảnh cắt khuôn mặt $I_{crop}$ và trả về vector logit hai chiều đại diện cho độ tin cậy của thực thể sống:
-$$F(I_{crop}) = [z_0, z_1] \in \mathbb{R}^2$$
-*   Trong đó $z_0$ là điểm số (logit) của lớp khuôn mặt thật (Real Class).
-*   $z_1$ là điểm số (logit) của lớp khuôn mặt giả mạo (Spoof Class).
+Trước khi hệ thống có thể tiến hành nhận diện điểm danh, dữ liệu sinh học khuôn mặt của sinh viên cần phải được đăng ký trước vào cơ sở dữ liệu mẫu. Quy trình đăng ký được thực hiện qua các bước:
 
-Hiệu số logit đại diện cho độ lệch tin cậy được tính bằng công thức:
-$$logit\_diff = z_0 - z_1$$
-Với ngưỡng xác suất an toàn $p \in (0, 1)$ do quản trị viên thiết lập, hệ thống xác định ngưỡng logit biên:
-$$logit\_threshold = \ln\left(\frac{p}{1-p}\right)$$
-Trạng thái liveness tức thời của khuôn mặt tại khung hình được phân loại là:
-$$\text{Liveness}(I_{crop}) = \begin{cases} \text{REAL} & \text{nếu } logit\_diff > logit\_threshold \\ \text{SPOOF} & \text{ngược lại} \end{cases}$$
+1.  **Phát hiện khuôn mặt:** Camera thu nhận hình ảnh sinh viên, hệ thống tự động xác định vị trí và tìm ra các điểm mốc chính trên khuôn mặt (mắt, mũi, miệng).
+2.  **Thử thách đổi tư thế (Multi-pose Challenge):** Phần mềm sẽ hướng dẫn sinh viên thực hiện lần lượt 5 tư thế xoay đầu nhẹ: nhìn thẳng (chính diện), quay trái, quay phải, ngửa đầu lên và cúi đầu xuống.
+3.  **Trích xuất và lưu trữ mẫu (Face Embedding):** Khi sinh viên thực hiện đúng góc độ yêu cầu ở mỗi tư thế, hệ thống sẽ tự động chụp lại và chuyển đổi hình ảnh khuôn mặt thành một dãy số đặc trưng (gọi là vector đặc trưng hay "chữ ký số" sinh trắc học của khuôn mặt). Cả 5 chữ ký số ứng với 5 tư thế này sẽ được lưu trữ trực tiếp vào cơ sở dữ liệu.
 
-### Bước 3: Nhận dạng danh tính (Face Identification)
-Nếu trạng thái liveness (sau khi làm mịn theo thời gian) được xác nhận là $\text{REAL}$, hệ thống tiến hành cắt và căn chỉnh khuôn mặt dựa trên các điểm mốc $L_m$ để tạo ra ảnh căn chỉnh $I_{aligned}$. 
+> **Giải pháp chống giả mạo chủ động:** Việc bắt buộc sinh viên phải xoay đầu theo nhiều hướng khác nhau trong quá trình đăng ký là một giải pháp bảo vệ chủ động. Một bức ảnh in tĩnh hay màn hình điện thoại phẳng sẽ không bao giờ hoàn thành được chuỗi tư thế động này, giúp ngăn ngừa triệt để tình trạng đăng ký thông tin giả mạo ngay từ đầu.
 
-Mô hình SFace (ký hiệu là hàm $G$) tiến hành ánh xạ ảnh $I_{aligned}$ thành một vector đặc trưng sinh trắc học mới:
-$$e_{live} = G(I_{aligned}) \in \mathbb{R}^{128}$$
-với điều kiện vector đã được chuẩn hóa $\|e_{live}\|_2 = 1$.
+### 1.6.2. Luồng Điểm danh tự động (Attendance Pipeline)
 
-Hệ thống so khớp vector đặc trưng $e_{live}$ với toàn bộ các vector mẫu lưu trữ trong cơ sở dữ liệu để tìm ra độ tương đồng lớn nhất:
-$$Sim(e_{live}, E) = \max_{u_i \in U, e_{i,j} \in E_i} \text{CosineSimilarity}(e_{live}, e_{i,j})$$
+Trong các buổi học, hệ thống sẽ liên tục phân tích luồng video từ camera để điểm danh tự động cho sinh viên. Mỗi khuôn mặt xuất hiện trước camera sẽ được xử lý qua 3 bước:
 
-Kết quả định danh cuối cùng của hệ thống được xác định bởi:
-$$\text{Identity}(e_{live}) = \begin{cases} u_i & \text{nếu } Sim(e_{live}, E) \ge \theta_{sim} \\ \text{unknown} & \text{ngược lại} \end{cases}$$
-*   Trong đó $\theta_{sim}$ là ngưỡng tương đồng tối thiểu được cấu hình trước (ví dụ: $0.6$). Nếu độ tương đồng cao nhất vượt qua ngưỡng này, hệ thống tự động ghi nhận điểm danh thành công cho sinh viên $u_i$. Ngược lại, hệ thống trả về kết quả chưa nhận diện được (`unknown`).
+1.  **Định vị khuôn mặt:** Xác định xem có khuôn mặt nào đang xuất hiện trong tầm quét của camera hay không.
+2.  **Kiểm tra chống giả mạo (Liveness Detection):** Đây là chốt chặn quan trọng nhất của hệ thống. Phần mềm phân tích kết cấu da, phản xạ ánh sáng và độ sâu 3D trên khuôn mặt để phân biệt giữa người thật đang đứng trước camera (Real) với các hình thức giả mạo như ảnh in hoặc video phát lại trên điện thoại (Spoof).
+    *   *Làm mịn tín hiệu thời gian thực:* Để tránh tình trạng hệ thống đưa ra quyết định sai lệch khi camera bị rung hoặc ánh sáng phòng học thay đổi đột ngột, điểm số chống giả mạo được tính trung bình mịn qua nhiều khung hình liên tiếp. Chỉ khi hệ thống xác nhận chắc chắn khuôn mặt đó là của người thật (REAL), quá trình nhận dạng mới được phép tiếp tục.
+3.  **Nhận dạng danh tính (Face Identification):** Hệ thống tiến hành trích xuất "chữ ký số" của khuôn mặt thật hiện tại, sau đó so khớp nó với toàn bộ cơ sở dữ liệu chữ ký số của các sinh viên đã đăng ký trước đó.
+    *   Nếu tìm thấy một sinh viên có chữ ký khớp nhất và độ tương đồng vượt qua ngưỡng an toàn quy định, hệ thống sẽ kết luận sinh viên đó là ai, tự động ghi nhận điểm danh thành công và hiển thị thông tin lên màn hình.
+    *   Nếu không tìm thấy ai trùng khớp (độ tương đồng dưới ngưỡng an toàn), hệ thống sẽ trả về kết quả là khuôn mặt không xác định (Unknown).
+
+---
+*Lưu ý: Toàn bộ mô tả chi tiết về các thuật toán phát hiện khuôn mặt (YuNet), lọc thực thể sống (MiniFASNet), nhận dạng đặc trưng (SFace) cùng với các công thức chứng minh toán học và phép so khớp hình học sẽ được trình bày đầy đủ tại Chương 2 (Cơ sở lý thuyết).*
