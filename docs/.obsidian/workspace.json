@@ -89,12 +89,39 @@
         "type": "tabs",
         "children": [
           {
+            "id": "fa3cf5ea0f7c7b66",
+            "type": "leaf",
+            "pinned": true,
+            "state": {
+              "type": "copilot-chat-view",
+              "state": {},
+              "pinned": true,
+              "icon": "message-square",
+              "title": "Copilot"
+            }
+          },
+          {
+            "id": "1a64747536a93aff",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "srs/chuong_1.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of chuong_1"
+            }
+          },
+          {
             "id": "bb782f828b7562f5",
             "type": "leaf",
             "state": {
               "type": "backlink",
               "state": {
-                "file": "srs/fyp.md",
+                "file": "srs/chuong_1.md",
                 "collapseAll": true,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +131,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for fyp"
+              "title": "Backlinks for chuong_1"
             }
           },
           {
@@ -149,24 +176,8 @@
               "icon": "lucide-archive",
               "title": "All properties"
             }
-          },
-          {
-            "id": "1a64747536a93aff",
-            "type": "leaf",
-            "state": {
-              "type": "outline",
-              "state": {
-                "file": "srs/chuong_1.md",
-                "followCursor": false,
-                "showSearch": false,
-                "searchQuery": ""
-              },
-              "icon": "lucide-list",
-              "title": "Outline of chuong_1"
-            }
           }
-        ],
-        "currentTab": 4
+        ]
       }
     ],
     "direction": "horizontal",
@@ -180,11 +191,31 @@
       "daily-notes:Open today's daily note": false,
       "templates:Insert template": false,
       "command-palette:Open command palette": false,
-      "bases:Create new base": false
+      "bases:Create new base": false,
+      "copilot:Open Copilot Chat": false
     }
   },
-  "active": "ce36ab3423cb64e5",
+  "active": "fa3cf5ea0f7c7b66",
   "lastOpenFiles": [
+    "copilot/copilot-conversations/Cải_thiện_giải_thích_toán_học@20260608_232302.md",
+    "copilot/copilot-conversations",
+    "copilot/copilot-custom-prompts/Clip Web Page.md",
+    "copilot/copilot-custom-prompts/Clip YouTube Transcript.md",
+    "copilot/copilot-custom-prompts/Rewrite as tweet thread.md",
+    "copilot/copilot-custom-prompts/Rewrite as tweet.md",
+    "copilot/copilot-custom-prompts/Remove URLs.md",
+    "copilot/copilot-custom-prompts/Generate glossary.md",
+    "copilot/copilot-custom-prompts/Generate table of contents.md",
+    "copilot/copilot-custom-prompts/Make longer.md",
+    "copilot/copilot-custom-prompts/Make shorter.md",
+    "copilot/copilot-custom-prompts/Emojify.md",
+    "copilot/copilot-custom-prompts/Explain like I am 5.md",
+    "copilot/copilot-custom-prompts/Simplify.md",
+    "copilot/copilot-custom-prompts/Summarize.md",
+    "copilot/copilot-custom-prompts/Translate to Chinese.md",
+    "copilot/copilot-custom-prompts/Fix grammar and spelling.md",
+    "copilot/copilot-custom-prompts",
+    "copilot",
     "srs/fyp.md",
     "srs/index.md",
     "srs/chuong_4.md",
