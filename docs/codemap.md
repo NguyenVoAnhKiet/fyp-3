@@ -19,5 +19,6 @@ The following files were intentionally removed to eliminate redundancy:
 | `adr/` | Architecture Decision Records |
 | `agents/` | AI agent engineering conventions (domain, issues, triage) |
 | `plans/` | Feature plans — active (staging) + archive (completed) |
+| `project-report/` | Project report drafting, outlines, and content |
 
 For details, read each directory's `codemap.md`.
