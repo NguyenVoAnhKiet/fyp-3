@@ -32,9 +32,9 @@ then enters the Qt event loop.
 | `.env.example` | Template for `.env`. Organised into 4 sections: **Security & Encryption** (Fernet key, admin credentials), **Database & Hardware** (DB path, camera index), **AI Models** (paths to YuNet, SFace, MiniFASNet, MobileNetV2 ONNX models + thresholds), **Attendance UX** (cooldown, frame-skip, timezone). |
 | `AGENTS.md` | Primary orientation file for LLM agents. Contains: read-first file list, CLI commands, startup wiring details, per-module gotchas (threading, ONNX/PyQt5 import order, cooldowns, frame-skip constants, NULL-sort rules), and test layout. |
 | `CLAUDE.md` | Behavioral guidelines for LLM agents: think-before-coding, simplicity-first, surgical changes, goal-driven execution. |
-| `CONTEXT.md` | Domain context and glossary for the project. Referenced by `docs/agents/domain.md`. |
 | `PROJECT_STATUS.md` | Current project status, known issues, and roadmap. |
-| `UPDATE_SUMMARY.md` | Changelog / summary of recent updates. |
+| *(deleted)* `CONTEXT.md` | Domain glossary — removed; content historically covered by `PROJECT_STATUS.md`. |
+| *(deleted)* `UPDATE_SUMMARY.md` | One-time changelog — removed. |
 | `README.md` | *(Does not exist yet — the `docs/README.md` serves as the documentation index.)* |
 
 ---
