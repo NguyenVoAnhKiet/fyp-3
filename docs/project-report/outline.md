@@ -16,9 +16,19 @@
   - 1.6.1. Bài toán: Xây dựng hệ thống nhận diện nhanh, chống gian lận liveness trên phần cứng máy tính thông thường.
   - 1.6.2. Hướng giải quyết: Dùng PyQt5 quản lý giao diện & đa luồng, SQLite/WAL cho CSDL, ONNX xử lý AI (MiniFASNet V2 SE).
 
-# Chương 2.     CƠ SỞ LÝ THUYẾT
+# Chương 2. CƠ SỞ LÝ THUYẾT
 
-Trình bày các cơ sở lý thuyết, các công cụ sẽ sử dụng trong Đồ án;
+- **2.1. Tổng quan về bài toán nhận diện khuôn mặt**
+	  - 2.1.1. Bài toán phát hiện khuôn mặt (Face Detection): Khái niệm chung, mô hình YuNet siêu nhẹ và ưu điểm về tốc độ trên CPU.
+  - 2.1.2. Bài toán nhận diện khuôn mặt (Face Recognition): Quá trình rút trích đặc trưng (Feature Extraction), mô hình SFace, và độ đo khoảng cách (Cosine Similarity).
+- **2.2. Bài toán chống giả mạo khuôn mặt (Face Anti-Spoofing)**
+  - 2.2.1. Khái niệm và phân loại: So sánh Liveness 2D và 3D, lý do chọn 2D Liveness.
+  - 2.2.2. Mô hình MiniFASNet V2 SE: Tổng quan kiến trúc và kỹ thuật lượng tử hóa (Quantization) để chạy thực tế.
+  - 2.2.3. Các kỹ thuật ổn định kết quả (Temporal Smoothing): Lý thuyết Trung bình động hàm mũ (EMA) và hệ số giao nhau (IoU).
+- **2.3. Công nghệ và công cụ phát triển**
+  - 2.3.1. Ngôn ngữ Python và Framework PyQt5: Khái niệm đa luồng (Multithreading) và lý do tách luồng AIWorker khỏi luồng UI (QThread).
+  - 2.3.2. Nền tảng thực thi ONNX Runtime: Tối ưu hóa tính toán Inference trên CPU.
+  - 2.3.3. CSDL SQLite và cơ chế WAL (Write-Ahead Logging): Lý thuyết hỗ trợ đa luồng đọc/ghi không bị khóa (Database Locked).
 
 # Chương 3.     PHÂN TÍCH VÀ THIẾT KẾ HỆ THỐNG
 

@@ -12,3 +12,4 @@ Tất cả các file Markdown trong thư mục `docs/project-report` phải tuâ
 5. **Bảng (Table):** Sử dụng bảng Markdown chuẩn. Tránh gộp ô (merge cells) vì Markdown không hỗ trợ tốt và khi dán sang Word sẽ bị vỡ cấu trúc.
 6. **Hình ảnh (Images):** Dùng cú pháp `![Mô tả ảnh](đường/dẫn/ảnh)`.
 7. **Không dùng HTML/CSS:** Tuyệt đối không nhúng các đoạn mã HTML hoặc CSS nội tuyến (inline CSS) vào file Markdown.
+8. **Công thức Toán học (Math Equations):** Hạn chế tối đa việc sử dụng cú pháp LaTeX (ví dụ `$math$`) vì khi copy sang Word sẽ bị vỡ định dạng và tốn thời gian sửa lại. Ưu tiên viết công thức bằng văn bản thuần túy hoặc ký tự thông thường (vd: A = B + C, Cosine(A,B) = (A.B)/(|A||B|)).
