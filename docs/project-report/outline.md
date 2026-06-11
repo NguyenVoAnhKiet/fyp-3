@@ -48,9 +48,19 @@
   - 3.4.1. Tiêu chuẩn và nguyên tắc thiết kế (Màu sắc, Font chữ, Bố cục)
   - 3.4.2. Thiết kế các màn hình chính (Màn hình điểm danh, Quản lý nhân viên, Cấu hình)
 
-# Chương 4.     XÂY DỰNG VÀ ĐÁNH GIÁ HỆ THỐNG
+# Chương 4. XÂY DỰNG VÀ ĐÁNH GIÁ HỆ THỐNG
 
-- Trình bày kết quả hệ thống đã xây dựng và đánh giá kết quả đạt được
+- **4.1. Môi trường triển khai**
+  - 4.1.1. Môi trường phần cứng (Cấu hình PC/Laptop cài đặt, thông số Webcam)
+  - 4.1.2. Môi trường phần mềm và thư viện (HĐH Windows, Python, ONNX Runtime, PyQt5, SQLite)
+- **4.2. Kết quả xây dựng hệ thống**
+  - 4.2.1. Giao diện chức năng điểm danh & cảnh báo (Minh họa check-in thành công và chặn giả mạo/spoofing)
+  - 4.2.2. Giao diện quản lý nhân viên và lịch sử điểm danh
+  - 4.2.3. Giao diện cấu hình hệ thống
+- **4.3. Đánh giá hệ thống**
+  - 4.3.1. Đánh giá hiệu năng xử lý (Thời gian Inference trên CPU, tốc độ khung hình - FPS thực tế)
+  - 4.3.2. Đánh giá độ chính xác qua kịch bản thực tế (Kiểm thử người thật ở nhiều điều kiện sáng, test với ảnh in giấy, màn hình điện thoại/tablet; thống kê tỷ lệ Pass/Fail)
+  - 4.3.3. Đánh giá mức tiêu thụ tài nguyên (Theo dõi lượng RAM, % CPU khi app hoạt động)
 
 # Chương 5.     KẾT LUẬN
 
