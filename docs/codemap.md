@@ -11,6 +11,7 @@ The following files were intentionally removed to eliminate redundancy:
 - `architecture.md`, `ai-pipeline.md`, `database.md`, `modules.md` — overlapped each other and `AGENTS.md`
 - `srs/` — stub outline, chapter files never materialized
 - `.obsidian/` — local editor config, gitignored
+- `.slim/` — agent tooling workspace, gitignored
 
 ## Subdirectories
 
