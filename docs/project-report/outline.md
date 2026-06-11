@@ -62,10 +62,16 @@
   - 4.3.2. Đánh giá độ chính xác qua kịch bản thực tế (Kiểm thử người thật ở nhiều điều kiện sáng, test với ảnh in giấy, màn hình điện thoại/tablet; thống kê tỷ lệ Pass/Fail)
   - 4.3.3. Đánh giá mức tiêu thụ tài nguyên (Theo dõi lượng RAM, % CPU khi app hoạt động)
 
-# Chương 5.     KẾT LUẬN
+# Chương 5. KẾT LUẬN
 
-·         Tổng kết kết quả đạt được.
-
-·         Ưu điểm và hạn chế.
-
-·         Đề xuất hướng phát triển cho đề tài.
+- **5.1. Tổng kết kết quả đạt được:**
+  - Về chức năng: Hoàn thiện ứng dụng Desktop điểm danh offline với giao diện trực quan, quản lý nhân viên và cấu hình hệ thống.
+  - Về kỹ thuật: Tích hợp thành công mô hình Liveness (MiniFASNet V2) và tối ưu hóa tốc độ xử lý AI trên CPU bằng ONNX Runtime và kiến trúc đa luồng.
+- **5.2. Ưu điểm và hạn chế:**
+  - Ưu điểm: Hệ thống phản hồi nhanh, không phụ thuộc kết nối Internet, tích hợp tính năng chống giả mạo cơ bản.
+  - Hạn chế 1: Mô hình chống giả mạo 2D dễ bị từ chối sai (False Reject) trong điều kiện thiếu sáng hoặc có nguy cơ bị lừa bởi mặt nạ 3D tinh vi.
+  - Hạn chế 2: Quá trình suy luận (Inference) vẫn tiêu tốn nhiều tài nguyên CPU khi ứng dụng hoạt động liên tục trong thời gian dài.
+- **5.3. Đề xuất hướng phát triển cho đề tài:**
+  - Cải thiện Liveness: Nghiên cứu sử dụng camera hồng ngoại/chiều sâu (IR/Depth) hoặc nâng cấp lên các mô hình Liveness 3D để tăng cường bảo mật.
+  - Tối ưu hóa hiệu năng: Tích hợp OpenVINO/TensorRT hoặc kết hợp xử lý qua Edge Server/GPU nhằm giảm tải cho CPU của thiết bị.
+  - Mở rộng hệ thống: Bổ sung tính năng đồng bộ dữ liệu lên hệ thống Cloud quản lý tập trung và hỗ trợ phát hiện/điểm danh nhiều khuôn mặt cùng lúc (Multi-face tracking).
