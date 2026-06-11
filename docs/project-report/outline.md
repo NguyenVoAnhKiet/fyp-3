@@ -30,9 +30,23 @@
   - 2.3.2. Nền tảng thực thi ONNX Runtime: Tối ưu hóa tính toán Inference trên CPU.
   - 2.3.3. CSDL SQLite và cơ chế WAL (Write-Ahead Logging): Lý thuyết hỗ trợ đa luồng đọc/ghi không bị khóa (Database Locked).
 
-# Chương 3.     PHÂN TÍCH VÀ THIẾT KẾ HỆ THỐNG
+# Chương 3. PHÂN TÍCH VÀ THIẾT KẾ HỆ THỐNG
 
-Trình bày các mô hình phân tích và thiết kế đồ án
+- **3.1. Phân tích yêu cầu**
+  - 3.1.1. Yêu cầu chức năng và Phi chức năng
+  - 3.1.2. Biểu đồ Use Case tổng quát
+  - 3.1.3. Đặc tả các Use Case chính (Điểm danh AI, Quản lý nhân viên, Cấu hình hệ thống)
+- **3.2. Thiết kế kiến trúc**
+  - 3.2.1. Kiến trúc tổng thể hệ thống
+  - 3.2.2. Kiến trúc phân lớp phần mềm (UI, Service, Repository)
+  - 3.2.3. Kiến trúc xử lý đa luồng (UI Thread & AI Worker Thread)
+- **3.3. Thiết kế chi tiết**
+  - 3.3.1. Thiết kế Cơ sở dữ liệu (Sơ đồ ERD & Đặc tả các bảng)
+  - 3.3.2. Sơ đồ hoạt động (Activity Diagram) cho luồng Nhận diện & Liveness
+  - 3.3.3. Sơ đồ tuần tự (Sequence Diagram) cho các chức năng chính
+- **3.4. Thiết kế giao diện**
+  - 3.4.1. Tiêu chuẩn và nguyên tắc thiết kế (Màu sắc, Font chữ, Bố cục)
+  - 3.4.2. Thiết kế các màn hình chính (Màn hình điểm danh, Quản lý nhân viên, Cấu hình)
 
 # Chương 4.     XÂY DỰNG VÀ ĐÁNH GIÁ HỆ THỐNG
 

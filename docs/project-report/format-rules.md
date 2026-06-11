@@ -2,7 +2,7 @@
 
 Tất cả các file Markdown trong thư mục `docs/project-report` phải tuân thủ các quy tắc sau để đảm bảo khi copy nội dung sang Microsoft Word sẽ giữ được định dạng tốt nhất và ít gặp lỗi nhất:
 
-1. **Heading (Tiêu đề):** Chỉ sử dụng dấu thăng `#` chuẩn của Markdown cho các cấp độ tiêu đề (VD: `# Chương 1`, `## 1.1`, `### 1.1.1`). Word sẽ tự động nhận diện các heading này.
+1. **Heading (Tiêu đề) và Đánh số phân cấp:** Chỉ sử dụng dấu thăng `#` chuẩn của Markdown cho các cấp độ tiêu đề. **Bắt buộc** đánh số phân cấp liên tục theo mục cha (ví dụ: `# Chương 1`, `## 1.1`, `### 1.1.1`, `#### 1.1.1.1`). Tuyệt đối không dùng chữ cái (`A, B, C...`) hoặc số đếm rời rạc (`1, 2, 3...`) cho các tiểu mục (heading) để đảm bảo Mục lục tự động (Table of Contents) khi xuất sang Word không bị đứt gãy.
 2. **Paragraph (Đoạn văn):** Giữa các đoạn văn phải cách nhau đúng một dòng trống (blank line). Không sử dụng thẻ `<br>` hoặc `<p>` của HTML.
 3. **List (Danh sách):**
    - Danh sách không thứ tự: Sử dụng dấu gạch ngang `-` hoặc dấu sao `*` có dấu cách phía sau.
