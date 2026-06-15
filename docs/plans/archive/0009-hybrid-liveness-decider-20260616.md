@@ -2,7 +2,7 @@
 
 ## Status
 
-**Draft** (revised after oracle review)
+**Done** (committed as `1f703e7` on `refactor/upgrade-ai`)
 
 ## Context
 
