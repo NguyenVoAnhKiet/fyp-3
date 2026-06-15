@@ -33,11 +33,16 @@ DEFAULT_LIVENESS_THRESHOLD: float = 0.5
 DEFAULT_HYBRID_VOTING_WINDOW: int = 5
 
 #: Additive boost to liveness probability when recognition matches.
-DEFAULT_HYBRID_BOOST_AMOUNT: float = 0.15
+DEFAULT_HYBRID_BOOST_AMOUNT: float = 0.10
 
 #: Whether the new hybrid liveness decider is enabled (feature flag).
 #: When False, uses the legacy liveness path.
 DEFAULT_HYBRID_LIVENESS_ENABLED: bool = False
+
+#: Number of AI-frames between recognition runs in hybrid mode.
+#: At _AI_FRAME_SKIP=3 and interval=5, recognition runs ~every 15 camera
+#: frames ≈ 2 Hz at 30 fps.
+DEFAULT_RECOGNITION_INTERVAL: int = 5
 
 # ---------------------------------------------------------------------------
 # Camera

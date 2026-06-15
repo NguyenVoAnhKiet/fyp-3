@@ -58,6 +58,7 @@ def _make_test_config() -> SystemConfig:
         hybrid_voting_window=defaults.DEFAULT_HYBRID_VOTING_WINDOW,
         hybrid_boost_amount=defaults.DEFAULT_HYBRID_BOOST_AMOUNT,
         hybrid_liveness_enabled=defaults.DEFAULT_HYBRID_LIVENESS_ENABLED,
+        recognition_interval=defaults.DEFAULT_RECOGNITION_INTERVAL,
     )
 
 

@@ -96,6 +96,7 @@ class SystemConfig:
     hybrid_voting_window: int
     hybrid_boost_amount: float
     hybrid_liveness_enabled: bool
+    recognition_interval: int
 
     # --- Timezone (mutable via Admin UI) ---
     timezone: str
@@ -122,6 +123,7 @@ _SEEDABLE: tuple[tuple[str, str, str], ...] = (
     ("HYBRID_VOTING_WINDOW", "hybrid_voting_window", "int"),
     ("HYBRID_BOOST_AMOUNT", "hybrid_boost_amount", "float"),
     ("HYBRID_LIVENESS_ENABLED", "hybrid_liveness_enabled", "bool"),
+    ("RECOGNITION_INTERVAL", "recognition_interval", "int"),
 )
 
 
@@ -257,6 +259,7 @@ class SettingsResolver:
                 hybrid_voting_window=defaults.DEFAULT_HYBRID_VOTING_WINDOW,
                 hybrid_boost_amount=defaults.DEFAULT_HYBRID_BOOST_AMOUNT,
                 hybrid_liveness_enabled=defaults.DEFAULT_HYBRID_LIVENESS_ENABLED,
+                recognition_interval=defaults.DEFAULT_RECOGNITION_INTERVAL,
             )
 
         # --- Thresholds (CLI > env > DB > default) ---
@@ -291,6 +294,12 @@ class SettingsResolver:
             env_map.get("HYBRID_LIVENESS_ENABLED"),
             read_db("hybrid_liveness_enabled"),
             defaults.DEFAULT_HYBRID_LIVENESS_ENABLED,
+        )
+        recognition_interval = self._resolve_int(
+            None,
+            env_map.get("RECOGNITION_INTERVAL"),
+            read_db("recognition_interval"),
+            defaults.DEFAULT_RECOGNITION_INTERVAL,
         )
 
         # --- Timezone (DB > env > default; no CLI) ---
@@ -340,6 +349,7 @@ class SettingsResolver:
             hybrid_voting_window=hybrid_voting_window,
             hybrid_boost_amount=hybrid_boost_amount,
             hybrid_liveness_enabled=hybrid_liveness_enabled,
+            recognition_interval=recognition_interval,
         )
 
     def seed_db_from_env(
