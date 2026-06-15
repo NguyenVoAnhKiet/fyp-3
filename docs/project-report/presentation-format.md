@@ -122,18 +122,18 @@ Chia làm 4 cấp (level): Sau cùng mỗi cấp dùng dấu chấm (.)
 
 Bảng 1. Quy định kích thước của các đề mục, mục, tiểu mục
 
-|   |   |   |   |   |
-|---|---|---|---|---|
-|**Đề mục**|**Kiểu chữ**|**Cỡ chữ**|**Định dạng**|**Ví dụ mẫu chữ**|
-|Chương (theo số thứ tự 1.; 2.; 3.; …)|Thường|14|Đậm, đứng, viết hoa|**Chương 1. GIỚI THIỆU ĐỀ TÀI**|
-|Mục (1.1.; 1.2;…)|Thường|13|Đậm, đứng|**1.1.**  **Mở đầu**|
-|Nhóm tiểu mục (1.1.1.; 1.1.2.; …)|Thường|13|Đậm, nghiêng|**_1.1.1._**    **_Khái niệm_**|
-|Tiểu mục (1.1.1.1.; 1.1.1.2.; …)|Thường|13|Nghiêng|_1.1.1.1._   _Mạng máy tính_|
-|Nội dung văn bản|Thường|13|Đứng, căn đều 2 bên, First line Indent = 1cm|Mạng máy tính là hệ thống các máy tính, các thiết bị điện tử|
-|Tên hình (nằm dưới hình)|Thường|12|Đậm, đứng|**Hình 1.1. Mô hình ..**|
-|Tên bảng biểu (nằm ở trên bảng biểu)|Thường|12|Đậm, đứng|**Bảng 1.1. Thông số các tần số phát sóng wifi**|
-|Phụ lục, tài liệu tham khảo|In hoa|14|Đậm, đứng|**PHỤ LỤC**|
-|Chú thích (nếu có)|Thường|10|Đứng|1.   Tổng cục thống kê|
+|                                       |              |            |                                              |                                                              |
+| ------------------------------------- | ------------ | ---------- | -------------------------------------------- | ------------------------------------------------------------ |
+| **Đề mục**                            | **Kiểu chữ** | **Cỡ chữ** | **Định dạng**                                | **Ví dụ mẫu chữ**                                            |
+| Chương (theo số thứ tự 1.; 2.; 3.; …) | Thường       | 14         | Đậm, đứng, viết hoa                          | **Chương 1. GIỚI THIỆU ĐỀ TÀI**                              |
+| Mục (1.1.; 1.2;…)                     | Thường       | 13         | Đậm, đứng                                    | **1.1.**  **Mở đầu**                                         |
+| Nhóm tiểu mục (1.1.1.; 1.1.2.; …)     | Thường       | 13         | Đậm, nghiêng                                 | **_1.1.1._**    **_Khái niệm_**                              |
+| Tiểu mục (1.1.1.1.; 1.1.1.2.; …)      | Thường       | 13         | Nghiêng                                      | _1.1.1.1._   _Mạng máy tính_                                 |
+| Nội dung văn bản                      | Thường       | 13         | Đứng, căn đều 2 bên, First line Indent = 1cm | Mạng máy tính là hệ thống các máy tính, các thiết bị điện tử |
+| Tên hình (nằm dưới hình)              | Thường       | 12         | Đậm, đứng                                    | **Hình 1.1. Mô hình ..**                                     |
+| Tên bảng biểu (nằm ở trên bảng biểu)  | Thường       | 12         | Đậm, đứng                                    | **Bảng 1.1. Thông số các tần số phát sóng wifi**             |
+| Phụ lục, tài liệu tham khảo           | In hoa       | 14         | Đậm, đứng                                    | **PHỤ LỤC**                                                  |
+| Chú thích (nếu có)                    | Thường       | 10         | Đứng                                         | 1.   Tổng cục thống kê                                       |
 
 #### b. Hình ảnh, bảng biểu, công thức, …
 
