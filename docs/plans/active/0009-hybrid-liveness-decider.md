@@ -24,12 +24,21 @@ Liveness passes (rarely) → recognition borderline → match flickers → 1 suc
 - `LivenessTracker` already has EMA + hysteresis + IoU tracking — adding another temporal filter creates conflict
 - Current code only processes the **largest face** per frame (single-face limitation)
 
+**Design flaw: disconnected hysteresis thresholds**:
+- Current system has **two independent threshold systems** that do not communicate:
+  1. `LivenessChecker.check()` uses `FACE_ANTISPOOF_CONFIDENCE_THRESHOLD` (configurable via env/DB/UI)
+  2. `LivenessTracker` uses hardcoded `T_HIGH=0.65` and `T_LOW=0.45` (not connected to settings)
+- User changing threshold in settings only affects system #1, not #2
+- This means hysteresis behavior cannot be tuned without code changes
+- Plan 0009 eliminates this flaw by removing hysteresis entirely and using a single `HybridLivenessDecider` with configurable threshold
+
 ## Goals
 
 1. Reduce real-face-as-spoof rejection rate from 80–90% to < 20% across lighting conditions
 2. Increase recognition stability from 1 match per 3–5s to consistent matching every frame
 3. Maintain anti-spoof effectiveness — spoof detection should not degrade
 4. Clean architecture: single temporal authority, no redundant filters
+5. Fix disconnected threshold problem: all liveness thresholds configurable via settings, no hardcoded values
 
 ## Non-Goals
 
@@ -45,7 +54,7 @@ Liveness passes (rarely) → recognition borderline → match flickers → 1 suc
 | # | Decision | Options Considered | Final Choice | Rationale |
 |---|----------|-------------------|--------------|-----------|
 | D1 | Score space | Logit space / Probability space | **Probability space** | Add `sigmoid(logit_diff)` in LivenessChecker. All downstream logic uses 0–1 probabilities. Avoids threshold confusion. |
-| D2 | Temporal authority | Keep LivenessTracker + add decider / Replace hysteresis with decider / Decider consumes tracker output | **Replace hysteresis with decider; tracker keeps IoU only** | Single temporal authority. Tracker becomes pure face-tracking (IoU matching). Decider owns all temporal decisions. |
+| D2 | Temporal authority | Keep LivenessTracker + add decider / Replace hysteresis with decider / Decider consumes tracker output | **Replace hysteresis with decider; tracker keeps IoU only** | Single temporal authority. Tracker becomes pure face-tracking (IoU matching). Decider owns all temporal decisions. **Fixes design flaw: eliminates hardcoded T_HIGH/T_LOW, replaces with single configurable threshold.** |
 | D3 | Voting window size | 3 / 5 / 7–10 frames | **5 frames** | ~167ms at 30fps — balances responsiveness and accuracy |
 | D4 | Voting mechanism | Majority / Weighted / EMA-only | **Majority vote (≥3/5 agree)** | Simple, interpretable, robust to outlier frames |
 | D5 | Recognition role | Tiebreaker / Periodic only / Both | **Periodic only (every 5 AI-frames)** | Decoupled from liveness. Recognition runs independently for identity. No circular dependency. |
