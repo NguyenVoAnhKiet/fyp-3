@@ -25,7 +25,7 @@ This folder tracks in-flight and archived feature plans — work-in-progress des
 | ID | Title | Status | Branch |
 |----|-------|--------|--------|
 
-*No active plans at the moment — all in-flight work has been archived.*
+*No active plans at the moment — all in-flight work has been archived. Current focus: Phase 4 threshold tuning (awaiting validation data).*
 
 ## Archive
 

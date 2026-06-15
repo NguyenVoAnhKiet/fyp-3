@@ -1,23 +1,31 @@
-# `src/` — Application Entry Point
+# `src/` — Application Source Package
 
-## Responsibility
-
-Top-level Python package for the face-attendance desktop application. Contains
-the CLI/entry-point logic (`main.py`) and the sub-package
+**Top-level Python package for the face-attendance desktop application.**
+Contains the CLI/entry-point logic (`main.py`) and the sub-package
 `attendance_system/` which implements all core logic, services, UI, and
-storage. This layer owns configuration resolution (CLI > env > defaults),
+storage. This layer owns configuration resolution (CLI > env > DB > default),
 bootstrap ordering, and wiring of services into the `MainWindow`.
 
 ## Key Files
 
 | File | Role |
 |---|---|
-| `__init__.py` | Package marker — empty docstring only. |
-| `main.py` | Application entry point. Defines `main()` (invoked by the `attendance-app` console script). Calls `SettingsResolver` + `set_timezone_config` to wire configuration before launching the UI. |
+| `__init__.py` | Package marker — docstring: `Application source package.` |
+| `main.py` | System entry point — see below. |
 
-### Critical gotcha in `main.py`
+---
 
-**`import onnxruntime` must appear before `from PyQt5`**. On Windows, both
+## `main.py` — System Entry Point
+
+Defines `main()` (invoked by the `attendance-app` console script). Orchestrates
+the full startup sequence: loads `.env`, resolves configuration via
+`SettingsResolver`, bootstraps the SQLite schema, seeds first-run DB values,
+validates ONNX model files, wires repositories and services, and launches the
+PyQt5 `MainWindow`.
+
+### Critical import ordering
+
+**`import onnxruntime` must appear before `from PyQt5`.** On Windows, both
 libraries load conflicting native DLLs into the process address space. Importing
 onnxruntime first ensures its DLLs are resolved correctly. The import is
 guarded with `# noqa: F401` since the binding is purely a side-effect.
@@ -27,19 +35,23 @@ import onnxruntime  # noqa: F401  # MUST come before PyQt5
 from PyQt5.QtWidgets import QApplication, QMessageBox
 ```
 
-### Bootstrap order in `main()`
+### Bootstrap order
 
-1. `load_dotenv()` — load `.env` before any env-read
-2. `SettingsResolver(...).resolve(...)` — build the frozen `SystemConfig` (CLI > env > DB > default for paths/thresholds/timezone/UX)
-3. `set_timezone_config(config.timezone)` — set module-level `_tz` in `time_utils`
-4. `initialize_storage()` — create/upgrade SQLite schema (WAL mode)
-5. Create `QApplication`, validate model file existence
-6. Build repositories, services (AI pipeline, auth, settings, attendance)
-7. Seed first-run values from `.env` into the `system_settings` DB table (idempotent — only if not already set, see `SettingsResolver.seed_db_from_env`)
-8. Instantiate and show `MainWindow`, enter Qt event loop
+1. **`load_dotenv()`** — load `.env` before any env-read
+2. **`SettingsResolver.resolve()` (provisional)** — build partial `SystemConfig` (CLI > env > default); no DB reader yet since the schema does not exist
+3. **`initialize_storage()`** — create/upgrade SQLite schema (WAL mode)
+4. **Create `QApplication`**
+5. **`seed_db_from_env()`** — idempotent write of env-vars into `system_settings` table (only if key is unset, so Admin UI changes survive)
+6. **`resolve_config()` (final)** — re-resolve `SystemConfig` with DB-aware reader (DB > env > default for settings; timezone is DB > env > default)
+7. **`set_timezone_config()`** — apply resolved timezone to `time_utils` module-level `_tz`
+8. **Validate model files** — check existence of required ONNX paths; optional head-pose model falls back to legacy mode on error
+9. **Build services** — `AttendanceService`, `AuthenticationService`, `LivenessChecker`, `FaceRecognizer` (wrapped in `CachingFaceReferenceRepository`)
+10. **Instantiate and show `MainWindow`** — enter Qt event loop via `app.exec_()`
+
+---
 
 ## Subdirectory Map
 
-| Directory | Responsibility |
-|---|---|
-| `attendance_system/` | Main application package — all domain, service, UI, and persistence code. See its own `codemap.md` for details. |
+| Directory | Responsibility | Detailed Map |
+|---|---|---|
+| `attendance_system/` | Root package of the face-attendance application — all domain, service, UI, and persistence code lives here. Delegates to sub-packages for core, models, repositories, services, ui, and utils. | [View Map](attendance_system/codemap.md) |
