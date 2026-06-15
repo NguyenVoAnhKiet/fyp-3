@@ -24,8 +24,7 @@ This folder tracks in-flight and archived feature plans — work-in-progress des
 
 | ID | Title | Status | Branch |
 |----|-------|--------|--------|
-
-*No active plans at the moment — all in-flight work has been archived. Current focus: Phase 4 threshold tuning (awaiting validation data).*
+| 0009 | [Hybrid Liveness Decider](active/0009-hybrid-liveness-decider.md) | Draft | — |
 
 ## Archive
 
