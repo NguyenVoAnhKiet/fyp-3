@@ -54,6 +54,9 @@ docs/.obsidian/
 # Copilot conversation history (transient)
 docs/copilot/copilot-conversations/
 
+# Deepwork progress files (local session state)
+.slim/deepwork/
+
 # Large model files (downloaded on demand)
 models/**/*.onnx
 models/**/*.onnx.data

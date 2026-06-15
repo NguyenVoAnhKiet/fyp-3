@@ -24,7 +24,7 @@ from attendance_system.ui.camera_worker_base import (
 )
 
 _AI_FRAME_SKIP = 3       # run full pipeline every N frames (≈10 Hz at 30 fps)
-_COOLDOWN_SECONDS = 3.0  # min seconds between two recognitions of the same user
+_COOLDOWN_SECONDS = 1.5  # min seconds between two recognitions of the same user
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +44,7 @@ class AIWorker(AIWorkerBase):
     ) -> None:
         super().__init__(pipeline, parent)
         self._last_recognized: dict[int, float] = {}  # user_id -> monotonic timestamp
+        self._ai_frame_counter: int = 0  # local counter per processed frame
 
     def submit_task(
         self,
@@ -68,9 +69,10 @@ class AIWorker(AIWorkerBase):
 
     def _process_frame(self, task) -> None:
         frame_bgr, frame_rgb, face_row, frame_counter = task
+        self._ai_frame_counter += 1
 
         result = self._pipeline.run_attendance(
-            frame_bgr, frame_rgb, face_row, frame_counter
+            frame_bgr, frame_rgb, face_row, self._ai_frame_counter
         )
 
         # Per-user cooldown to avoid flooding the DB

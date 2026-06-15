@@ -17,14 +17,27 @@ from pathlib import Path
 # AI thresholds (per-face decision cutoffs)
 # ---------------------------------------------------------------------------
 
-#: Liveness confidence threshold (0–1). Lower = more permissive, reduces
-#: flicker in poor lighting.  See CONTEXT.md for migration history
-#: (0.5 → 0.3 touched 7 files pre-centralization).
-DEFAULT_LIVENESS_THRESHOLD: float = 0.3
-
 #: Cosine-similarity threshold for face recognition match (0–1).
 #: SFace embeddings are L2-normalised; 0.6 is a permissive default.
 DEFAULT_SIMILARITY_THRESHOLD: float = 0.6
+
+# ---------------------------------------------------------------------------
+# Hybrid liveness decider
+# ---------------------------------------------------------------------------
+
+#: Liveness confidence threshold (0–1) in probability space.
+#: Updated from 0.3 (logit space) to 0.5 (probability space) for plan 0009.
+DEFAULT_LIVENESS_THRESHOLD: float = 0.5
+
+#: Number of frames in the voting window for HybridLivenessDecider.
+DEFAULT_HYBRID_VOTING_WINDOW: int = 5
+
+#: Additive boost to liveness probability when recognition matches.
+DEFAULT_HYBRID_BOOST_AMOUNT: float = 0.15
+
+#: Whether the new hybrid liveness decider is enabled (feature flag).
+#: When False, uses the legacy liveness path.
+DEFAULT_HYBRID_LIVENESS_ENABLED: bool = False
 
 # ---------------------------------------------------------------------------
 # Camera

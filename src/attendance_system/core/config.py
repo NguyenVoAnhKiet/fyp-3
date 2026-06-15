@@ -92,6 +92,11 @@ class SystemConfig:
     liveness_threshold: float
     similarity_threshold: float
 
+    # --- Hybrid liveness decider ---
+    hybrid_voting_window: int
+    hybrid_boost_amount: float
+    hybrid_liveness_enabled: bool
+
     # --- Timezone (mutable via Admin UI) ---
     timezone: str
 
@@ -114,6 +119,9 @@ _SEEDABLE: tuple[tuple[str, str, str], ...] = (
     ("FACE_SIMILARITY_THRESHOLD", "similarity_threshold", "float"),
     ("ATTENDANCE_FREEZE_SECONDS", "attendance_freeze_seconds", "int"),
     ("ATTENDANCE_FREEZE_SOUND_ENABLED", "attendance_freeze_sound_enabled", "bool"),
+    ("HYBRID_VOTING_WINDOW", "hybrid_voting_window", "int"),
+    ("HYBRID_BOOST_AMOUNT", "hybrid_boost_amount", "float"),
+    ("HYBRID_LIVENESS_ENABLED", "hybrid_liveness_enabled", "bool"),
 )
 
 
@@ -246,6 +254,9 @@ class SettingsResolver:
                 attendance_freeze_sound_enabled=(
                     defaults.DEFAULT_ATTENDANCE_FREEZE_SOUND_ENABLED
                 ),
+                hybrid_voting_window=defaults.DEFAULT_HYBRID_VOTING_WINDOW,
+                hybrid_boost_amount=defaults.DEFAULT_HYBRID_BOOST_AMOUNT,
+                hybrid_liveness_enabled=defaults.DEFAULT_HYBRID_LIVENESS_ENABLED,
             )
 
         # --- Thresholds (CLI > env > DB > default) ---
@@ -260,6 +271,26 @@ class SettingsResolver:
             env_map.get("FACE_SIMILARITY_THRESHOLD"),
             read_db("similarity_threshold"),
             defaults.DEFAULT_SIMILARITY_THRESHOLD,
+        )
+
+        # --- Hybrid liveness decider (CLI > env > DB > default) ---
+        hybrid_voting_window = self._resolve_int(
+            None,
+            env_map.get("HYBRID_VOTING_WINDOW"),
+            read_db("hybrid_voting_window"),
+            defaults.DEFAULT_HYBRID_VOTING_WINDOW,
+        )
+        hybrid_boost_amount = self._resolve_float(
+            None,
+            env_map.get("HYBRID_BOOST_AMOUNT"),
+            read_db("hybrid_boost_amount"),
+            defaults.DEFAULT_HYBRID_BOOST_AMOUNT,
+        )
+        hybrid_liveness_enabled = self._resolve_bool(
+            None,
+            env_map.get("HYBRID_LIVENESS_ENABLED"),
+            read_db("hybrid_liveness_enabled"),
+            defaults.DEFAULT_HYBRID_LIVENESS_ENABLED,
         )
 
         # --- Timezone (DB > env > default; no CLI) ---
@@ -306,6 +337,9 @@ class SettingsResolver:
             timezone=timezone,
             attendance_freeze_seconds=attendance_freeze_seconds,
             attendance_freeze_sound_enabled=attendance_freeze_sound_enabled,
+            hybrid_voting_window=hybrid_voting_window,
+            hybrid_boost_amount=hybrid_boost_amount,
+            hybrid_liveness_enabled=hybrid_liveness_enabled,
         )
 
     def seed_db_from_env(

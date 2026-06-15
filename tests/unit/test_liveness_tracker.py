@@ -1,4 +1,4 @@
-"""Unit tests for LivenessTracker — EMA smoothing, hysteresis, IoU, multi-face."""
+"""Unit tests for LivenessTracker — EMA smoothing, IoU tracking, multi-face."""
 
 from __future__ import annotations
 
@@ -10,8 +10,6 @@ from attendance_system.services.liveness_tracker import (
     ALPHA,
     IOU_THRESHOLD,
     MAX_MISSES,
-    T_HIGH,
-    T_LOW,
     LivenessTracker,
     TrackedFace,
     compute_iou,
@@ -57,25 +55,6 @@ class TestComputeIoU:
         assert iou == pytest.approx(expected)
 
 
-# ── TrackedFace ──────────────────────────────────────────────────────────────
-
-
-class TestTrackedFace:
-    def test_initial_state_spoof_below_t_high(self) -> None:
-        tf = TrackedFace((10, 10, 50, 50), 0.3)
-        assert tf.state == "SPOOF"
-        assert tf.ema_score == 0.3
-        assert tf.misses == 0
-
-    def test_initial_state_real_at_or_above_t_high(self) -> None:
-        tf = TrackedFace((10, 10, 50, 50), T_HIGH)
-        assert tf.state == "REAL"
-
-    def test_initial_state_real_above_t_high(self) -> None:
-        tf = TrackedFace((10, 10, 50, 50), 0.9)
-        assert tf.state == "REAL"
-
-
 # ── LivenessTracker ──────────────────────────────────────────────────────────
 
 
@@ -100,9 +79,8 @@ class TestLivenessTrackerSingleFace:
         tracker = LivenessTracker()
         result = tracker.update([(10, 10, 100, 100)], [0.8])
         assert len(result) == 1
-        bbox, state, score = result[0]
+        bbox, score, tid = result[0]
         assert bbox == (10.0, 10.0, 100.0, 100.0)
-        assert state == "REAL"
         assert score == pytest.approx(0.8)
 
     def test_ema_smoothing(self) -> None:
@@ -112,66 +90,9 @@ class TestLivenessTrackerSingleFace:
         tracker.update([(0, 0, 50, 50)], [0.6])
         # Second update with same bbox: ema = 0.4 * 0.9 + 0.6 * 0.6 = 0.36 + 0.36 = 0.72
         result = tracker.update([(0, 0, 50, 50)], [0.9])
-        _, _, score = result[0]
+        _, score, _ = result[0]
         expected = ALPHA * 0.9 + (1.0 - ALPHA) * 0.6
         assert score == pytest.approx(expected)
-
-    def test_hysteresis_spoof_to_real(self) -> None:
-        """SPOOF→REAL only when ema_score >= T_HIGH."""
-        tracker = LivenessTracker()
-        # Start with a clearly spoof score
-        tracker.update([(0, 0, 50, 50)], [0.1])
-        _, state, _ = tracker.update([(0, 0, 50, 50)], [0.1])[0]
-        assert state == "SPOOF"
-
-        # Feed increasing scores — must cross T_HIGH to flip
-        for score in [0.3, 0.5, 0.6, 0.65, 0.7, 0.8]:
-            _, state, ema = tracker.update([(0, 0, 50, 50)], [score])[0]
-        # After many high scores ema should be >= T_HIGH
-        assert state == "REAL"
-        _, _, final_ema = tracker.update([(0, 0, 50, 50)], [0.9])[0]
-        assert final_ema >= T_HIGH
-
-    def test_hysteresis_real_to_spoof(self) -> None:
-        """REAL→SPOOF only when ema_score < T_LOW."""
-        tracker = LivenessTracker()
-        # Start REAL
-        tracker.update([(0, 0, 50, 50)], [0.9])
-        _, state, _ = tracker.update([(0, 0, 50, 50)], [0.9])[0]
-        assert state == "REAL"
-
-        # Feed low scores - should stay REAL as long as ema >= T_LOW
-        # But since ALPHA=0.4, ema decays: 0.4*0.1 + 0.6*0.9 = 0.58
-        _, state, ema = tracker.update([(0, 0, 50, 50)], [0.1])[0]
-        assert state == "REAL"  # ema = 0.58 > T_LOW(0.45)
-        assert ema >= T_LOW
-
-        # More low scores until ema < T_LOW
-        for _ in range(10):
-            _, state, ema = tracker.update([(0, 0, 50, 50)], [0.1])[0]
-            if state == "SPOOF":
-                break
-        assert state == "SPOOF"
-        assert ema < T_LOW
-
-    def test_hysteresis_no_flip_at_boundary(self) -> None:
-        """State doesn't flip when score oscillates between T_LOW and T_HIGH."""
-        tracker = LivenessTracker()
-        # Start REAL
-        tracker.update([(0, 0, 50, 50)], [0.9])
-        _, state, _ = tracker.update([(0, 0, 50, 50)], [0.9])[0]
-        assert state == "REAL"
-
-        # Oscillate around boundary — should stay REAL because ema
-        # won't drop below T_LOW quickly
-        for score in [0.5, 0.55, 0.5, 0.6, 0.5, 0.55, 0.5]:
-            _, state, ema = tracker.update([(0, 0, 50, 50)], [score])[0]
-            if state == "SPOOF":
-                break  # only flips if ema actually drops below T_LOW
-        # The EMA should smooth things so it takes more than a couple
-        # low scores to flip.  The test is that it doesn't flip immediately.
-        # We just verify the state machine works without oscillating.
-        assert state in ("REAL", "SPOOF")  # no invalid states
 
     def test_face_disappears_then_reappears(self) -> None:
         """Track is maintained for MAX_MISSES frames, then deleted."""
@@ -212,11 +133,10 @@ class TestLivenessTrackerMultiFace:
         scores = [0.9, 0.2]
         result = tracker.update(bboxes, scores)
         assert len(result) == 2
-
-        # Sort by state for deterministic check
-        states = {r[1] for r in result}
-        assert "REAL" in states
-        assert "SPOOF" in states
+        # Each result is (bbox, score, track_id)
+        scores_list = [r[1] for r in result]
+        assert any(s >= 0.9 for s in scores_list)  # face 1 high
+        assert any(s <= 0.2 for s in scores_list)  # face 2 low
 
     def test_two_faces_ema_independent(self) -> None:
         tracker = LivenessTracker()
@@ -230,9 +150,9 @@ class TestLivenessTrackerMultiFace:
         # Sort by x coordinate
         sorted_results = sorted(result, key=lambda r: r[0][0])
         # Face 1 (left): starts 0.9, ema = 0.4*0.95 + 0.6*0.9 = 0.92
-        assert sorted_results[0][2] == pytest.approx(ALPHA * 0.95 + (1 - ALPHA) * 0.9)
+        assert sorted_results[0][1] == pytest.approx(ALPHA * 0.95 + (1 - ALPHA) * 0.9)
         # Face 2 (right): starts 0.2, ema = 0.4*0.15 + 0.6*0.2 = 0.18
-        assert sorted_results[1][2] == pytest.approx(ALPHA * 0.15 + (1 - ALPHA) * 0.2)
+        assert sorted_results[1][1] == pytest.approx(ALPHA * 0.15 + (1 - ALPHA) * 0.2)
 
     def test_face_swap_maintains_tracks(self) -> None:
         """When two faces swap positions, tracks should follow by IoU."""
@@ -243,10 +163,9 @@ class TestLivenessTrackerMultiFace:
         # Frame 2: faces slightly moved — tracks follow by IoU
         result = tracker.update([(2, 2, 50, 50), (102, 2, 50, 50)], [0.85, 0.15])
         assert len(result) == 2
-        # Both tracks should still be REAL and SPOOF respectively
         sorted_by_x = sorted(result, key=lambda r: r[0][0])
-        assert sorted_by_x[0][1] == "REAL"
-        assert sorted_by_x[1][1] == "SPOOF"
+        # Left face should have higher EMA score (from initial 0.9)
+        assert sorted_by_x[0][1] > sorted_by_x[1][1]
 
     def test_new_face_appears_old_disappears(self) -> None:
         """New face creates new track; old face track gets pruned after misses."""
