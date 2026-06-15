@@ -24,7 +24,6 @@ This folder tracks in-flight and archived feature plans — work-in-progress des
 
 | ID | Title | Status | Branch |
 |----|-------|--------|--------|
-| 0009 | [Hybrid Liveness Decider](active/0009-hybrid-liveness-decider.md) | Draft | — |
 
 ## Archive
 
@@ -40,3 +39,4 @@ Browse `docs/plans/archive/` for completed plans. Date prefix sorts chronologica
 | 0006 | [Enforce Cache Invalidation](archive/2026-06-06-0006-caching-face-repository.md) — candidate #4 | 2026-06-06 | `refactor/source-code` |
 | 0002 | [Architecture Deepening — Checklist](archive/2026-06-06-0002-architecture-deepening.md) — 4/5 done (#3 still active) | 2026-06-06 | `refactor/source-code` |
 | 0008 | [Address code-review findings for `feat/ui-polish`](archive/2026-06-07-0008-ui-polish-review-cleanups.md) | 2026-06-07 | `feat/ui-polish` |
+| 0009 | [Hybrid Liveness Decider](archive/0009-hybrid-liveness-decider-20260616.md) | 2026-06-16 | `refactor/upgrade-ai` |

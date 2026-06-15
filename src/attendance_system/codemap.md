@@ -73,7 +73,7 @@ Camera capture (CameraThread, every 30ms)
   → AIPipeline.run_attendance()
       ├── FacePreprocessor(LIVENESS_CONFIG) — crop scale 2.7, 128×128
       ├── LivenessChecker — MiniFASNet ONNX
-      ├── LivenessTracker — EMA smoothing + hysteresis
+      ├── LivenessTracker — EMA smoothing + IoU tracking (no temporal decisions)
       └── If REAL: FaceRecognizer.identify()
             → SFace ONNX embedding
             → cosine similarity vs. CachingFaceReferenceRepository

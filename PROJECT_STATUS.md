@@ -38,7 +38,7 @@ A **production-ready Python desktop application** for automated face-based atten
 2. **Face Recognition** — SFace (2021dec) ONNX model + embedding matching
 3. **Liveness Detection (Anti-Spoofing)** — MiniFASNet V2 SE (INT8, 600 KB)
 4. **Head Pose Estimation** — MobileNetV2 (optional, for enrollment)
-5. **Temporal Smoothing** — LivenessTracker (EMA + hysteresis + IoU tracking)
+5. **Temporal Smoothing** — LivenessTracker (EMA + IoU tracking) + HybridLivenessDecider (5-frame majority voting)
 6. **Database** — SQLite3 with schema migrations
 7. **UI** — 11 PyQt5 widgets (login, admin dashboard, attendance view, enrollment, settings, history)
 
@@ -70,9 +70,9 @@ load_dotenv()
 
 #### Anti-Spoofing (Liveness Detection)
 - [x] MiniFASNet V2 SE model integration (INT8, 600 KB)
-- [x] Temporal smoothing (EMA α=0.4 + hysteresis T_HIGH=0.65, T_LOW=0.45)
+- [x] Temporal smoothing (EMA α=0.4 + HybridLivenessDecider majority voting)
 - [x] IoU-based face tracking across frames
-- [x] Configurable threshold (default 0.3, via env or Admin UI)
+- [x] Configurable threshold (default 0.5, via env or Admin UI)
 - [x] Circuit-breaker pattern (30-failure limit per ADR-0001)
 
 #### Preprocessing Pipeline
@@ -154,11 +154,12 @@ load_dotenv()
 ## Phase 4: Threshold Tuning (Current)
 
 ### What Was Done
-1. ✅ Implemented temporal smoothing (LivenessTracker with EMA + hysteresis)
-2. ✅ Reduced threshold from 0.5 → 0.3 (quick fix)
-3. ✅ Created threshold tuning script (`scripts/tune_liveness_threshold.py`)
-4. ✅ Updated all config files (.env.example, UI defaults)
-5. ✅ All 280 tests passing
+1. ✅ Implemented temporal smoothing (LivenessTracker with EMA + IoU tracking)
+2. ✅ Implemented HybridLivenessDecider (5-frame majority voting, configurable threshold)
+3. ✅ Reduced threshold from 0.3 → 0.5 (probability space via sigmoid)
+4. ✅ Created threshold tuning script (`scripts/tune_liveness_threshold.py`)
+5. ✅ Updated all config files (.env.example, UI defaults)
+6. ✅ All 301 tests passing
 
 ### Results at Threshold 0.3
 - **Good lighting:** Flicker improved (2-3s intervals) ✅
@@ -212,7 +213,7 @@ src/
     ├── services/                              # Business logic (8 services)
     │   ├── ai_pipeline.py                     # Orchestrates liveness + recognition
     │   ├── pipeline_result.py                 # Structured AI output
-    │   ├── liveness_tracker.py                # EMA + hysteresis + IoU tracking
+    │   ├── liveness_tracker.py                # EMA + IoU tracking (pure tracking)
     │   ├── face_preprocessor.py               # Composable preprocessing
     │   ├── preprocessing_configs.py           # Per-model configs
     │   ├── head_pose.py                       # Head-pose estimation
@@ -467,7 +468,7 @@ Models are gitignored. Download separately:
 - **Liveness Detection** — Detecting if a face is real (not a photo/video/mask)
 - **Anti-Spoofing** — Preventing spoofing attacks (same as liveness detection)
 - **Face Embedding** — Vector representation of a face (512-dim for SFace)
-- **Temporal Smoothing** — Aggregating decisions over multiple frames (EMA + hysteresis)
+- **Temporal Smoothing** — Aggregating decisions over multiple frames (EMA + majority voting)
 - **Circuit-Breaker** — Stopping inference after 30 consecutive failures
 - **Preprocessing** — Crop, resize, normalize before model inference
 - **Enrollment** — Capturing and storing a user's face embedding

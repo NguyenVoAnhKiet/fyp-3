@@ -59,7 +59,7 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 - `EnrollmentCameraThread` flips frames (mirror); attendance `CameraThread` does not.
 - `CachingFaceReferenceRepository` wrapper owns the face-references cache; inner `FaceReferenceRepository` is a pure SQLite adapter. Invalidation is enforced by the wrapper — see `tests/unit/test_caching_face_reference_repository.py` (parametrized over 4 write methods).
 - `_crop_face` scale: 2.7 for liveness (broad context), 1.5 for head-pose (tight crop).
-- `_COOLDOWN_SECONDS = 3.0` in `camera_thread.py` — per-user cooldown before re-recognition. In-memory, resets on thread restart.
+- `_COOLDOWN_SECONDS = 1.5` in `camera_thread.py` — per-user cooldown before re-recognition. In-memory, resets on thread restart.
 - `_AI_FRAME_SKIP = 3` — full AI pipeline runs every 3rd frame (~10 Hz at 30 fps).
 - `_PAUSE_POLL_INTERVAL_SECONDS = 0.05` — `CameraThreadBase.pause()`/`resume()` poll interval; `AIWorker` idles naturally on its own queue.
 - `user_mode_view.py` tracks `_recognized_users` (set of `user_id`) to suppress duplicate sidebar entries + `_stats_success` increment. `_stats_total` always increments (total events).
@@ -80,7 +80,7 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 ## Liveness (Anti-Spoofing)
 
 - MiniFASNet V2 SE quantized. 2D texture classifier — poor lighting rejects ~95% real faces (model limitation).
-- Temporal smoothing: EMA (α=0.4) + hysteresis (T_HIGH=0.65, T_LOW=0.45) + IoU tracking in `services/liveness_tracker.py`.
+- Temporal smoothing: EMA (α=0.4) + IoU tracking in `services/liveness_tracker.py`. Liveness decisions now use `HybridLivenessDecider` (5-frame majority voting, configurable threshold). Hysteresis (T_HIGH/T_LOW) has been removed.
 - Crop scale: 2.7 for liveness (broad context), 1.5 for head-pose (tight crop). Wrong scale silently rejects real users.
 
 ## Camera Workers

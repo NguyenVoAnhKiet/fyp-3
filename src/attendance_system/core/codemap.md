@@ -75,7 +75,7 @@ Core infrastructure layer: manages configuration resolution (CLI > env > DB > de
 ### `liveness_tracker.py` — Backward-compatibility re-export shim
 
 - Deprecated re-export shim (`attendance_system.core.liveness_tracker` → `attendance_system.services.liveness_tracker`).
-- Re-exports: `LivenessTracker`, `TrackedFace`, `compute_iou`, and constants (`ALPHA`, `IOU_THRESHOLD`, `MAX_MISSES`, `T_HIGH`, `T_LOW`).
+- Re-exports: `LivenessTracker`, `TrackedFace`, `compute_iou`, and constants (`ALPHA`, `IOU_THRESHOLD`, `MAX_MISSES`).
 - Canonical implementation moved to `services/` in Plan 0004; this shim preserves existing imports.
 
 ### `__init__.py` — Package init

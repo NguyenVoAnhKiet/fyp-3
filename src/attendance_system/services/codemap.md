@@ -40,14 +40,15 @@ SessionClosedError              # recording attendance in a closed session
 
 ### `liveness_tracker.py` — Temporal smoothing (plan 0004)
 
-- **`LivenessTracker`** — Frame-to-frame tracking of detected faces with exponential moving average (EMA) smoothing of liveness scores and a hysteresis state machine to prevent rapid SPOOF ↔ REAL transitions.
+- **`LivenessTracker`** — Frame-to-frame tracking of detected faces with exponential moving average (EMA) smoothing of liveness scores. Pure IoU tracking with EMA — no temporal decisions (those moved to `HybridLivenessDecider`).
 - **Algorithm per frame:**
   1. Greedy IoU match each detection → existing track.
-  2. Matched tracks: update bbox, apply EMA (`α=0.4`), apply hysteresis.
+  2. Matched tracks: update bbox, apply EMA (`α=0.4`).
   3. Unmatched detections → create new tracks.
   4. Unmatched existing tracks → increment miss counter.
   5. Prune tracks with misses > `MAX_MISSES` (default 3).
-- **Hysteresis:** `T_HIGH=0.65` (SPOOF→REAL), `T_LOW=0.45` (REAL→SPOOF). Stays in current state between thresholds to avoid boundary flicker.
+- **EMA:** `α=0.4` — exponential moving average of liveness probability scores.
+- **Hysteresis:** Removed in plan 0009. Temporal decisions moved to `HybridLivenessDecider` (5-frame majority voting, configurable threshold).
 - **`TrackedFace`** — Internal dataclass (slots) holding bbox, ema_score, state, misses.
 - **`compute_iou(bbox1, bbox2)`** — IoU in (x, y, w, h) format.
 - Relocated from `core/liveness_tracker.py` (plan 0004). The `core/liveness_tracker.py` now re-exports all public names for backward compatibility.
@@ -118,7 +119,7 @@ User action (click, camera frame)
 2. `AIPipeline.run_attendance(frame_bgr, frame_rgb, face_row, frame_counter)`:
    a. Crop face for liveness (scale=2.7).
    b. `LivenessChecker.check(face_crop, threshold)` → liveness score.
-   c. `LivenessTracker.update([bbox], [score])` → EMA-smoothed, hysteresis-decided state.
+   c. `LivenessTracker.update([bbox], [score])` → EMA-smoothed score (no state decision).
    d. If REAL: `FaceRecognizer.identify(frame_bgr, face_row, threshold)` → embedding extraction + cosine similarity vs. DB references.
    e. Return `PipelineResult` with `result_type` → `"success"`, `"spoof"`, or `"unrecognized"`.
 3. `AttendanceService.record_success(...)` → writes recognition event + attendance record.
