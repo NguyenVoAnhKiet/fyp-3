@@ -253,7 +253,7 @@ class EnrollmentWidget(QWidget):
         self._stop_btn.setMinimumHeight(40)
         self._stop_btn.setEnabled(False)
         self._stop_btn.setStyleSheet("background-color: #e74c3c; color: white; font-weight: bold;")
-        self._stop_btn.clicked.connect(self._stop_enrollment)
+        self._stop_btn.clicked.connect(self._confirm_and_stop)
 
         controls_layout.addWidget(self._start_btn)
         controls_layout.addWidget(self._stop_btn)
@@ -333,16 +333,60 @@ class EnrollmentWidget(QWidget):
         self._user_dropdown.setEnabled(False)
         self._refresh_btn.setEnabled(False)
 
+    def _confirm_and_stop(self) -> None:
+        """Show confirmation dialog before stopping (user-initiated)."""
+        if self._camera_thread is None:
+            return
+        result = QMessageBox.question(
+            self,
+            "Xác nhận",
+            "Bạn có chắc chắn muốn hủy quá trình đăng ký khuôn mặt? "
+            "Dữ liệu các mẫu đã chụp sẽ bị mất.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if result == QMessageBox.Yes:
+            self._stop_enrollment()
+
     def _stop_enrollment(self) -> None:
-        if self._camera_thread:
+        if self._camera_thread is not None:
+            # Disconnect all signals BEFORE stopping to prevent pending
+            # signals from re-writing the cleared camera label.
+            # try/except TypeError is the canonical PyQt5 pattern for safe
+            # disconnect — receivers() is a QObject method, not a bound-signal
+            # method, so it does not work reliably in all PyQt5 versions.
+            try:
+                self._camera_thread.frame_ready.disconnect(self.update_frame)
+            except TypeError:
+                pass
+            try:
+                self._camera_thread.capture_progress.disconnect(self.set_progress)
+            except TypeError:
+                pass
+            try:
+                self._camera_thread.enrollment_complete.disconnect(self._handle_complete)
+            except TypeError:
+                pass
+            try:
+                self._camera_thread.camera_error.disconnect(self._handle_error)
+            except TypeError:
+                pass
+            try:
+                self._camera_thread.inference_warning.disconnect(self._handle_inference_warning)
+            except TypeError:
+                pass
+            try:
+                self._camera_thread.sample_captured.disconnect(self._on_sample_captured)
+            except TypeError:
+                pass
             self._camera_thread.stop()
             self._camera_thread = None
-        
+
         self._camera_label.clear()
         self._camera_label.setText("Camera Feed")
         self.set_progress(0)
         self._reset_steps()
-        
+
         # Reset UI state
         self._start_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
