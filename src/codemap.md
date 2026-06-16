@@ -41,8 +41,8 @@ from PyQt5.QtWidgets import QApplication, QMessageBox
 2. **`SettingsResolver.resolve()` (provisional)** — build partial `SystemConfig` (CLI > env > default); no DB reader yet since the schema does not exist
 3. **`initialize_storage()`** — create/upgrade SQLite schema (WAL mode)
 4. **Create `QApplication`**
-5. **`seed_db_from_env()`** — idempotent write of env-vars into `system_settings` table (only if key is unset, so Admin UI changes survive)
-6. **`resolve_config()` (final)** — re-resolve `SystemConfig` with DB-aware reader (DB > env > default for settings; timezone is DB > env > default)
+5. **`seed_db_from_defaults()`** — idempotent write of JSON defaults into `system_settings` table (only if key is unset, so Admin UI changes survive)
+6. **`resolve_config()` (final)** — re-resolve `SystemConfig` with DB-aware reader (DB > JSON defaults > defaults.py for settings; timezone is DB > defaults.py)
 7. **`set_timezone_config()`** — apply resolved timezone to `time_utils` module-level `_tz`
 8. **Validate model files** — check existence of required ONNX paths; optional head-pose model falls back to legacy mode on error
 9. **Build services** — `AttendanceService`, `AuthenticationService`, `LivenessChecker`, `FaceRecognizer` (wrapped in `CachingFaceReferenceRepository`)

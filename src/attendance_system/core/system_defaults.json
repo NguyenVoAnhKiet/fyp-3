@@ -1,0 +1,11 @@
+{
+  "timezone": "UTC",
+  "liveness_threshold": 0.5,
+  "similarity_threshold": 0.6,
+  "attendance_freeze_seconds": 30,
+  "attendance_freeze_sound_enabled": true,
+  "hybrid_voting_window": 5,
+  "hybrid_boost_amount": 0.1,
+  "hybrid_liveness_enabled": true,
+  "recognition_interval": 3
+}

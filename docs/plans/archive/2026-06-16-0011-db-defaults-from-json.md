@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft
+Done (2026-06-16)
 
 ## Context
 
