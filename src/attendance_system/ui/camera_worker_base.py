@@ -166,6 +166,9 @@ class CameraThreadBase(QThread):
                         )
                         break
 
+                # Mirror horizontally so user sees themselves like in a mirror
+                frame = cv2.flip(frame, 1)
+
                 faces = self._detect_faces(frame)
                 self._detected_faces = faces
                 frame_counter += 1
