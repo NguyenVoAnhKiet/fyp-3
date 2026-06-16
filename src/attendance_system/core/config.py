@@ -1,7 +1,7 @@
 """Centralized configuration resolution.
 
 This module owns the **single source of truth** for configuration resolution
-order and the one-time JSON→DB seeding pattern.
+order and the one-time defaults→DB seeding pattern.
 
 Architecture (see ``docs/plans/active/0005-system-config-resolver.md``):
 
@@ -11,7 +11,7 @@ Architecture (see ``docs/plans/active/0005-system-config-resolver.md``):
 
   - ``"runtime"`` (default) — full resolution:
     - Non-DB settings: CLI > env > default.
-    - DB-seedable settings: DB > JSON defaults > ``defaults.py``.
+    - DB-seedable settings: DB > ``defaults.py``.
     Used by ``main.py``.
   - ``"init"`` — minimal resolution for ``attendance-storage-init``:
     only ``database_path`` matters; ``load_dotenv()`` is skipped so the
@@ -20,14 +20,12 @@ Architecture (see ``docs/plans/active/0005-system-config-resolver.md``):
 * :func:`resolve_config` — convenience factory wiring up the typical
   runtime caller.
 
-Defaults live in :mod:`attendance_system.core.defaults`.  JSON overrides
-for DB-seedable settings live in ``system_defaults.json`` (co-located).
+All defaults live in :mod:`attendance_system.core.defaults`.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import os
 from collections.abc import Callable, Mapping
@@ -118,12 +116,8 @@ class SystemConfig:
 # ---------------------------------------------------------------------------
 
 
-# ---------------------------------------------------------------------------
-# JSON defaults for DB-seedable settings
-# ---------------------------------------------------------------------------
-
 #: Maps DB key → value_type string for the 9 seedable settings.
-#: JSON file provides values; ``defaults.py`` provides the ultimate fallback.
+#: Values come from :mod:`attendance_system.core.defaults` constants.
 _SEED_SETTINGS: dict[str, str] = {
     "timezone": "str",
     "liveness_threshold": "float",
@@ -136,25 +130,15 @@ _SEED_SETTINGS: dict[str, str] = {
     "recognition_interval": "int",
 }
 
-
-def _load_defaults() -> dict[str, Any]:
-    """Load seedable defaults from ``system_defaults.json``.
-
-    Returns a dict mapping DB keys to their default values (native JSON
-    types).  If the file is missing or contains invalid JSON, returns an
-    empty dict so that ``defaults.py`` values act as the ultimate fallback.
-    """
-    json_path = Path(__file__).parent / "system_defaults.json"
-    try:
-        raw = json_path.read_text(encoding="utf-8")
-        return json.loads(raw)
-    except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
-        _log.warning("Could not load %s: %s — falling back to defaults.py", json_path, exc)
-        return {}
-
-
-# Module-level load: once at import time.
-_SYSTEM_DEFAULTS: dict[str, Any] = _load_defaults()
+# Module-level assertion: verify every seedable key has a corresponding
+# ``DEFAULT_*`` constant in ``defaults.py``.  Fail-fast at import time
+# on drift between ``_SEED_SETTINGS`` and ``defaults.py``.
+for _db_key in _SEED_SETTINGS:
+    _const_name = f"DEFAULT_{_db_key.upper()}"
+    if not hasattr(defaults, _const_name):
+        raise RuntimeError(
+            f"Missing default constant: {_const_name} for seed key {_db_key}"
+        )
 
 
 def _stringify_for_db(value: Any, value_type: str) -> str:
@@ -176,8 +160,8 @@ _BOOL_FALSE: frozenset[str] = frozenset({"0", "false", "no", "off"})
 class SettingsResolver:
     """Resolves :class:`SystemConfig` from CLI > env > DB > default.
 
-    For DB-seedable keys (thresholds, timezone, UX settings), the resolution
-    is **DB > JSON defaults > defaults.py** — env vars are not consulted.
+            For DB-seedable keys (thresholds, timezone, UX settings), the resolution
+            is **DB > defaults.py** — env vars are not consulted.
     This ensures the Admin UI is the single source of truth after first run.
 
     Args:
@@ -308,7 +292,7 @@ class SettingsResolver:
                 recognition_interval=defaults.DEFAULT_RECOGNITION_INTERVAL,
             )
 
-        # --- Thresholds (DB > JSON defaults > defaults.py; no env override) ---
+        # --- Thresholds (DB > defaults.py; no env override) ---
         liveness_threshold = self._resolve_float(
             None, None,
             read_db("liveness_threshold"),
@@ -320,7 +304,7 @@ class SettingsResolver:
             defaults.DEFAULT_SIMILARITY_THRESHOLD,
         )
 
-        # --- Hybrid liveness decider (DB > JSON defaults > defaults.py; no env) ---
+        # --- Hybrid liveness decider (DB > defaults.py; no env) ---
         hybrid_voting_window = self._resolve_int(
             None, None,
             read_db("hybrid_voting_window"),
@@ -349,7 +333,7 @@ class SettingsResolver:
             defaults.DEFAULT_TIMEZONE,
         )
 
-        # --- Attendance UX (DB > JSON defaults > defaults.py; no env) ---
+        # --- Attendance UX (DB > defaults.py; no env) ---
         attendance_freeze_seconds = self._resolve_int(
             None, None,
             read_db("attendance_freeze_seconds"),
@@ -394,7 +378,7 @@ class SettingsResolver:
         self,
         settings: _SettingsServiceLike,
     ) -> None:
-        """Write JSON defaults to the DB on first run only.
+        """Write defaults from ``defaults.py`` to the DB on first run only.
 
         Idempotent: if the DB already has a value for a key, it is left
         untouched.  This preserves the Admin UI overrides across restarts.
@@ -411,9 +395,7 @@ class SettingsResolver:
         for db_key, value_type in _SEED_SETTINGS.items():
             if settings.get(db_key) is not None:
                 continue  # DB owns this value; do not overwrite
-            value = _SYSTEM_DEFAULTS.get(db_key)
-            if value is None:
-                continue  # no default to seed
+            value = getattr(defaults, f"DEFAULT_{db_key.upper()}")
             settings.set(db_key, _stringify_for_db(value, value_type), value_type)
 
     # ------------------------------------------------------------------

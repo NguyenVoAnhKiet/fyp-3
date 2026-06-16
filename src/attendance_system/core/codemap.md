@@ -10,30 +10,21 @@ Core infrastructure layer: manages configuration resolution (CLI > env > DB > de
 
 - **`SystemConfig`** — `@dataclass(slots=True, frozen=True)` holding all resolved system tunables exactly once: database/model paths, camera index, feature flags (`antispoof_enabled`, `headpose_enabled`), AI thresholds, timezone, attendance UX settings. Immutable; constructed by `SettingsResolver` at startup.
 - **`SettingsResolver`** — Class that performs resolution in two modes:
-  - `"runtime"` (default) — full resolution; used by `main.py`. For DB-seedable keys, resolution is **DB > JSON defaults > defaults.py** (env vars not consulted). For non-DB settings (paths, camera, feature flags): CLI > env > default.
+  - `"runtime"` (default) — full resolution; used by `main.py`. For DB-seedable keys, resolution is **DB > defaults.py** (env vars not consulted). For non-DB settings (paths, camera, feature flags): CLI > env > default.
   - `"init"` — minimal resolution for `attendance-storage-init`; only `database_path` matters, skips env seeding (bootstrap does not call `load_dotenv()`).
 - **`resolve_config()`** — Convenience factory that wires `SettingsService.get` as the `db_reader` for the resolver.
-- **`seed_db_from_defaults()`** — Idempotent JSON→DB seeding: writes values from `system_defaults.json` to `system_settings` only if the DB key is unset, preserving Admin UI overrides. Native JSON types are converted to strings via `str(value)`. Skipped in init mode.
+- **`seed_db_from_defaults()`** — Idempotent defaults→DB seeding: reads values from `defaults.py` constants via `getattr` and writes to `system_settings` only if the DB key is unset (preserving Admin UI overrides). Skipped in init mode.
 - **`_SEED_SETTINGS`** — Dict mapping DB key → value_type string for the 9 seedable settings.
-- **`_load_defaults()`** — Reads `system_defaults.json` at module level with try/except (fallback to empty dict on missing/corrupt file). Path anchored to `__file__` to avoid CWD issues.
-- **`_SYSTEM_DEFAULTS`** — Module-level dict loaded from JSON at import time.
+- **Module-level assertion** — Verifies every `_SEED_SETTINGS` key has a corresponding `DEFAULT_*` constant in `defaults.py` at import time. Fail-fast on drift.
 - **Per-type resolvers** — `_resolve_path`, `_resolve_int`, `_resolve_float`, `_resolve_bool`, `_resolve_timezone`. Each encapsulates CLI > env > [DB] > default fallback logic with proper empty-string and parse-error handling. Timezone uses DB > default (no CLI flag, no env) with `zoneinfo.ZoneInfo` validation.
 
 **Important**: `bootstrap.py` uses `SettingsResolver(mode="init")` with `env={}` for hermetic resolution — no `os.environ` consulted, no `.env` loaded. The `SettingsResolver` owns all parsing logic (int/bool/float) so call sites don't duplicate it.
 
 ### `defaults.py` — Default values for all system tunables
 
-- Single source of truth for every tunable default. Referenced by `SystemConfig` field defaults and `SettingsResolver` when no DB/JSON value is set.
+- Single source of truth for every tunable default. Referenced by `SystemConfig` field defaults and `SettingsResolver` when no DB value is set (also used for first-run DB seeding).
 - Centralizing defaults here makes threshold migrations (e.g., `0.5 → 0.3`) a one-file change instead of touching 4+ call sites.
 - Key constants: `DEFAULT_LIVENESS_THRESHOLD`, `DEFAULT_SIMILARITY_THRESHOLD`, `DEFAULT_CAMERA_INDEX`, `DEFAULT_ATTENDANCE_FREEZE_SECONDS`, model file paths, feature flag defaults (`DEFAULT_ANTISPOOF_ENABLED`, `DEFAULT_HEADPOSE_ENABLED`), `DEFAULT_TIMEZONE`.
-- `system_defaults.json` provides optional overrides for DB-seedable keys; `defaults.py` is the ultimate fallback.
-
-### `system_defaults.json` — JSON defaults for DB-seedable settings
-
-- Co-located with `config.py`; provides initial values for 9 seedable DB keys on first run.
-- Loaded at module level by `_load_defaults()` with try/except fallback to empty dict.
-- Native JSON types (`true`, `0.5`, `5`) are converted to strings via `str(value)` during seeding.
-- If the file is missing or contains invalid JSON, `defaults.py` values act as the ultimate fallback.
 
 ### `db.py` — Database connection management
 
@@ -99,13 +90,13 @@ Core infrastructure layer: manages configuration resolution (CLI > env > DB > de
 |---|---|
 | `repositories/` | `Database.session()` for all CRUD operations |
 | `services/` | `DatabaseConfig`, `Database` — `AuthService`, `EnrollmentService`, `SettingsService` etc. compose their own `Database` instances |
-| `main.py` (runtime init) | `SettingsResolver.resolve()` → `SystemConfig`, then `seed_db_from_defaults()` for first-run JSON→DB seeding |
+| `main.py` (runtime init) | `SettingsResolver.resolve()` → `SystemConfig`, then `seed_db_from_defaults()` for first-run defaults→DB seeding |
 | `attendance-storage-init` CLI | `bootstrap.main()` — the only way to initialize a fresh DB |
 | `src/main.py` bootstrap order | `load_dotenv()` → `SettingsResolver.resolve()` → `set_timezone_config()` → `initialize_storage()` |
 
 ### Data flow
 
-1. **Startup**: `attendance-app` → `load_dotenv()` → `SettingsResolver.resolve()` builds frozen `SystemConfig` (CLI > env > DB > default) → `set_timezone_config()` → `initialize_storage()` creates/upgrades schema → `seed_db_from_defaults()` idempotently writes JSON values → wire services → launch UI.
+1. **Startup**: `attendance-app` → `load_dotenv()` → `SettingsResolver.resolve()` builds frozen `SystemConfig` (CLI > env > DB > default) → `set_timezone_config()` → `initialize_storage()` creates/upgrades schema → `seed_db_from_defaults()` idempotently writes `defaults.py` values → wire services → launch UI.
 2. **Storage init**: `attendance-storage-init` CLI → `bootstrap.main()` → `SettingsResolver(mode="init")` resolves only `database_path` → `StorageManager.initialize()` → `initialize_schema(connection)` creates tables → `_seed_admin()` inserts default admin.
 3. **Runtime**: `Database` is instantiated (via `DatabaseConfig` from `SystemConfig`) → wired into repositories → services call `database.session()` for transactional DB access.
 4. **Schema changes**: New `CREATE TABLE` statements go into `SCHEMA_STATEMENTS`. Backward-compatible migrations (column additions, constraint changes, table recreations) go into `initialize_schema()` after the schema loop.
@@ -120,6 +111,6 @@ Core infrastructure layer: manages configuration resolution (CLI > env > DB > de
 - **No ORM** — raw SQL with `sqlite3.Row` keeps the dependency footprint minimal and avoids ORM overhead for a single-process desktop app.
 - **Frozen `SystemConfig`** — immutable config object prevents accidental post-construction mutation; single injection point for all tunables instead of ad-hoc env reads throughout the codebase.
 - **`SettingsResolver` two modes** — `"init"` mode keeps `bootstrap.py` hermetic (no `load_dotenv()`, no `os.environ` consultation), while `"runtime"` mode provides full resolution. This prevents the init CLI from accidentally pulling in `.env` values meant for the app.
-- **Idempotent JSON→DB seeding** — `seed_db_from_defaults()` only writes if the DB key is unset, so Admin UI changes survive restarts. JSON provides initial values; `defaults.py` is the ultimate fallback.
-- **Defaults centralized** — all default values in `defaults.py` instead of scattered across modules. Threshold migrations become a one-file change. `system_defaults.json` provides optional overrides for DB-seedable keys.
+- **Idempotent defaults→DB seeding** — `seed_db_from_defaults()` only writes if the DB key is unset, so Admin UI changes survive restarts. All defaults come from `defaults.py`.
+- **Defaults centralized** — all default values in `defaults.py` instead of scattered across modules. Threshold migrations become a one-file change.
 - **Liveness tracker re-export** — the old `core/liveness_tracker.py` re-exports from `services/` for backward compatibility without code duplication.

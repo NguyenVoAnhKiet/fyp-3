@@ -61,7 +61,7 @@ attendance_system/
 5. `initialize_storage()` creates/upgrades SQLite schema (WAL mode, foreign keys)
 6. `QApplication` created, ONNX model files validated
 7. Repositories and services instantiated with shared `Database` instance
-8. `seed_db_from_defaults()` writes JSON→DB if keys are unset (idempotent)
+8. `seed_db_from_defaults()` writes `defaults.py`→DB if keys are unset (idempotent)
 9. `MainWindow` launched with all dependencies injected → Qt event loop
 
 ### Data Flow — Attendance Check-In
@@ -152,7 +152,7 @@ EnrollmentWidget
 
 ### Config Resolution Order
 
-Each tunable follows the same chain: **CLI arg > environment variable > DB setting > default constant** (DB-seedable keys are the exception: DB > JSON defaults > `defaults.py`, no env override). `SettingsResolver` in `core/config.py` encapsulates this logic with per-type resolvers (`_resolve_path`, `_resolve_int`, `_resolve_float`, `_resolve_bool`, `_resolve_timezone`). `seed_db_from_defaults()` only writes if the DB key is unset, so Admin UI changes survive restarts.
+Each tunable follows the same chain: **CLI arg > environment variable > DB setting > default constant** (DB-seedable keys are the exception: DB > `defaults.py`, no env override). `SettingsResolver` in `core/config.py` encapsulates this logic with per-type resolvers (`_resolve_path`, `_resolve_int`, `_resolve_float`, `_resolve_bool`, `_resolve_timezone`). `seed_db_from_defaults()` only writes if the DB key is unset, so Admin UI changes survive restarts.
 
 ### Model File Layout
 
@@ -173,7 +173,7 @@ Each tunable follows the same chain: **CLI arg > environment variable > DB setti
 - **ONNX circuit-breaker** — `AIWorkerBase` sets `_MAX_CONSECUTIVE_FAILURES = 30`; one broken model kills both attendance and enrollment (ADR-0001 shared counter).
 - **Preprocessing configs** — Per-model `PreprocessingConfig` constants (`LIVENESS_CONFIG`, `HEAD_POSE_CONFIG`) in `services/preprocessing_configs.py`; adding a new model = one new config constant.
 - **Liveness bypass during enrollment** — `LivenessChecker(model_path=None)` always passes; multi-pose capture provides implicit anti-spoofing.
-- **Idempotent JSON→DB seeding** — `seed_db_from_defaults()` only writes unset DB keys, preserving Admin UI overrides across restarts. JSON provides initial values; `defaults.py` is the ultimate fallback.
+- **Idempotent defaults→DB seeding** — `seed_db_from_defaults()` only writes unset DB keys, preserving Admin UI overrides across restarts. All defaults come from `defaults.py`.
 - **`database.session()` context manager** — Auto-commit/rollback/close prevents leaked connections.
 - **Timezone-change signal bus** — `time_utils.timezone_signals` is a module-level `QObject` singleton; UI widgets re-render in real-time on timezone switch.
 - **`onnxruntime` before `PyQt5`** — Windows DLL-ordering requirement enforced at `src/main.py` and `tests/conftest.py`.

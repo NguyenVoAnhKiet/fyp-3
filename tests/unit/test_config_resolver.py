@@ -1,6 +1,6 @@
 """Unit tests for ``attendance_system.core.config``.
 
-Covers resolution-order, JSON-defaults seeding idempotency, init vs runtime
+Covers resolution-order, defaults→DB seeding idempotency, init vs runtime
 modes, and the immutability of the resolved :class:`SystemConfig`.
 """
 
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -37,37 +37,6 @@ def _db_with(values: dict[str, str]) -> MagicMock:
     svc = MagicMock()
     svc.get.side_effect = lambda key: values.get(key)
     return svc
-
-
-# ---------------------------------------------------------------------------
-# JSON defaults loading
-# ---------------------------------------------------------------------------
-
-
-def test_system_defaults_json_loads_successfully() -> None:
-    """JSON file parses without error."""
-    from attendance_system.core.config import _load_defaults
-
-    defaults_dict = _load_defaults()
-    assert isinstance(defaults_dict, dict)
-
-
-def test_system_defaults_json_has_all_seedable_keys() -> None:
-    """All 9 seedable keys present in JSON."""
-    from attendance_system.core.config import _SYSTEM_DEFAULTS
-
-    expected_keys = {
-        "timezone",
-        "liveness_threshold",
-        "similarity_threshold",
-        "attendance_freeze_seconds",
-        "attendance_freeze_sound_enabled",
-        "hybrid_voting_window",
-        "hybrid_boost_amount",
-        "hybrid_liveness_enabled",
-        "recognition_interval",
-    }
-    assert expected_keys.issubset(set(_SYSTEM_DEFAULTS.keys()))
 
 
 # ---------------------------------------------------------------------------
@@ -144,88 +113,78 @@ def test_non_db_settings_still_use_env_override() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Seeding: JSON defaults → DB on first run, never overwrites existing
+# Seeding: defaults.py → DB on first run, never overwrites existing
 # ---------------------------------------------------------------------------
 
 
+def test_all_seed_keys_have_defaults_constant() -> None:
+    """Every ``_SEED_SETTINGS`` key has a matching ``DEFAULT_*`` in ``defaults.py``."""
+    from attendance_system.core.config import _SEED_SETTINGS
+
+    for db_key in _SEED_SETTINGS:
+        const_name = f"DEFAULT_{db_key.upper()}"
+        assert hasattr(defaults, const_name), f"Missing {const_name} for {db_key}"
+
+
 def test_seed_db_from_defaults_writes_when_key_missing() -> None:
-    """DB has no value, JSON default exists — DB gets seeded."""
+    """DB has no value — all 9 seed keys are written from defaults.py."""
     settings = _empty_db()
-    with patch(
-        "attendance_system.core.config._SYSTEM_DEFAULTS",
-        {"liveness_threshold": 0.5},
-    ):
-        SettingsResolver().seed_db_from_defaults(settings=settings)
-    called = settings.set.call_args_list
-    assert any(
-        call.args[0] == "liveness_threshold" and call.args[1] == "0.5"
-        for call in called
-    ), f"Expected liveness_threshold seeding; got: {called}"
+    SettingsResolver().seed_db_from_defaults(settings=settings)
+    assert settings.set.called
+    called_keys = {call.args[0] for call in settings.set.call_args_list}
+    expected_keys = {
+        "timezone",
+        "liveness_threshold",
+        "similarity_threshold",
+        "attendance_freeze_seconds",
+        "attendance_freeze_sound_enabled",
+        "hybrid_voting_window",
+        "hybrid_boost_amount",
+        "hybrid_liveness_enabled",
+        "recognition_interval",
+    }
+    assert called_keys == expected_keys, (
+        f"Expected {expected_keys}, got {called_keys}"
+    )
 
 
 def test_seed_db_from_defaults_skips_when_key_exists() -> None:
-    """DB has a value, JSON default has different value — DB is left untouched."""
-    settings = _db_with({"liveness_threshold": "0.7"})
-    with patch(
-        "attendance_system.core.config._SYSTEM_DEFAULTS",
-        {"liveness_threshold": 0.5},
-    ):
-        SettingsResolver().seed_db_from_defaults(settings=settings)
+    """All DB keys have values — seeding is skipped entirely."""
+    settings = _db_with({
+        "liveness_threshold": "0.5",
+        "similarity_threshold": "0.6",
+        "attendance_freeze_seconds": "4",
+        "attendance_freeze_sound_enabled": "false",
+        "hybrid_voting_window": "5",
+        "hybrid_boost_amount": "0.1",
+        "hybrid_liveness_enabled": "false",
+        "recognition_interval": "5",
+        "timezone": "Asia/Ho_Chi_Minh",
+    })
+    SettingsResolver().seed_db_from_defaults(settings=settings)
     settings.set.assert_not_called()
 
 
-def test_seed_db_from_defaults_converts_json_types_to_strings() -> None:
-    """JSON true → 'true', 0.5 → '0.5', 5 → '5'."""
+def test_seed_db_from_defaults_converts_db_types_to_strings() -> None:
+    """``defaults.py`` float/bool/int → '0.5'/'false'/'5'.
+    
+    Uses real defaults from :mod:`attendance_system.core.defaults`.
+    """
     settings = _empty_db()
-    with patch(
-        "attendance_system.core.config._SYSTEM_DEFAULTS",
-        {
-            "liveness_threshold": 0.5,
-            "hybrid_liveness_enabled": True,
-            "hybrid_voting_window": 5,
-        },
-    ):
-        SettingsResolver().seed_db_from_defaults(settings=settings)
+    SettingsResolver().seed_db_from_defaults(settings=settings)
     called = {call.args[0]: call.args[1] for call in settings.set.call_args_list}
     assert called["liveness_threshold"] == "0.5"
-    assert called["hybrid_liveness_enabled"] == "true"
+    assert called["hybrid_liveness_enabled"] == "false"
     assert called["hybrid_voting_window"] == "5"
 
 
-def test_seed_db_from_defaults_skips_null_json_value() -> None:
-    """JSON null → no seed."""
-    settings = _empty_db()
-    with patch(
-        "attendance_system.core.config._SYSTEM_DEFAULTS",
-        {"liveness_threshold": None},
-    ):
-        SettingsResolver().seed_db_from_defaults(settings=settings)
-    settings.set.assert_not_called()
-
-
 def test_seed_db_from_defaults_valid_zero_and_false_are_valid() -> None:
-    """0 and false are NOT skipped (only null skips)."""
+    """0 and false are valid seed values (never skipped)."""
     settings = _empty_db()
-    with patch(
-        "attendance_system.core.config._SYSTEM_DEFAULTS",
-        {
-            "attendance_freeze_seconds": 0,
-            "hybrid_liveness_enabled": False,
-        },
-    ):
-        SettingsResolver().seed_db_from_defaults(settings=settings)
+    SettingsResolver().seed_db_from_defaults(settings=settings)
     called = {call.args[0]: call.args[1] for call in settings.set.call_args_list}
-    assert called["attendance_freeze_seconds"] == "0"
+    # ``hybrid_liveness_enabled`` defaults to ``False`` → must be seeded as "false"
     assert called["hybrid_liveness_enabled"] == "false"
-
-
-def test_seed_db_from_defaults_json_file_missing_falls_back_to_empty() -> None:
-    """FileNotFoundError → graceful fallback, no crash."""
-    with patch("attendance_system.core.config._SYSTEM_DEFAULTS", {}):
-        settings = _empty_db()
-        SettingsResolver().seed_db_from_defaults(settings=settings)
-    # Should not crash; no seeding since _SYSTEM_DEFAULTS is empty
-    settings.set.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -261,16 +220,9 @@ def test_runtime_mode_consults_env_for_non_db_settings() -> None:
 
 
 def test_init_mode_skips_defaults_seeding() -> None:
-    """Init mode is a no-op for seeding even if JSON defaults exist."""
+    """Init mode is a no-op for seeding (bootstrap does not seed DB)."""
     settings = _empty_db()
-    with patch(
-        "attendance_system.core.config._SYSTEM_DEFAULTS",
-        {
-            "liveness_threshold": 0.5,
-            "attendance_freeze_seconds": 10,
-        },
-    ):
-        SettingsResolver(mode="init").seed_db_from_defaults(settings=settings)
+    SettingsResolver(mode="init").seed_db_from_defaults(settings=settings)
     settings.set.assert_not_called()
 
 
