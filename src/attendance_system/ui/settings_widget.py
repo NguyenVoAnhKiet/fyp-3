@@ -14,6 +14,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import time
+
+import numpy as np
+
 import cv2
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtWidgets import (
@@ -84,8 +88,13 @@ class _CameraScanThread(QThread):
         for i in range(_CAMERA_SCAN_MAX):
             cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
             if cap.isOpened():
-                available.append(i)
-                cap.release()
+                ret1, frame1 = cap.read()
+                if ret1 and frame1 is not None:
+                    time.sleep(0.15)
+                    ret2, frame2 = cap.read()
+                    if ret2 and frame2 is not None and not np.array_equal(frame1, frame2):
+                        available.append(i)
+            cap.release()
         self.finished.emit(available)
 
 
