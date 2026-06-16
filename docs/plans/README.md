@@ -40,3 +40,4 @@ Browse `docs/plans/archive/` for completed plans. Date prefix sorts chronologica
 | 0002 | [Architecture Deepening — Checklist](archive/2026-06-06-0002-architecture-deepening.md) — 4/5 done (#3 still active) | 2026-06-06 | `refactor/source-code` |
 | 0008 | [Address code-review findings for `feat/ui-polish`](archive/2026-06-07-0008-ui-polish-review-cleanups.md) | 2026-06-07 | `feat/ui-polish` |
 | 0009 | [Hybrid Liveness Decider](archive/0009-hybrid-liveness-decider-20260616.md) | 2026-06-16 | `refactor/upgrade-ai` |
+| 0010 | [Hybrid Liveness Mode + Recognition Consensus](archive/2026-06-16-0010-hybrid-mode-recognition-consensus.md) | 2026-06-16 | `refactor/upgrade-ai` |

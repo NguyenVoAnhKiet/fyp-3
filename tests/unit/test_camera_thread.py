@@ -300,38 +300,80 @@ class TestComputeConsensus:
     """Pure-function tests for ``CameraThread._compute_consensus``."""
 
     def test_majority_same_user(self) -> None:
-        """2/3 same user → returns that user_id."""
-        buf: deque[int] = deque([101, 101, 0], maxlen=3)
+        """2/3 same user → returns (uid, 'success')."""
+        buf: deque[tuple[int, str]] = deque(
+            [(101, "success"), (101, "success"), (0, "unrecognized")], maxlen=3
+        )
         result = CameraThread._compute_consensus(buf, _CONSENSUS_THRESHOLD)
-        assert result == 101
+        assert result == (101, "success")
 
     def test_majority_all_same_user(self) -> None:
-        """3/3 same user → returns that user_id."""
-        buf: deque[int] = deque([101, 101, 101], maxlen=3)
+        """3/3 same user → returns (uid, 'success')."""
+        buf: deque[tuple[int, str]] = deque(
+            [(101, "success"), (101, "success"), (101, "success")], maxlen=3
+        )
         result = CameraThread._compute_consensus(buf, _CONSENSUS_THRESHOLD)
-        assert result == 101
+        assert result == (101, "success")
 
-    def test_no_majority_returns_zero(self) -> None:
-        """Mixed users but no real user has 2/3 → returns 0 (unrecognized)."""
-        buf: deque[int] = deque([101, 102, 0], maxlen=3)
+    def test_no_majority_returns_unrecognized(self) -> None:
+        """Mixed users but no real user has 2/3 → returns (0, 'unrecognized')."""
+        buf: deque[tuple[int, str]] = deque(
+            [(101, "success"), (102, "success"), (0, "unrecognized")], maxlen=3
+        )
         result = CameraThread._compute_consensus(buf, _CONSENSUS_THRESHOLD)
-        assert result == 0
+        assert result == (0, "unrecognized")
 
-    def test_majority_unrecognized_returns_zero(self) -> None:
-        """2/3 unrecognized/spoof entries → returns 0."""
-        buf: deque[int] = deque([0, 0, 101], maxlen=3)
+    def test_majority_unrecognized_returns_unrecognized(self) -> None:
+        """2/3 unrecognized entries → returns (0, 'unrecognized')."""
+        buf: deque[tuple[int, str]] = deque(
+            [(0, "unrecognized"), (0, "unrecognized"), (101, "success")], maxlen=3
+        )
         result = CameraThread._compute_consensus(buf, _CONSENSUS_THRESHOLD)
-        assert result == 0
+        assert result == (0, "unrecognized")
+
+    def test_majority_spoof_returns_spoof(self) -> None:
+        """2/3 spoof entries → returns (0, 'spoof')."""
+        buf: deque[tuple[int, str]] = deque(
+            [(0, "spoof"), (0, "spoof"), (101, "success")], maxlen=3
+        )
+        result = CameraThread._compute_consensus(buf, _CONSENSUS_THRESHOLD)
+        assert result == (0, "spoof")
+
+    def test_majority_all_spoof_returns_spoof(self) -> None:
+        """3/3 spoof → returns (0, 'spoof')."""
+        buf: deque[tuple[int, str]] = deque(
+            [(0, "spoof"), (0, "spoof"), (0, "spoof")], maxlen=3
+        )
+        result = CameraThread._compute_consensus(buf, _CONSENSUS_THRESHOLD)
+        assert result == (0, "spoof")
+
+    def test_mixed_spoof_unrecognized_no_majority(self) -> None:
+        """Spoof not majority, no success majority → unrecognized."""
+        buf: deque[tuple[int, str]] = deque(
+            [(0, "spoof"), (0, "unrecognized"), (0, "unrecognized")], maxlen=3
+        )
+        result = CameraThread._compute_consensus(buf, _CONSENSUS_THRESHOLD)
+        assert result == (0, "unrecognized")
+
+    def test_spoof_edges_does_not_win_over_success(self) -> None:
+        """Success majority beats spoof minority."""
+        buf: deque[tuple[int, str]] = deque(
+            [(101, "success"), (101, "success"), (0, "spoof")], maxlen=3
+        )
+        result = CameraThread._compute_consensus(buf, _CONSENSUS_THRESHOLD)
+        assert result == (101, "success")
 
     def test_buffer_not_full_returns_none(self) -> None:
         """Fewer than window entries → returns None (suppress)."""
-        buf: deque[int] = deque([101, 102], maxlen=3)
+        buf: deque[tuple[int, str]] = deque(
+            [(101, "success"), (102, "success")], maxlen=3
+        )
         result = CameraThread._compute_consensus(buf, _CONSENSUS_THRESHOLD)
         assert result is None
 
     def test_empty_buffer_returns_none(self) -> None:
         """Empty buffer → returns None."""
-        buf: deque[int] = deque(maxlen=3)
+        buf: deque[tuple[int, str]] = deque(maxlen=3)
         result = CameraThread._compute_consensus(buf, _CONSENSUS_THRESHOLD)
         assert result is None
 
@@ -377,8 +419,8 @@ def test_consensus_suppresses_emission_until_window_full(mock_detector_create) -
 
 
 @patch("cv2.FaceDetectorYN.create")
-def test_consensus_emits_unrecognized_on_spoof_majority(mock_detector_create) -> None:
-    """3 consecutive spoof results → consensus emits unrecognized."""
+def test_consensus_emits_spoof_on_spoof_majority(mock_detector_create) -> None:
+    """3 consecutive spoof results → consensus emits spoof."""
     mock_detector_create.side_effect = lambda *args, **kwargs: MagicMock()
 
     liveness = MagicMock(spec=LivenessChecker)
@@ -409,7 +451,7 @@ def test_consensus_emits_unrecognized_on_spoof_majority(mock_detector_create) ->
         )
 
     assert len(emitted) == 1
-    assert emitted[0][0] == "unrecognized"
+    assert emitted[0][0] == "spoof"
     assert emitted[0][1] == 0
 
 

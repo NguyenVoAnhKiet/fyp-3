@@ -1,7 +1,7 @@
 # 0010: Hybrid Liveness Mode + Recognition Consensus
 
 ## Status
-Proposed (reviewed — critical issues fixed)
+Done (2026-06-16)
 
 ## Context
 Under good lighting, face recognition flickers between "unrecognized" and "success" — 4/5 frames fail, 1 succeeds. Root cause: SFace `alignCrop()` is sensitive to YuNet landmark jitter, causing cosine similarity to oscillate around the threshold boundary (0.5).

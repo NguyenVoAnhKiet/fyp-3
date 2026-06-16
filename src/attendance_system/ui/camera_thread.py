@@ -148,8 +148,8 @@ class CameraThread(CameraThreadBase):
         self._hybrid_liveness_enabled = hybrid_liveness_enabled
         self._recognition_interval = recognition_interval
 
-        # Recognition consensus state
-        self._consensus_buffer: deque[int] = deque(maxlen=_CONSENSUS_WINDOW)
+        # Recognition consensus state: deque of (mapped_user_id, result_type)
+        self._consensus_buffer: deque[tuple[int, str]] = deque(maxlen=_CONSENSUS_WINDOW)
         # Per-user auxiliary data: user_id → (full_name, similarity_score, liveness_score, pose)
         self._consensus_user_data: dict[int, tuple[str, float | None, float, str]] = {}
 
@@ -251,9 +251,9 @@ class CameraThread(CameraThreadBase):
         self._result_hold_counter = _RESULT_HOLD_FRAMES
 
         # ── Recognition consensus ──────────────────────────────────────
-        # 0 = unrecognized/spoof for consensus buffer (not a real user)
+        # Store (mapped_user_id, result_type) to preserve spoof vs unrecognized
         mapped_user_id = user_id if result_type == "success" else 0
-        self._consensus_buffer.append(mapped_user_id)
+        self._consensus_buffer.append((mapped_user_id, result_type))
 
         # Track per-user auxiliary data from the latest frame for each real user
         if result_type == "success" and user_id:
@@ -264,23 +264,16 @@ class CameraThread(CameraThreadBase):
                 matched_pose_label,
             )
 
-        consensus_user_id = self._compute_consensus(
+        consensus = self._compute_consensus(
             self._consensus_buffer, _CONSENSUS_THRESHOLD
         )
-        if consensus_user_id is None:
+        if consensus is None:
             return  # buffer not full yet — suppress emission
 
-        if consensus_user_id == 0:
-            # Consensus: unrecognized or spoof
-            consensus_type = "unrecognized"
-            consensus_user = 0
-            consensus_name = ""
-            consensus_similarity: Any = None
-            consensus_liveness = liveness_score
-            consensus_pose = ""
-        else:
+        consensus_user_id, consensus_type = consensus
+
+        if consensus_type == "success":
             # Consensus: match for this user — use majority user's latest data
-            consensus_type = "success"
             consensus_user = consensus_user_id
             user_data = self._consensus_user_data.get(consensus_user_id)
             if user_data is not None:
@@ -293,6 +286,19 @@ class CameraThread(CameraThreadBase):
                 consensus_similarity = None
                 consensus_liveness = liveness_score
                 consensus_pose = ""
+        elif consensus_type == "spoof":
+            consensus_user = 0
+            consensus_name = ""
+            consensus_similarity: Any = None
+            consensus_liveness = liveness_score
+            consensus_pose = ""
+        else:
+            # "unrecognized"
+            consensus_user = 0
+            consensus_name = ""
+            consensus_similarity: Any = None
+            consensus_liveness = liveness_score
+            consensus_pose = ""
 
         self.recognition_result.emit(
             consensus_type,
@@ -305,24 +311,43 @@ class CameraThread(CameraThreadBase):
 
     @staticmethod
     def _compute_consensus(
-        buffer: deque[int], threshold: int
-    ) -> int | None:
-        """Determine consensus user_id from a recognition buffer.
+        buffer: deque[tuple[int, str]], threshold: int
+    ) -> tuple[int, str] | None:
+        """Determine consensus (user_id, result_type) from a recognition buffer.
+
+        Preserves the three-way distinction between success / spoof / unrecognized.
 
         Args:
-            buffer: Deque of user_ids (0 = unrecognized/spoof), maxlen=3.
+            buffer: Deque of ``(mapped_user_id, result_type)``, maxlen=3.
             threshold: Minimum count for a real user to win (default 2).
 
         Returns:
-            user_id if a real user has >= threshold votes,
-            0 if buffer is full but no real user reaches majority,
-            None if buffer is not yet full (caller should suppress emission).
+            ``(user_id, "success")`` if a real user has >= threshold votes,
+            ``(0, "spoof")`` if spoof frames reach threshold,
+            ``(0, "unrecognized")`` if buffer is full but no majority,
+            ``None`` if buffer is not yet full (caller should suppress emission).
         """
         if len(buffer) < _CONSENSUS_WINDOW:
             return None  # not enough votes yet
-        counts = Counter(buffer)
-        # Exclude 0 (unrecognized/spoof) from being a consensus winner
-        for uid, count in counts.most_common():
+
+        user_counts: Counter[int] = Counter()
+        spoof_count = 0
+
+        for uid, rtype in buffer:
+            if rtype == "success":
+                user_counts[uid] += 1
+            elif rtype == "spoof":
+                spoof_count += 1
+            # "unrecognized" contributes to neither
+
+        # Success majority: one user meets threshold
+        for uid, count in user_counts.most_common():
             if uid != 0 and count >= threshold:
-                return uid
-        return 0  # consensus: unrecognized/spoof
+                return (uid, "success")
+
+        # Spoof majority: spoof frames meet threshold
+        if spoof_count >= threshold:
+            return (0, "spoof")
+
+        # Default: buffer full but no majority → unrecognized
+        return (0, "unrecognized")
