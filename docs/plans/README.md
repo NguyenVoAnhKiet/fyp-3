@@ -24,6 +24,7 @@ This folder tracks in-flight and archived feature plans — work-in-progress des
 
 | ID | Title | Status | Branch |
 |----|-------|--------|--------|
+| 0011 | [DB Defaults from JSON](active/0011-db-defaults-from-json.md) | Draft | — |
 
 ## Archive
 
