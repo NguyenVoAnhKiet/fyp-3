@@ -8,13 +8,13 @@ Core infrastructure layer: manages configuration resolution (CLI > env > DB > de
 
 ### `config.py` — Centralized configuration resolution (Plan 0005)
 
-- **`SystemConfig`** — `@dataclass(slots=True, frozen=True)` holding all resolved system tunables exactly once: database/model paths, camera index, feature flags (`antispoof_enabled`, `headpose_enabled`), AI thresholds, timezone, attendance UX settings. Immutable; constructed by `SettingsResolver` at startup.
+- **`SystemConfig`** — `@dataclass(slots=True, frozen=True)` holding all resolved system tunables exactly once: database/model paths, camera index, feature flags (`antispoof_enabled`, `headpose_enabled`, `hybrid_liveness_enabled`), AI thresholds, hybrid liveness decider params (`hybrid_voting_window`, `hybrid_boost_amount`, `recognition_interval`), timezone, attendance UX settings. Immutable; constructed by `SettingsResolver` at startup.
 - **`SettingsResolver`** — Class that performs resolution in two modes:
   - `"runtime"` (default) — full resolution; used by `main.py`. For DB-seedable keys, resolution is **DB > defaults.py** (env vars not consulted). For non-DB settings (paths, camera, feature flags): CLI > env > default.
   - `"init"` — minimal resolution for `attendance-storage-init`; only `database_path` matters, skips env seeding (bootstrap does not call `load_dotenv()`).
 - **`resolve_config()`** — Convenience factory that wires `SettingsService.get` as the `db_reader` for the resolver.
 - **`seed_db_from_defaults()`** — Idempotent defaults→DB seeding: reads values from `defaults.py` constants via `getattr` and writes to `system_settings` only if the DB key is unset (preserving Admin UI overrides). Skipped in init mode.
-- **`_SEED_SETTINGS`** — Dict mapping DB key → value_type string for the 9 seedable settings.
+- **`_SEED_SETTINGS`** — Dict mapping DB key → value_type string for the 9 seedable settings (5 original + 4 hybrid: `hybrid_voting_window`, `hybrid_boost_amount`, `hybrid_liveness_enabled`, `recognition_interval`).
 - **Module-level assertion** — Verifies every `_SEED_SETTINGS` key has a corresponding `DEFAULT_*` constant in `defaults.py` at import time. Fail-fast on drift.
 - **Per-type resolvers** — `_resolve_path`, `_resolve_int`, `_resolve_float`, `_resolve_bool`, `_resolve_timezone`. Each encapsulates CLI > env > [DB] > default fallback logic with proper empty-string and parse-error handling. Timezone uses DB > default (no CLI flag, no env) with `zoneinfo.ZoneInfo` validation.
 
@@ -23,8 +23,8 @@ Core infrastructure layer: manages configuration resolution (CLI > env > DB > de
 ### `defaults.py` — Default values for all system tunables
 
 - Single source of truth for every tunable default. Referenced by `SystemConfig` field defaults and `SettingsResolver` when no DB value is set (also used for first-run DB seeding).
-- Centralizing defaults here makes threshold migrations (e.g., `0.5 → 0.3`) a one-file change instead of touching 4+ call sites.
-- Key constants: `DEFAULT_LIVENESS_THRESHOLD`, `DEFAULT_SIMILARITY_THRESHOLD`, `DEFAULT_CAMERA_INDEX`, `DEFAULT_ATTENDANCE_FREEZE_SECONDS`, model file paths, feature flag defaults (`DEFAULT_ANTISPOOF_ENABLED`, `DEFAULT_HEADPOSE_ENABLED`), `DEFAULT_TIMEZONE`.
+- Centralizing defaults here makes threshold migrations (e.g., `DEFAULT_LIVENESS_THRESHOLD` from 0.3 logit → 0.5 probability) a one-file change instead of touching 4+ call sites.
+- Key constants: `DEFAULT_LIVENESS_THRESHOLD` (0.5, probability space), `DEFAULT_SIMILARITY_THRESHOLD`, `DEFAULT_HYBRID_VOTING_WINDOW`, `DEFAULT_HYBRID_BOOST_AMOUNT`, `DEFAULT_HYBRID_LIVENESS_ENABLED`, `DEFAULT_RECOGNITION_INTERVAL`, `DEFAULT_CAMERA_INDEX`, `DEFAULT_ATTENDANCE_FREEZE_SECONDS`, `DEFAULT_ATTENDANCE_FREEZE_SOUND_ENABLED`, model file paths, feature flag defaults (`DEFAULT_ANTISPOOF_ENABLED`, `DEFAULT_HEADPOSE_ENABLED`), `DEFAULT_TIMEZONE`.
 
 ### `db.py` — Database connection management
 

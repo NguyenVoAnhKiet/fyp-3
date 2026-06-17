@@ -20,7 +20,7 @@ available to all layers as a stateless helper library.
 | `core/` | Configuration resolution (CLI > env > DB > default), SQLite/WAL connection management, schema DDL/DML + migrations, `attendance-storage-init` CLI bootstrap, face-image disk-storage init. Lowest-level module — everything depends on it. | [View Map](core/codemap.md) |
 | `models/` | Pure `@dataclass(slots=True)` entities (`UserAccount`, `FaceReference`, `AttendanceSession`, `AttendanceRecord`, `RecognitionEvent`, `SystemSetting`, `AdminCredential`) mirroring database rows. No business logic, no ORM. | [View Map](models/codemap.md) |
 | `repositories/` | CRUD data-access layer parameterizing raw SQL behind typed methods. Each repository owns one database table. Caching wrapper (`CachingFaceReferenceRepository`) for face-reference reads with automatic invalidation on writes. Enforces `ON DELETE SET NULL` semantics. | [View Map](repositories/codemap.md) |
-| `services/` | Business-logic layer — ONNX-based AI pipeline orchestration (liveness checking via MiniFASNet, SFace recognition, head-pose estimation via MobileNetV2), attendance session lifecycle, face enrollment, bcrypt authentication, and settings CRUD. Consumes repositories; consumed by UI. | [View Map](services/codemap.md) |
+| `services/` | Business-logic layer — ONNX-based AI pipeline orchestration (liveness checking via MiniFASNet, SFace recognition, head-pose estimation via MobileNetV2, multi-frame HybridLivenessDecider for temporal liveness voting), attendance session lifecycle, face enrollment, bcrypt authentication, and settings CRUD. Consumes repositories; consumed by UI. | [View Map](services/codemap.md) |
 | `ui/` | PyQt5 widgets, windows, and QThread workers — main window, attendance check-in view, admin dashboard, enrollment UI, camera capture threads (attendance + enrollment), and AI inference worker threads. Sole user-facing surface; no business logic. | [View Map](ui/codemap.md) |
 | `utils/` | Stateless helper functions — face crop/detection (`_crop_face`, `_create_face_detector`) and timezone-aware datetime formatting (`utc_now_iso`, `utc_to_local`, `local_to_utc`, timezone-change signal bus). Available to all layers. | [View Map](utils/codemap.md) |
 
@@ -72,12 +72,21 @@ Camera capture (CameraThread, every 30ms)
   → AIWorker queue (maxsize=1 backpressure)
   → AIPipeline.run_attendance()
       ├── FacePreprocessor(LIVENESS_CONFIG) — crop scale 2.7, 128×128
-      ├── LivenessChecker — MiniFASNet ONNX
-      ├── LivenessTracker — EMA smoothing + IoU tracking (no temporal decisions)
-      └── If REAL: FaceRecognizer.identify()
-            → SFace ONNX embedding
-            → cosine similarity vs. CachingFaceReferenceRepository
-            → UserRepository lookup
+      ├── LivenessChecker — MiniFASNet ONNX → sigmoid probability [0, 1]
+      ├── LivenessTracker — EMA smoothing + IoU tracking (pure tracking;
+      │                      no temporal decisions made here)
+      └── Decision (two paths selectable via hybrid_liveness_enabled):
+          ├── Hybrid path (enabled):
+          │     ├── Periodic recognition every N AI-frames
+          │     │   (recognition_interval, default 5)
+          │     └── HybridLivenessDecider — majority voting over
+          │         circular buffer of FrameResult entries:
+          │           ├── Recognition match → additive probability boost
+          │           ├── >= ceil(window/2)+1 votes → REAL
+          │           └── Buffer resets when face is lost
+          └── Legacy path (disabled):
+                ├── Simple EMA-score threshold (liveness_threshold)
+                └── Recognition every frame
   → PipelineResult → CameraThread emits recognition_result signal
   → UserModeView handles result:
       ├── Success → AttendanceService.record_success()
@@ -135,10 +144,11 @@ UserModeView
        ├── draw bounding boxes
        ├── emit display QImage (.copy()) ──► UserModeView._update_camera_frame()
        └── AIWorker (AIWorkerBase)
-             ├── LivenessChecker (MiniFASNet ONNX)
-             ├── FaceRecognizer (SFace ONNX)
-             ├── LivenessTracker (state machine)
-             └── emit recognition_result ──► UserModeView handler
+              ├── LivenessChecker (MiniFASNet ONNX)
+              ├── FaceRecognizer (SFace ONNX)
+              ├── LivenessTracker (EMA + IoU tracking)
+              ├── HybridLivenessDecider (majority voting, when enabled)
+              └── emit recognition_result ──► UserModeView handler
 
 EnrollmentWidget
   └─ EnrollmentCameraThread
@@ -153,6 +163,8 @@ EnrollmentWidget
 ### Config Resolution Order
 
 Each tunable follows the same chain: **CLI arg > environment variable > DB setting > default constant** (DB-seedable keys are the exception: DB > `defaults.py`, no env override). `SettingsResolver` in `core/config.py` encapsulates this logic with per-type resolvers (`_resolve_path`, `_resolve_int`, `_resolve_float`, `_resolve_bool`, `_resolve_timezone`). `seed_db_from_defaults()` only writes if the DB key is unset, so Admin UI changes survive restarts.
+
+**DB-seedable settings (9 keys):** timezone, liveness_threshold, similarity_threshold, attendance_freeze_seconds, attendance_freeze_sound_enabled, hybrid_voting_window, hybrid_boost_amount, hybrid_liveness_enabled, recognition_interval. All follow the DB > `defaults.py` resolution order with no env/CLI override — the Admin UI is the single source of truth after first run.
 
 ### Model File Layout
 
@@ -177,6 +189,9 @@ Each tunable follows the same chain: **CLI arg > environment variable > DB setti
 - **`database.session()` context manager** — Auto-commit/rollback/close prevents leaked connections.
 - **Timezone-change signal bus** — `time_utils.timezone_signals` is a module-level `QObject` singleton; UI widgets re-render in real-time on timezone switch.
 - **`onnxruntime` before `PyQt5`** — Windows DLL-ordering requirement enforced at `src/main.py` and `tests/conftest.py`.
+- **HybridLivenessDecider replaces hysteresis** — The old hysteresis-based approach (T_HIGH/T_LOW thresholds) has been replaced by `HybridLivenessDecider`, a multi-frame majority-voting decider using a circular buffer of `FrameResult` entries. The decider provides a single temporal authority for liveness decisions, with voting ratio and configurable window/boost parameters — all seeded from `defaults.py` and tunable via Admin UI.
+- **Two-path `run_attendance`** — `AIPipeline.run_attendance()` supports two code paths controlled by `hybrid_liveness_enabled`: the **hybrid path** uses `HybridLivenessDecider` majority voting with periodic recognition (every N AI-frames via `recognition_interval`); the **legacy path** falls back to simple EMA-score threshold with frame-by-frame recognition. This preserves backward compatibility while enabling the new voting-based approach.
+- **Recognition interval pattern** — In hybrid mode, recognition runs every `recognition_interval` AI-frames (not camera frames). With `_AI_FRAME_SKIP=3` and default `recognition_interval=5`, recognition fires ~every 15 camera frames ≈ 2 Hz at 30 fps. Identity-match provides an additive probability boost (`hybrid_boost_amount`) to the liveness vote, clamped to [0, 1.0].
 
 ## File List
 

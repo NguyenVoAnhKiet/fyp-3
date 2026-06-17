@@ -49,18 +49,34 @@ SessionClosedError              # recording attendance in a closed session
   5. Prune tracks with misses > `MAX_MISSES` (default 3).
 - **EMA:** `α=0.4` — exponential moving average of liveness probability scores.
 - **Hysteresis:** Removed in plan 0009. Temporal decisions moved to `HybridLivenessDecider` (5-frame majority voting, configurable threshold).
-- **`TrackedFace`** — Internal dataclass (slots) holding bbox, ema_score, state, misses.
+- **`TrackedFace`** — Internal dataclass (slots) holding bbox, ema_score, misses.
 - **`compute_iou(bbox1, bbox2)`** — IoU in (x, y, w, h) format.
 - Relocated from `core/liveness_tracker.py` (plan 0004). The `core/liveness_tracker.py` now re-exports all public names for backward compatibility.
+
+### `hybrid_liveness_decider.py` — Temporal liveness decision (majority voting)
+
+- **`HybridLivenessDecider`** — Single temporal authority for liveness decisions. Replaces LivenessTracker's hysteresis with majority voting over a configurable frame window.
+- **Architecture:** Circular `deque` of `FrameResult` entries (probability space 0–1). Majority voting: >= `ceil(window/2)+1` frames above threshold → REAL. Recognition match gives additive boost (`boost_amount`). Buffer resets when face is lost.
+- **`FrameResult(probability, recognition_match)`** — Dataclass for a single frame's liveness result.
+- **`HybridDecision(state, voting_ratio, frames_in_buffer, recognition_boosted)`** — Dataclass for the decision output.
+- **`update(probability, recognition_match) → HybridDecision`** — Core method: applies recognition boost, appends to buffer, runs majority voting.
+- **`reset()`** — Clears buffer state; called when face is lost.
+- **`min_frames`** — Derived as `max(1, voting_window - 2)` to ensure minimum data before REAL decision.
+- **Configurable:** `liveness_threshold` (0–1), `voting_window` (>=1), `boost_amount` (0–1).
+- **Input validation** in constructor for all three parameters (`voting_window >= 1`, thresholds in `[0, 1]`).
+- **Consumed by:** `AIPipeline` (creates one `HybridLivenessDecider` instance internally).
 
 ### `ai_pipeline.py` — AI inference orchestration
 
 - **`LivenessChecker`** — Wraps the quantized MiniFASNet ONNX model (`models/anti_spoof/best_model_quantized.onnx`). Preprocessing delegated to `FacePreprocessor(LIVENESS_CONFIG)` (letterbox-resize 128×128, [0,1] range, RGB). Runs ONNX inference and classifies real vs. spoof via logit-diff thresholding. Can be disabled entirely by passing `model_path=None` — all faces treated as real.
 - **`FaceRecognizer`** — Wraps the SFace ONNX model (`models/face_recognition/face_recognition_sface_2021dec.onnx`) via OpenCV's `cv2.FaceRecognizerSF`. Extracts 128-dim float32 embeddings using `alignCrop` + `feature`. Identification uses cosine similarity against all cached face references from `CachingFaceReferenceRepository`. Resolution of matched user details via `UserRepository`.
-- **`AIPipeline`** — Orchestrator that composes `LivenessChecker`, `FaceRecognizer`, `LivenessTracker`, and optionally `HeadPoseEstimator` as injected dependencies. Owns one `LivenessTracker` instance per pipeline instance (one tracker per worker thread).
-  - `run_attendance(frame_bgr, frame_rgb, face_row, frame_counter)` → `PipelineResult` with `result_type` `"success"`, `"spoof"`, or `"unrecognized"`. Flow: crop face (scale=2.7) → liveness check → temporal smoothing (LivenessTracker) → if REAL: face recognition.
-  - `run_enrollment(frame_bgr, face_row, frame_counter, do_capture)` → `PipelineResult` for enrollment. Flow: head-pose estimation (scale=1.5) → if do_capture: liveness check → embedding extraction.
-  - `reset_tracker()` — Clear LivenessTracker state; called when starting a new session.
+- **`AIPipeline`** — Orchestrator that composes `LivenessChecker`, `FaceRecognizer`, `LivenessTracker`, `HybridLivenessDecider`, and optionally `HeadPoseEstimator` as injected dependencies. Owns one `LivenessTracker` and one `HybridLivenessDecider` instance per pipeline instance (one tracker + decider per worker thread).
+  - **New constructor params:** `hybrid_liveness_enabled=False`, `hybrid_voting_window=5`, `hybrid_boost_amount=0.15`, `recognition_interval=5`. Creates `HybridLivenessDecider` instance internally.
+  - `run_attendance(frame_bgr, frame_rgb, face_row, frame_counter)` → `PipelineResult`:
+    - **Hybrid path** (when `hybrid_liveness_enabled=True`): crop face (scale=2.7) → liveness check → IoU tracking (`LivenessTracker`, EMA only) → periodic recognition (every `recognition_interval` AI-frames) feeds `recognition_match` signal → `HybridLivenessDecider.update()` majority voting for REAL/SPOOF. Recognition runs even during SPOOF frames for identity tracking.
+    - **Legacy path** (when `hybrid_liveness_enabled=False`): crop face (scale=2.7) → liveness check → IoU tracking (EMA only) → simple EMA-score threshold → every-frame recognition (original behavior).
+  - `run_enrollment(frame_bgr, face_row, frame_counter, do_capture)` → `PipelineResult` for enrollment. Flow: head-pose estimation (scale=1.5) → if do_capture: liveness check → embedding extraction. (No hybrid path — enrollment always uses simple threshold.)
+  - `reset_tracker()` — Clears both `LivenessTracker.tracks` and `HybridLivenessDecider` buffer; called when starting a new session.
 - **`LivenessResult` / `RecognitionResult`** — NamedTuple data carriers (still used by the individual checker/recognizer, but `AIPipeline` returns `PipelineResult`).
 
 ### `head_pose.py` — Head pose estimation
@@ -119,9 +135,12 @@ User action (click, camera frame)
 2. `AIPipeline.run_attendance(frame_bgr, frame_rgb, face_row, frame_counter)`:
    a. Crop face for liveness (scale=2.7).
    b. `LivenessChecker.check(face_crop, threshold)` → liveness score.
-   c. `LivenessTracker.update([bbox], [score])` → EMA-smoothed score (no state decision).
-   d. If REAL: `FaceRecognizer.identify(frame_bgr, face_row, threshold)` → embedding extraction + cosine similarity vs. DB references.
-   e. Return `PipelineResult` with `result_type` → `"success"`, `"spoof"`, or `"unrecognized"`.
+   c. `LivenessTracker.update([bbox], [score])` → EMA-smoothed score (pure tracking, no temporal decision).
+   d. Two code paths:
+      - **Hybrid path (default):** Periodic recognition (every N AI-frames) + `HybridLivenessDecider.update()` with majority voting over frame window. Recognition runs even during SPOOF frames.
+      - **Legacy path:** Simple EMA-score threshold. Recognition runs every frame.
+   e. If REAL: `FaceRecognizer.identify(frame_bgr, face_row, threshold)` → embedding extraction + cosine similarity vs. DB references.
+   f. Return `PipelineResult` with `result_type` → `"success"`, `"spoof"`, or `"unrecognized"`.
 3. `AttendanceService.record_success(...)` → writes recognition event + attendance record.
 4. UI emits signal to update overlay/lists.
 
