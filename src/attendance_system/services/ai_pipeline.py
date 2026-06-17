@@ -33,6 +33,9 @@ from attendance_system.core.db import Database
 from attendance_system.services.exceptions import LivenessInferenceError
 from attendance_system.services.face_preprocessor import FacePreprocessor
 from attendance_system.services.head_pose import HeadPoseEstimator
+from attendance_system.services.hybrid_liveness_decider import (
+    HybridLivenessDecider,
+)
 from attendance_system.services.liveness_tracker import (
     LivenessTracker,
     compute_iou,
@@ -54,7 +57,8 @@ logger = logging.getLogger(__name__)
 
 class LivenessResult(NamedTuple):
     is_real: bool
-    score: float  # logit_diff — higher means more likely real
+    score: float  # probability (0–1), sigmoid-converted
+    raw_logit: float = 0.0  # raw logit_diff for debugging
 
 
 class RecognitionResult(NamedTuple):
@@ -147,10 +151,10 @@ class LivenessChecker:
                 configuration sources.
 
         Returns:
-            LivenessResult with is_real flag and raw logit_diff score.
+            LivenessResult with is_real flag, probability score (0–1), and raw logit.
         """
         if self._session is None:
-            return LivenessResult(is_real=True, score=1.0)
+            return LivenessResult(is_real=True, score=1.0, raw_logit=0.0)
 
         #=======================================================================
         # Step 1: Preprocess face crop into model-ready tensor
@@ -173,15 +177,14 @@ class LivenessChecker:
         logit_diff = float(output[0][0] - output[0][1])  # positive → real, negative → spoof
 
         #=======================================================================
-        # Step 3: Convert probability threshold → logit space and classify
+        # Step 3: Convert logit → probability (0–1) via sigmoid and classify
         #=======================================================================
-        # logit(p) = log(p / (1-p)); comparing logit_diff to this is equivalent
-        # to comparing softmax(real) to the threshold probability.
-        p = max(1e-6, min(1 - 1e-6, threshold))
-        logit_threshold = math.log(p / (1 - p))
+        probability = 1.0 / (1.0 + math.exp(-logit_diff))
 
-        is_real = logit_diff > logit_threshold
-        return LivenessResult(is_real=is_real, score=logit_diff)
+        # Threshold comparison now in probability space
+        is_real = probability >= threshold
+
+        return LivenessResult(is_real=is_real, score=probability, raw_logit=logit_diff)
 
 
 class FaceRecognizer:
@@ -373,6 +376,11 @@ class AIPipeline:
         liveness_threshold: float,
         similarity_threshold: float,
         head_pose_estimator: HeadPoseEstimator | None = None,
+        # ── New hybrid liveness params ───────────────────────────────────
+        hybrid_liveness_enabled: bool = False,
+        hybrid_voting_window: int = 5,
+        hybrid_boost_amount: float = 0.15,
+        recognition_interval: int = 5,
     ) -> None:
         """
         Args:
@@ -385,6 +393,13 @@ class AIPipeline:
                 :class:`attendance_system.core.config.SettingsResolver`).
             similarity_threshold: Minimum cosine similarity for recognition
                 (required — same source as ``liveness_threshold``).
+            hybrid_liveness_enabled: Whether to use hybrid voting decider.
+                When False, falls back to simple EMA-score threshold.
+            hybrid_voting_window: Number of frames in the voting buffer.
+            hybrid_boost_amount: Additive probability boost on recognition
+                match. Clamped to [0, 1 - probability].
+            recognition_interval: Run recognition every N AI-frames when
+                hybrid mode is enabled (default 5).
         """
         self._liveness_checker = liveness_checker
         self._face_recognizer = face_recognizer
@@ -392,6 +407,15 @@ class AIPipeline:
         self._liveness_threshold = liveness_threshold
         self._similarity_threshold = similarity_threshold
         self._liveness_tracker = LivenessTracker()
+
+        # ── Hybrid liveness decider ─────────────────────────────────────
+        self._hybrid_liveness_enabled = hybrid_liveness_enabled
+        self._recognition_interval = recognition_interval
+        self._hybrid_decider = HybridLivenessDecider(
+            liveness_threshold=liveness_threshold,
+            voting_window=hybrid_voting_window,
+            boost_amount=hybrid_boost_amount,
+        )
 
     # ------------------------------------------------------------------
     # Public API
@@ -404,13 +428,19 @@ class AIPipeline:
         face_row: np.ndarray,
         frame_counter: int,
     ) -> PipelineResult:
-        """Run attendance pipeline: liveness → temporal smoothing → recognition.
+        """Run attendance pipeline with hybrid liveness decider.
+
+        When hybrid mode is enabled:
+          - Recognition runs periodically (every N AI-frames)
+          - Decision uses HybridLivenessDecider majority voting
+        When hybrid mode is disabled:
+          - Falls back to simple EMA-score threshold
 
         Args:
             frame_bgr: BGR frame from camera (for SFace alignment).
             frame_rgb: RGB frame (for liveness crop).
             face_row: YuNet detection result ``[15]`` for the largest face.
-            frame_counter: Current frame number (for metadata).
+            frame_counter: Current AI-frame number (from AIWorker).
 
         Returns:
             ``PipelineResult`` with ``result_type`` ``"success"``,
@@ -424,36 +454,68 @@ class AIPipeline:
         # Step 1: Crop face for liveness (scale=2.7)
         face_crop = _crop_face(frame_rgb, (x, y, w, h), scale=2.7)
 
-        # Step 2: Liveness check
+        # Step 2: Liveness check — now returns probability (0–1)
         liveness = self._liveness_checker.check(
             face_crop, self._liveness_threshold
         )
 
-        # Step 3: Temporal smoothing via EMA + hysteresis tracker
+        # Step 3: IoU tracking (no temporal decisions — tracker is pure tracking)
         bbox_float = (float(x), float(y), float(w), float(h))
         tracked_faces = self._liveness_tracker.update(
             [bbox_float], [liveness.score]
         )
 
-        state = "SPOOF"
+        # Extract EMA score for the tracked face
         ema_score = liveness.score
-        for tb, ts, tes in tracked_faces:
+        for tb, tes, tid in tracked_faces:
             if compute_iou(bbox_float, tb) >= IOU_THRESHOLD:
-                state = ts
                 ema_score = tes
                 break
 
-        if state == "SPOOF":
-            return PipelineResult(
-                result_type="spoof",
-                frame_counter=frame_counter,
-                liveness_score=ema_score,
+        # Step 4: Hybrid or legacy liveness decision
+        if self._hybrid_liveness_enabled:
+            # Hybrid path: majority voting with periodic recognition
+            # Periodic recognition (every N AI-frames; interval is in AI-frames,
+            # not camera frames — with _AI_FRAME_SKIP=3, interval=5 means
+            # recognition runs ~every 15 camera frames ≈ 2 Hz at 30 fps)
+            recognition_match = False
+            match: RecognitionResult | None = None
+            if frame_counter % self._recognition_interval == 0:
+                match = self._face_recognizer.identify(
+                    frame_bgr, face_row, self._similarity_threshold
+                )
+                recognition_match = match is not None
+
+            # Hybrid liveness decision
+            hybrid_decision = self._hybrid_decider.update(
+                ema_score, recognition_match
             )
 
-        # Step 4: Recognition
-        match = self._face_recognizer.identify(
-            frame_bgr, face_row, self._similarity_threshold
-        )
+            if hybrid_decision.state == "SPOOF":
+                return PipelineResult(
+                    result_type="spoof",
+                    frame_counter=frame_counter,
+                    liveness_score=ema_score,  # consistent with legacy path
+                )
+
+            # Recognition for identity (reuse if already done this frame)
+            if match is None:
+                match = self._face_recognizer.identify(
+                    frame_bgr, face_row, self._similarity_threshold
+                )
+        else:
+            # Legacy path: simple threshold on EMA score
+            if ema_score < self._liveness_threshold:
+                return PipelineResult(
+                    result_type="spoof",
+                    frame_counter=frame_counter,
+                    liveness_score=ema_score,
+                )
+
+            # Recognition every frame (legacy behavior)
+            match = self._face_recognizer.identify(
+                frame_bgr, face_row, self._similarity_threshold
+            )
 
         if match is None:
             return PipelineResult(
@@ -574,5 +636,8 @@ class AIPipeline:
         )
 
     def reset_tracker(self) -> None:
-        """Reset the LivenessTracker state. Call when starting a new session."""
+        """Reset the LivenessTracker and HybridLivenessDecider state.
+
+        Call when starting a new session or face is lost."""
         self._liveness_tracker.tracks.clear()
+        self._hybrid_decider.reset()

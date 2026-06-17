@@ -6,11 +6,12 @@ Python 3.11+ offline face-attendance desktop app. PyQt5 UI, SQLite/WAL, ONNX Run
 
 1. `pyproject.toml` — deps, entry points, build config
 2. `src/main.py` — app bootstrap (import order matters: onnxruntime before PyQt5)
-3. `src/attendance_system/core/config.py` — `SettingsResolver` + frozen `SystemConfig` (CLI > env > DB > default; `seed_db_from_env` is idempotent)
+3. `src/attendance_system/core/config.py` — `SettingsResolver` + frozen `SystemConfig` (DB-seedable: DB > defaults.py; non-DB: CLI > env > default)
 4. `src/attendance_system/core/db.py` — SQLite connection (WAL, foreign keys, `check_same_thread=False`)
 5. `src/attendance_system/core/bootstrap.py` — storage initializer (no `load_dotenv()`, uses CLI args)
-6. `.env.example` — all configurable env vars (4 sections: Security & Encryption, Database & Hardware, AI Models, Attendance UX)
-7. `codemap.md` + per-module `codemap.md` files — directory map with entrypoints
+6. `.env.example` — non-DB settings only (paths, camera, feature flags)
+7. `src/attendance_system/core/defaults.py` — seedable DB defaults as Python constants (9 keys, single source of truth)
+8. `codemap.md` + per-module `codemap.md` files — directory map with entrypoints
 
 Prefer executable sources over prose; if docs conflict with code/config/scripts, trust the executable source.
 
@@ -36,10 +37,10 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 ## Wiring
 
 - **Entry points:** `attendance-app` → `main:main`; `attendance-storage-init` → `attendance_system.core.bootstrap:main`.
-- **Startup order:** `load_dotenv()` → `SettingsResolver.resolve()` (builds frozen `SystemConfig`, CLI > env > DB > default) → `set_timezone_config(config.timezone)` → `initialize_storage()` → `SettingsResolver.seed_db_from_env()` (idempotent env→DB seeding) → validate ONNX models → wire services → launch `MainWindow`.
+- **Startup order:** `load_dotenv()` → `SettingsResolver.resolve()` (builds frozen `SystemConfig`, CLI > env > DB > default) → `set_timezone_config(config.timezone)` → `initialize_storage()` → `SettingsResolver.seed_db_from_defaults()` (idempotent defaults→DB seeding) → validate ONNX models → wire services → launch `MainWindow`.
 - **`bootstrap.py`** uses raw CLI args + `DATABASE_PATH` env var, **not** `load_dotenv()`.
 - **`db.py`** connections: WAL journal, `synchronous=NORMAL`, `foreign_keys=ON`, `check_same_thread=False`. Path traversal guard in `DatabaseConfig`.
-- **Config priority:** CLI arg > env var > DB > default (timezone is the exception — DB > env > default, no CLI flag). Resolved by `SettingsResolver` in `core/config.py`. Seed-once env→DB flow: `SettingsResolver.seed_db_from_env()` only writes if the DB key is unset, so Admin UI changes survive.
+- **Config priority:** CLI arg > env var > DB > default (timezone is the exception — DB > env > default, no CLI flag). Resolved by `SettingsResolver` in `core/config.py`. Seed-once defaults→DB flow: `SettingsResolver.seed_db_from_defaults()` only writes if the DB key is unset, so Admin UI changes survive.
 
 ## Related agent files
 
@@ -59,7 +60,7 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 - `EnrollmentCameraThread` flips frames (mirror); attendance `CameraThread` does not.
 - `CachingFaceReferenceRepository` wrapper owns the face-references cache; inner `FaceReferenceRepository` is a pure SQLite adapter. Invalidation is enforced by the wrapper — see `tests/unit/test_caching_face_reference_repository.py` (parametrized over 4 write methods).
 - `_crop_face` scale: 2.7 for liveness (broad context), 1.5 for head-pose (tight crop).
-- `_COOLDOWN_SECONDS = 3.0` in `camera_thread.py` — per-user cooldown before re-recognition. In-memory, resets on thread restart.
+- `_COOLDOWN_SECONDS = 1.5` in `camera_thread.py` — per-user cooldown before re-recognition. In-memory, resets on thread restart.
 - `_AI_FRAME_SKIP = 3` — full AI pipeline runs every 3rd frame (~10 Hz at 30 fps).
 - `_PAUSE_POLL_INTERVAL_SECONDS = 0.05` — `CameraThreadBase.pause()`/`resume()` poll interval; `AIWorker` idles naturally on its own queue.
 - `user_mode_view.py` tracks `_recognized_users` (set of `user_id`) to suppress duplicate sidebar entries + `_stats_success` increment. `_stats_total` always increments (total events).
@@ -80,7 +81,7 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 ## Liveness (Anti-Spoofing)
 
 - MiniFASNet V2 SE quantized. 2D texture classifier — poor lighting rejects ~95% real faces (model limitation).
-- Temporal smoothing: EMA (α=0.4) + hysteresis (T_HIGH=0.65, T_LOW=0.45) + IoU tracking in `services/liveness_tracker.py`.
+- Temporal smoothing: EMA (α=0.4) + IoU tracking in `services/liveness_tracker.py`. Liveness decisions now use `HybridLivenessDecider` (5-frame majority voting, configurable threshold). Hysteresis (T_HIGH/T_LOW) has been removed.
 - Crop scale: 2.7 for liveness (broad context), 1.5 for head-pose (tight crop). Wrong scale silently rejects real users.
 
 ## Camera Workers
@@ -93,7 +94,7 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 - All DB timestamps are UTC ISO-8601. UI converts via `utc_to_local`; date filters use `local_to_utc` → DB query.
 - `set_timezone_config(name)` in `utils/time_utils.py` mutates the module-level `_tz`. Called at startup and again on Settings save.
 - Cross-widget signal: `time_utils.timezone_signals.timezone_changed` — `UserModeView` and `AttendanceHistoryWidget` connect to re-render on change.
-- Resolution order: DB > env > default (no CLI flag).
+- Resolution order: DB > defaults.py (no CLI flag, no env override).
 
 ## Repository Map
 

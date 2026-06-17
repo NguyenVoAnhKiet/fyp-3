@@ -123,7 +123,7 @@ class CameraThreadBase(QThread):
             if not self._running:
                 return False, cap, None
             cap.release()
-            cap = cv2.VideoCapture(self._camera_index)
+            cap = cv2.VideoCapture(self._camera_index, cv2.CAP_DSHOW)
             if not cap.isOpened():
                 continue
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -138,7 +138,7 @@ class CameraThreadBase(QThread):
     # ------------------------------------------------------------------
 
     def run(self) -> None:
-        cap = cv2.VideoCapture(self._camera_index)
+        cap = cv2.VideoCapture(self._camera_index, cv2.CAP_DSHOW)
         if not cap.isOpened():
             self.camera_error.emit(f"Cannot open camera (index {self._camera_index})")
             return
@@ -165,6 +165,9 @@ class CameraThreadBase(QThread):
                             f"Camera read failed after {_MAX_READ_RETRIES} attempts."
                         )
                         break
+
+                # Mirror horizontally so user sees themselves like in a mirror
+                frame = cv2.flip(frame, 1)
 
                 faces = self._detect_faces(frame)
                 self._detected_faces = faces

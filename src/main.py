@@ -125,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
     # --- Phase 5: Wire up services & launch UI --------------------------------
     db = Database(DatabaseConfig(path=provisional.database_path))
     settings_service = SettingsService(db)
-    resolver.seed_db_from_env(env=None, settings=settings_service)
+    resolver.seed_db_from_defaults(settings=settings_service)
 
     # Now the DB is seeded — resolve the final SystemConfig that includes DB.
     config = resolve_config(

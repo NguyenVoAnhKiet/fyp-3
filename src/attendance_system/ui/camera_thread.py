@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import Counter, deque
 from typing import Any
 
 import cv2
@@ -12,6 +13,7 @@ import numpy as np
 from PyQt5.QtCore import pyqtSignal
 
 from pathlib import Path
+from attendance_system.core import defaults
 from attendance_system.services.ai_pipeline import AIPipeline, FaceRecognizer, LivenessChecker
 from attendance_system.services.exceptions import LivenessInferenceError
 from attendance_system.ui.camera_worker_base import (
@@ -24,7 +26,9 @@ from attendance_system.ui.camera_worker_base import (
 )
 
 _AI_FRAME_SKIP = 3       # run full pipeline every N frames (≈10 Hz at 30 fps)
-_COOLDOWN_SECONDS = 3.0  # min seconds between two recognitions of the same user
+_COOLDOWN_SECONDS = 1.5  # min seconds between two recognitions of the same user
+_CONSENSUS_WINDOW = 3    # recognition frames in the consensus buffer
+_CONSENSUS_THRESHOLD = 2 # majority count threshold (2/3)
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +48,7 @@ class AIWorker(AIWorkerBase):
     ) -> None:
         super().__init__(pipeline, parent)
         self._last_recognized: dict[int, float] = {}  # user_id -> monotonic timestamp
+        self._ai_frame_counter: int = 0  # local counter per processed frame
 
     def submit_task(
         self,
@@ -68,9 +73,10 @@ class AIWorker(AIWorkerBase):
 
     def _process_frame(self, task) -> None:
         frame_bgr, frame_rgb, face_row, frame_counter = task
+        self._ai_frame_counter += 1
 
         result = self._pipeline.run_attendance(
-            frame_bgr, frame_rgb, face_row, frame_counter
+            frame_bgr, frame_rgb, face_row, self._ai_frame_counter
         )
 
         # Per-user cooldown to avoid flooding the DB
@@ -126,6 +132,11 @@ class CameraThread(CameraThreadBase):
         face_recognizer: FaceRecognizer,
         camera_index: int = 0,
         detector_model_path: Path | str | None = None,
+        # ── Hybrid liveness params ─────────────────────────────────────
+        hybrid_liveness_enabled: bool = defaults.DEFAULT_HYBRID_LIVENESS_ENABLED,
+        hybrid_voting_window: int = defaults.DEFAULT_HYBRID_VOTING_WINDOW,
+        hybrid_boost_amount: float = defaults.DEFAULT_HYBRID_BOOST_AMOUNT,
+        recognition_interval: int = defaults.DEFAULT_RECOGNITION_INTERVAL,
         parent: Any = None,
     ) -> None:
         super().__init__(camera_index, detector_model_path, parent)
@@ -134,6 +145,13 @@ class CameraThread(CameraThreadBase):
         self._similarity_threshold = similarity_threshold
         self._liveness_checker = liveness_checker
         self._face_recognizer = face_recognizer
+        self._hybrid_liveness_enabled = hybrid_liveness_enabled
+        self._recognition_interval = recognition_interval
+
+        # Recognition consensus state: deque of (mapped_user_id, result_type)
+        self._consensus_buffer: deque[tuple[int, str]] = deque(maxlen=_CONSENSUS_WINDOW)
+        # Per-user auxiliary data: user_id → (full_name, similarity_score, liveness_score, pose)
+        self._consensus_user_data: dict[int, tuple[str, float | None, float, str]] = {}
 
         # Initialize AI pipeline and worker thread
         pipeline = AIPipeline(
@@ -141,6 +159,10 @@ class CameraThread(CameraThreadBase):
             face_recognizer=self._face_recognizer,
             liveness_threshold=self._liveness_threshold,
             similarity_threshold=self._similarity_threshold,
+            hybrid_liveness_enabled=hybrid_liveness_enabled,
+            hybrid_voting_window=hybrid_voting_window,
+            hybrid_boost_amount=hybrid_boost_amount,
+            recognition_interval=recognition_interval,
         )
         self._ai_worker = AIWorker(
             pipeline=pipeline,
@@ -177,6 +199,11 @@ class CameraThread(CameraThreadBase):
         self, frame: np.ndarray, faces: np.ndarray | None, frame_counter: int
     ) -> None:
         """Per-frame processing: AI submission + annotation + display."""
+        # Reset consensus buffer on face loss (runs every frame, not just AI frames)
+        if faces is None or len(faces) == 0:
+            self._consensus_buffer.clear()
+            self._consensus_user_data.clear()
+
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
         # Run full AI pipeline asynchronously every N frames (only when faces are present)
@@ -209,6 +236,7 @@ class CameraThread(CameraThreadBase):
         similarity_score: Any,
         matched_pose_label: str = "",
     ) -> None:
+        # Update display state immediately for responsive visual feedback
         self._current_result_type = result_type
         self._current_result_name = full_name
         if result_type == "success":
@@ -220,8 +248,106 @@ class CameraThread(CameraThreadBase):
         elif result_type == "unrecognized":
             self._current_result_score = liveness_score
             self._bbox_color = _COLOR_UNKNOWN
-
         self._result_hold_counter = _RESULT_HOLD_FRAMES
-        self.recognition_result.emit(
-            result_type, user_id, full_name, liveness_score, similarity_score, matched_pose_label
+
+        # ── Recognition consensus ──────────────────────────────────────
+        # Store (mapped_user_id, result_type) to preserve spoof vs unrecognized
+        mapped_user_id = user_id if result_type == "success" else 0
+        self._consensus_buffer.append((mapped_user_id, result_type))
+
+        # Track per-user auxiliary data from the latest frame for each real user
+        if result_type == "success" and user_id:
+            self._consensus_user_data[user_id] = (
+                full_name,
+                similarity_score,
+                liveness_score,
+                matched_pose_label,
+            )
+
+        consensus = self._compute_consensus(
+            self._consensus_buffer, _CONSENSUS_THRESHOLD
         )
+        if consensus is None:
+            return  # buffer not full yet — suppress emission
+
+        consensus_user_id, consensus_type = consensus
+
+        if consensus_type == "success":
+            # Consensus: match for this user — use majority user's latest data
+            consensus_user = consensus_user_id
+            user_data = self._consensus_user_data.get(consensus_user_id)
+            if user_data is not None:
+                consensus_name, consensus_similarity, consensus_liveness, consensus_pose = (
+                    user_data  # type: ignore[misc]
+                )
+            else:
+                # Fallback (shouldn't happen — cooldown may suppress user_data updates)
+                consensus_name = ""
+                consensus_similarity = None
+                consensus_liveness = liveness_score
+                consensus_pose = ""
+        elif consensus_type == "spoof":
+            consensus_user = 0
+            consensus_name = ""
+            consensus_similarity: Any = None
+            consensus_liveness = liveness_score
+            consensus_pose = ""
+        else:
+            # "unrecognized"
+            consensus_user = 0
+            consensus_name = ""
+            consensus_similarity: Any = None
+            consensus_liveness = liveness_score
+            consensus_pose = ""
+
+        self.recognition_result.emit(
+            consensus_type,
+            consensus_user,
+            consensus_name,
+            consensus_liveness,
+            consensus_similarity,
+            consensus_pose,
+        )
+
+    @staticmethod
+    def _compute_consensus(
+        buffer: deque[tuple[int, str]], threshold: int
+    ) -> tuple[int, str] | None:
+        """Determine consensus (user_id, result_type) from a recognition buffer.
+
+        Preserves the three-way distinction between success / spoof / unrecognized.
+
+        Args:
+            buffer: Deque of ``(mapped_user_id, result_type)``, maxlen=3.
+            threshold: Minimum count for a real user to win (default 2).
+
+        Returns:
+            ``(user_id, "success")`` if a real user has >= threshold votes,
+            ``(0, "spoof")`` if spoof frames reach threshold,
+            ``(0, "unrecognized")`` if buffer is full but no majority,
+            ``None`` if buffer is not yet full (caller should suppress emission).
+        """
+        if len(buffer) < _CONSENSUS_WINDOW:
+            return None  # not enough votes yet
+
+        user_counts: Counter[int] = Counter()
+        spoof_count = 0
+
+        for uid, rtype in buffer:
+            if rtype == "success":
+                user_counts[uid] += 1
+            elif rtype == "spoof":
+                spoof_count += 1
+            # "unrecognized" contributes to neither
+
+        # Success majority: one user meets threshold
+        for uid, count in user_counts.most_common():
+            if uid != 0 and count >= threshold:
+                return (uid, "success")
+
+        # Spoof majority: spoof frames meet threshold
+        if spoof_count >= threshold:
+            return (0, "spoof")
+
+        # Default: buffer full but no majority → unrecognized
+        return (0, "unrecognized")

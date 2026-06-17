@@ -58,6 +58,10 @@ def _make_test_config() -> SystemConfig:
         attendance_freeze_seconds=defaults.DEFAULT_ATTENDANCE_FREEZE_SECONDS,
         attendance_freeze_sound_enabled=defaults.DEFAULT_ATTENDANCE_FREEZE_SOUND_ENABLED,
         timezone=defaults.DEFAULT_TIMEZONE,
+        hybrid_voting_window=defaults.DEFAULT_HYBRID_VOTING_WINDOW,
+        hybrid_boost_amount=defaults.DEFAULT_HYBRID_BOOST_AMOUNT,
+        hybrid_liveness_enabled=defaults.DEFAULT_HYBRID_LIVENESS_ENABLED,
+        recognition_interval=defaults.DEFAULT_RECOGNITION_INTERVAL,
     )
 
 

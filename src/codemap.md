@@ -41,12 +41,12 @@ from PyQt5.QtWidgets import QApplication, QMessageBox
 2. **`SettingsResolver.resolve()` (provisional)** — build partial `SystemConfig` (CLI > env > default); no DB reader yet since the schema does not exist
 3. **`initialize_storage()`** — create/upgrade SQLite schema (WAL mode)
 4. **Create `QApplication`**
-5. **`seed_db_from_env()`** — idempotent write of env-vars into `system_settings` table (only if key is unset, so Admin UI changes survive)
-6. **`resolve_config()` (final)** — re-resolve `SystemConfig` with DB-aware reader (DB > env > default for settings; timezone is DB > env > default)
+5. **Create Database & SettingsService, then `seed_db_from_defaults()`** — instantiate `Database` with the provisional path and `SettingsService`, then idempotently write `defaults.py` values into `system_settings` (only if key is unset, so Admin UI changes survive)
+6. **`resolve_config()` (final)** — re-resolve `SystemConfig` via `SettingsResolver.resolve()` passing `settings_service` as the DB reader (DB > JSON defaults > defaults.py for settings; timezone is DB > defaults.py)
 7. **`set_timezone_config()`** — apply resolved timezone to `time_utils` module-level `_tz`
 8. **Validate model files** — check existence of required ONNX paths; optional head-pose model falls back to legacy mode on error
-9. **Build services** — `AttendanceService`, `AuthenticationService`, `LivenessChecker`, `FaceRecognizer` (wrapped in `CachingFaceReferenceRepository`)
-10. **Instantiate and show `MainWindow`** — enter Qt event loop via `app.exec_()`
+9. **Build services** — `AttendanceService`, `AuthenticationService` (backed by `AdminRepository`), `LivenessChecker`, `CachingFaceReferenceRepository` wrapping `FaceReferenceRepository`, `FaceRecognizer` (receives the caching repo), and optionally `HeadPoseEstimator`. Note: `AIPipeline` is no longer constructed here; it is created inside `CameraThread.__init__` and receives `liveness_checker` + `face_recognizer` at that point.
+10. **Instantiate and show `MainWindow`** — imported from `attendance_system.ui.main_window`, receives nine dependencies: `attendance_service`, `settings_service`, `authentication_service`, `liveness_checker`, `face_recognizer`, `head_pose_estimator`, `database`, `config`, and `face_repo`. Enter Qt event loop via `app.exec_()`.
 
 ---
 

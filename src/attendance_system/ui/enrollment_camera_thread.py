@@ -143,7 +143,7 @@ class EnrollmentCameraThread(CameraThreadBase):
     # ------------------------------------------------------------------
 
     def run(self) -> None:
-        cap = cv2.VideoCapture(self._camera_index)
+        cap = cv2.VideoCapture(self._camera_index, cv2.CAP_DSHOW)
         if not cap.isOpened():
             self.camera_error.emit(f"Cannot open camera (index {self._camera_index})")
             return

@@ -27,6 +27,6 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["attendance_system*"]
-
+ 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

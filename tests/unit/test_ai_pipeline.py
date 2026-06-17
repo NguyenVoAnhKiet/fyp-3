@@ -8,6 +8,7 @@ through (see ``test_liveness_checker_bypass``).
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 import numpy as np
@@ -50,11 +51,12 @@ def test_liveness_checker_real_face(mock_session_cls):
     
     checker = LivenessChecker(Path("fake.onnx"))
     dummy_img = np.zeros((128, 128, 3), dtype=np.uint8)
-    # threshold 0.5 -> logit_threshold 0.0. 10.0 > 0.0 -> True
+    # logit_diff = 10.0 → sigmoid(10.0) ≈ 0.99995 → >= 0.5 → True
     result = checker.check(dummy_img, threshold=0.5)
-    
+
     assert result.is_real is True
-    assert result.score == 10.0
+    assert result.raw_logit == 10.0
+    assert result.score == pytest.approx(1.0 / (1.0 + math.exp(-10.0)))
 
 
 @patch("onnxruntime.InferenceSession")
@@ -67,14 +69,15 @@ def test_liveness_checker_spoof_face(mock_session_cls):
     # index 0 = real (0.0), index 1 = spoof (10.0) -> logit_diff = -10.0
     mock_session.run.return_value = [np.array([[0.0, 10.0]], dtype=np.float32)]
     mock_session_cls.return_value = mock_session
-    
+
     checker = LivenessChecker(Path("fake.onnx"))
     dummy_img = np.zeros((128, 128, 3), dtype=np.uint8)
-    # threshold 0.5 -> logit_threshold 0.0. -10.0 < 0.0 -> False
+    # logit_diff = -10.0 → sigmoid(-10.0) ≈ 4.5e-5 → < 0.5 → False
     result = checker.check(dummy_img, threshold=0.5)
-    
+
     assert result.is_real is False
-    assert result.score == -10.0
+    assert result.raw_logit == -10.0
+    assert result.score == pytest.approx(1.0 / (1.0 + math.exp(10.0)))
 
 
 @pytest.mark.parametrize("shape", [
@@ -343,15 +346,18 @@ def test_liveness_checker_nan_inf(mock_session_cls):
     result = checker.check(dummy_img, threshold=0.5)
     assert result.is_real is False
     assert np.isnan(result.score)
-    
+    assert np.isnan(result.raw_logit)
+
     # 2. Test Inf output
     mock_session.run.return_value = [np.array([[np.inf, 0.0]], dtype=np.float32)]
     result = checker.check(dummy_img, threshold=0.5)
     assert result.is_real is True
-    assert result.score == np.inf
-    
+    assert result.score == 1.0
+    assert np.isinf(result.raw_logit) and result.raw_logit > 0
+
     # 3. Test -Inf output
     mock_session.run.return_value = [np.array([[-np.inf, 0.0]], dtype=np.float32)]
     result = checker.check(dummy_img, threshold=0.5)
     assert result.is_real is False
-    assert result.score == -np.inf
+    assert result.score == 0.0
+    assert np.isinf(result.raw_logit) and result.raw_logit < 0

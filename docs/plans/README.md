@@ -22,10 +22,7 @@ This folder tracks in-flight and archived feature plans — work-in-progress des
 
 ## Active Plans
 
-| ID | Title | Status | Branch |
-|----|-------|--------|--------|
-
-*No active plans at the moment — all in-flight work has been archived. Current focus: Phase 4 threshold tuning (awaiting validation data).*
+*None — all plans are archived.*
 
 ## Archive
 
@@ -41,3 +38,7 @@ Browse `docs/plans/archive/` for completed plans. Date prefix sorts chronologica
 | 0006 | [Enforce Cache Invalidation](archive/2026-06-06-0006-caching-face-repository.md) — candidate #4 | 2026-06-06 | `refactor/source-code` |
 | 0002 | [Architecture Deepening — Checklist](archive/2026-06-06-0002-architecture-deepening.md) — 4/5 done (#3 still active) | 2026-06-06 | `refactor/source-code` |
 | 0008 | [Address code-review findings for `feat/ui-polish`](archive/2026-06-07-0008-ui-polish-review-cleanups.md) | 2026-06-07 | `feat/ui-polish` |
+| 0009 | [Hybrid Liveness Decider](archive/0009-hybrid-liveness-decider-20260616.md) | 2026-06-16 | `refactor/upgrade-ai` |
+| 0010 | [Hybrid Liveness Mode + Recognition Consensus](archive/2026-06-16-0010-hybrid-mode-recognition-consensus.md) | 2026-06-16 | `refactor/upgrade-ai` |
+| 0011 | [DB Defaults from JSON](archive/2026-06-16-0011-db-defaults-from-json.md) | 2026-06-16 | — |
+| 0012 | [Simplify Seeding: Use defaults.py Directly](archive/2026-06-17-0012-simplify-seeding-use-defaults-py.md) | 2026-06-17 | `refactor/upgrade-ai` |

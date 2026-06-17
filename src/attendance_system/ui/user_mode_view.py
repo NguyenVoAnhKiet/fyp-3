@@ -542,6 +542,10 @@ class UserModeView(QWidget):
             face_recognizer=self._face_recognizer,
             camera_index=active_camera,
             detector_model_path=self._config.detection_model_path,
+            hybrid_liveness_enabled=self._config.hybrid_liveness_enabled,
+            hybrid_voting_window=self._config.hybrid_voting_window,
+            hybrid_boost_amount=self._config.hybrid_boost_amount,
+            recognition_interval=self._config.recognition_interval,
             parent=self,
         )
         self._camera_thread.frame_ready.connect(self._update_camera_frame)

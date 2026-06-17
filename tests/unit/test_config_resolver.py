@@ -1,8 +1,7 @@
 """Unit tests for ``attendance_system.core.config``.
 
-Covers the 10 behaviour tests listed in plan 0005 ("Testing" section):
-resolution-order, env-seeding idempotency, init vs runtime modes, and
-the immutability of the resolved :class:`SystemConfig`.
+Covers resolution-order, defaults→DB seeding idempotency, init vs runtime
+modes, and the immutability of the resolved :class:`SystemConfig`.
 """
 
 from __future__ import annotations
@@ -44,6 +43,8 @@ def _db_with(values: dict[str, str]) -> MagicMock:
 # Resolution order: CLI > env > DB > default
 # ---------------------------------------------------------------------------
 
+# --- Non-DB settings (paths, camera, feature flags): CLI > env > default ---
+
 
 def test_cli_arg_overrides_env() -> None:
     """Both CLI and env set the same key — CLI wins."""
@@ -60,12 +61,12 @@ def test_cli_arg_overrides_env() -> None:
     assert cfg.camera_index == 2  # CLI wins
 
 
-def test_env_overrides_db() -> None:
-    """Env set, DB has value — env wins (per plan 0005 precedence)."""
+def test_db_wins_for_seedable_keys() -> None:
+    """For seedable keys, DB value wins over env (env is not consulted)."""
     env = {"FACE_ANTISPOOF_CONFIDENCE_THRESHOLD": "0.5"}
     db = _db_with({"liveness_threshold": "0.7"})
     cfg = SettingsResolver().resolve(env=env, db_reader=db.get)
-    assert cfg.liveness_threshold == pytest.approx(0.5)  # env wins
+    assert cfg.liveness_threshold == pytest.approx(0.7)  # DB wins
 
 
 def test_db_overrides_default() -> None:
@@ -84,30 +85,106 @@ def test_default_used_when_nothing_set() -> None:
     assert cfg.database_path == defaults.DEFAULT_DATABASE_PATH
 
 
+def test_resolve_uses_db_for_seedable_keys() -> None:
+    """DB value wins over defaults.py for seedable keys."""
+    db = _db_with({"liveness_threshold": "0.42"})
+    cfg = SettingsResolver().resolve(env={}, db_reader=db.get)
+    assert cfg.liveness_threshold == pytest.approx(0.42)
+
+
+def test_resolve_falls_back_to_defaults_py() -> None:
+    """DB empty → defaults.py value used."""
+    cfg = SettingsResolver().resolve(env={}, db_reader=None)
+    assert cfg.liveness_threshold == defaults.DEFAULT_LIVENESS_THRESHOLD
+
+
+def test_resolve_ignores_env_for_seedable_keys() -> None:
+    """Env var set but ignored for seedable keys."""
+    env = {"FACE_ANTISPOOF_CONFIDENCE_THRESHOLD": "0.99"}
+    cfg = SettingsResolver().resolve(env=env, db_reader=None)
+    assert cfg.liveness_threshold == defaults.DEFAULT_LIVENESS_THRESHOLD
+
+
+def test_non_db_settings_still_use_env_override() -> None:
+    """Paths, camera, feature flags still use CLI > env > default."""
+    env = {"CAMERA_INDEX": "5"}
+    cfg = SettingsResolver().resolve(env=env, db_reader=None)
+    assert cfg.camera_index == 5
+
+
 # ---------------------------------------------------------------------------
-# Seeding: env → DB on first run, never overwrites existing
+# Seeding: defaults.py → DB on first run, never overwrites existing
 # ---------------------------------------------------------------------------
 
 
-def test_seeding_writes_env_to_db_on_first_run() -> None:
-    """DB has no value, env has value — DB gets seeded with the env value."""
+def test_all_seed_keys_have_defaults_constant() -> None:
+    """Every ``_SEED_SETTINGS`` key has a matching ``DEFAULT_*`` in ``defaults.py``."""
+    from attendance_system.core.config import _SEED_SETTINGS
+
+    for db_key in _SEED_SETTINGS:
+        const_name = f"DEFAULT_{db_key.upper()}"
+        assert hasattr(defaults, const_name), f"Missing {const_name} for {db_key}"
+
+
+def test_seed_db_from_defaults_writes_when_key_missing() -> None:
+    """DB has no value — all 9 seed keys are written from defaults.py."""
     settings = _empty_db()
-    env = {"FACE_ANTISPOOF_CONFIDENCE_THRESHOLD": "0.5"}
-    SettingsResolver().seed_db_from_env(env=env, settings=settings)
-    # `set` should have been called for the liveness threshold.
-    called = settings.set.call_args_list
-    assert any(
-        call.args[0] == "liveness_threshold" and call.args[1] == "0.5"
-        for call in called
-    ), f"Expected liveness_threshold seeding; got: {called}"
+    SettingsResolver().seed_db_from_defaults(settings=settings)
+    assert settings.set.called
+    called_keys = {call.args[0] for call in settings.set.call_args_list}
+    expected_keys = {
+        "timezone",
+        "liveness_threshold",
+        "similarity_threshold",
+        "attendance_freeze_seconds",
+        "attendance_freeze_sound_enabled",
+        "hybrid_voting_window",
+        "hybrid_boost_amount",
+        "hybrid_liveness_enabled",
+        "recognition_interval",
+    }
+    assert called_keys == expected_keys, (
+        f"Expected {expected_keys}, got {called_keys}"
+    )
 
 
-def test_seeding_does_not_overwrite_existing_db_value() -> None:
-    """DB has a value, env has different value — DB is left untouched."""
-    settings = _db_with({"liveness_threshold": "0.7"})
-    env = {"FACE_ANTISPOOF_CONFIDENCE_THRESHOLD": "0.5"}
-    SettingsResolver().seed_db_from_env(env=env, settings=settings)
+def test_seed_db_from_defaults_skips_when_key_exists() -> None:
+    """All DB keys have values — seeding is skipped entirely."""
+    settings = _db_with({
+        "liveness_threshold": "0.5",
+        "similarity_threshold": "0.6",
+        "attendance_freeze_seconds": "4",
+        "attendance_freeze_sound_enabled": "false",
+        "hybrid_voting_window": "5",
+        "hybrid_boost_amount": "0.1",
+        "hybrid_liveness_enabled": "false",
+        "recognition_interval": "5",
+        "timezone": "Asia/Ho_Chi_Minh",
+    })
+    SettingsResolver().seed_db_from_defaults(settings=settings)
     settings.set.assert_not_called()
+
+
+def test_seed_db_from_defaults_converts_db_types_to_strings() -> None:
+    """``defaults.py`` float/bool/int → '0.5'/'false'/'5'.
+    
+    Uses real defaults from :mod:`attendance_system.core.defaults`.
+    """
+    settings = _empty_db()
+    SettingsResolver().seed_db_from_defaults(settings=settings)
+    called = {call.args[0]: call.args[1] for call in settings.set.call_args_list}
+    assert called["liveness_threshold"] == "0.5"
+    assert called["hybrid_liveness_enabled"] == "false"
+    assert called["hybrid_voting_window"] == "5"
+
+
+def test_seed_db_from_defaults_valid_zero_and_false_are_valid() -> None:
+    """0 and false are valid seed values (never skipped)."""
+    settings = _empty_db()
+    SettingsResolver().seed_db_from_defaults(settings=settings)
+    called = {call.args[0]: call.args[1] for call in settings.set.call_args_list}
+    # ``hybrid_liveness_enabled`` defaults to ``False`` → must be seeded as "false"
+    assert called["hybrid_liveness_enabled"] == "false"
 
 
 # ---------------------------------------------------------------------------
@@ -135,21 +212,17 @@ def test_bootstrap_mode_skips_dotenv() -> None:
     assert cfg.liveness_threshold == defaults.DEFAULT_LIVENESS_THRESHOLD
 
 
-def test_runtime_mode_consults_env() -> None:
-    """Runtime mode reads env vars for thresholds (for env > DB precedence)."""
-    env = {"FACE_ANTISPOOF_CONFIDENCE_THRESHOLD": "0.42"}
+def test_runtime_mode_consults_env_for_non_db_settings() -> None:
+    """Runtime mode reads env vars for non-DB settings (camera index, paths)."""
+    env = {"CAMERA_INDEX": "5"}
     cfg = SettingsResolver(mode="runtime").resolve(env=env, db_reader=None)
-    assert cfg.liveness_threshold == pytest.approx(0.42)
+    assert cfg.camera_index == 5
 
 
-def test_init_mode_skips_seeding() -> None:
-    """Init mode is a no-op for seeding even if env has values."""
+def test_init_mode_skips_defaults_seeding() -> None:
+    """Init mode is a no-op for seeding (bootstrap does not seed DB)."""
     settings = _empty_db()
-    env = {
-        "FACE_ANTISPOOF_CONFIDENCE_THRESHOLD": "0.5",
-        "ATTENDANCE_FREEZE_SECONDS": "10",
-    }
-    SettingsResolver(mode="init").seed_db_from_env(env=env, settings=settings)
+    SettingsResolver(mode="init").seed_db_from_defaults(settings=settings)
     settings.set.assert_not_called()
 
 
@@ -181,6 +254,11 @@ def test_config_has_all_required_fields() -> None:
         "headpose_enabled",
         "liveness_threshold",
         "similarity_threshold",
+        "hybrid_voting_window",
+        "hybrid_boost_amount",
+        "hybrid_liveness_enabled",
+        "recognition_interval",
+        "timezone",
         "attendance_freeze_seconds",
         "attendance_freeze_sound_enabled",
     )
@@ -198,8 +276,12 @@ def test_resolve_config_factory_wires_settings_service() -> None:
     settings = _db_with({"liveness_threshold": "0.55"})
     cfg = resolve_config(
         cli_args=argparse.Namespace(
-            database_path=None, liveness_model=None, recognition_model=None,
-            detector_model=None, headpose_model=None, camera_index=None,
+            database_path=None,
+            liveness_model=None,
+            recognition_model=None,
+            detector_model=None,
+            headpose_model=None,
+            camera_index=None,
         ),
         env={},
         settings_service=settings,

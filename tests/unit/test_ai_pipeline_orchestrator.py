@@ -43,7 +43,7 @@ class TestRunAttendance:
     def test_spoof_result(self) -> None:
         """Liveness tracker returns SPOOF → result_type is 'spoof'."""
         liveness = MagicMock(spec=LivenessChecker)
-        # Raw score below T_HIGH (0.65) → tracker starts as SPOOF
+        # Raw score below threshold → legacy path returns SPOOF
         liveness.check.return_value = LivenessResult(is_real=False, score=0.2)
         recognizer = MagicMock(spec=FaceRecognizer)
 

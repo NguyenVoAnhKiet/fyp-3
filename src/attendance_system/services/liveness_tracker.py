@@ -1,12 +1,11 @@
-"""Temporal smoothing of liveness scores using EMA + Hysteresis + IoU tracking.
+"""Temporal smoothing of liveness scores using EMA + IoU tracking.
 
 This module provides frame-to-frame tracking of detected faces with
-exponential moving average (EMA) smoothing of liveness scores and a
-hysteresis state machine to prevent rapid SPOOF ↔ REAL transitions.
+exponential moving average (EMA) smoothing of liveness scores.
 
 Algorithm (per frame):
   1. Greedy IoU match each detection → existing track.
-  2. Matched tracks: update bbox, apply EMA, apply hysteresis.
+  2. Matched tracks: update bbox, apply EMA.
   3. Unmatched detections → create new tracks.
   4. Unmatched existing tracks → increment miss counter.
   5. Prune tracks with misses > MAX_MISSES.
@@ -31,12 +30,6 @@ smoothed score respond faster to changes but more susceptible to noise.
 Lower values produce a smoother but more lagging estimate.
 ``ema = ALPHA * new_score + (1 - ALPHA) * previous_ema``
 """
-
-T_HIGH = 0.65
-"""Threshold to transition SPOOF → REAL (must reach or exceed this value)."""
-
-T_LOW = 0.45
-"""Threshold to transition REAL → SPOOF (must drop below this value)."""
 
 MAX_MISSES = 3
 """
@@ -96,14 +89,13 @@ def compute_iou(
 
 
 class TrackedFace:
-    """A single tracked face with EMA-smoothed liveness score and hysteresis state.
+    """A single tracked face with EMA-smoothed liveness score.
 
-    Hysteresis prevents rapid state flipping at boundary values:
-      - SPOOF → REAL transition requires ``ema_score >= T_HIGH``.
-      - REAL → SPOOF transition requires ``ema_score < T_LOW``.
+    Tracks a face across frames using IoU matching. The EMA-smoothed
+    score reduces noise while preserving trend direction.
     """
 
-    __slots__ = ("bbox", "ema_score", "state", "misses")
+    __slots__ = ("bbox", "ema_score", "misses")
 
     def __init__(
         self,
@@ -112,13 +104,11 @@ class TrackedFace:
     ) -> None:
         self.bbox: tuple[float, float, float, float] = bbox
         self.ema_score: float = initial_score
-        # Initial state: SPOOF unless the score is already above the high bar
-        self.state: str = "SPOOF" if initial_score < T_HIGH else "REAL"
         self.misses: int = 0
 
 
 class LivenessTracker:
-    """Tracks faces across frames via IoU matching with EMA + hysteresis.
+    """Tracks faces across frames via IoU matching with EMA smoothing.
 
     Usage::
 
@@ -127,8 +117,8 @@ class LivenessTracker:
             bboxes = [(x1, y1, w1, h1), ...]   # from face detector
             scores = [0.82, 0.31, ...]          # from liveness model
             results = tracker.update(bboxes, scores)
-            for bbox, state, ema_score in results:
-                if state == "REAL":
+            for bbox, ema_score, track_id in results:
+                if ema_score >= threshold:
                     ...  # proceed with recognition
     """
 
@@ -142,16 +132,16 @@ class LivenessTracker:
         self,
         bboxes: list[tuple[float, float, float, float]],
         raw_scores: list[float],
-    ) -> list[tuple[tuple[float, float, float, float], str, float]]:
+    ) -> list[tuple[tuple[float, float, float, float], float, int]]:
         """Update tracker with one frame of detections.
 
         Args:
             bboxes: List of bounding boxes in ``(x, y, w, h)`` format.
-            raw_scores: List of raw liveness scores (logit_diff from
-                :class:`~attendance_system.services.ai_pipeline.LivenessChecker`).
+            raw_scores: List of raw liveness scores from
+                :class:`~attendance_system.services.ai_pipeline.LivenessChecker`.
 
         Returns:
-            List of ``(bbox, state, ema_score)`` tuples for **all** currently
+            List of ``(bbox, ema_score, track_id)`` tuples for **all** currently
             active tracks.  Callers should match their own detections to the
             returned bboxes via :func:`compute_iou` to get the per-face result.
         """
@@ -182,15 +172,6 @@ class LivenessTracker:
                 track.bbox = bbox
                 track.misses = 0
 
-                # Hysteresis state machine:
-                #   SPOOF → REAL only when ema_score ≥ T_HIGH
-                #   REAL → SPOOF only when ema_score < T_LOW
-                #   Otherwise stay in current state (avoids boundary flicker)
-                if track.state == "SPOOF" and track.ema_score >= T_HIGH:
-                    track.state = "REAL"
-                elif track.state == "REAL" and track.ema_score < T_LOW:
-                    track.state = "SPOOF"
-
                 matched_ids.add(best_id)
             else:
                 # ── Create new track ─────────────────────────────────────
@@ -207,6 +188,6 @@ class LivenessTracker:
 
         # ── Build return list ───────────────────────────────────────────
         return [
-            (track.bbox, track.state, track.ema_score)
-            for track in self.tracks.values()
+            (track.bbox, track.ema_score, tid)
+            for tid, track in self.tracks.items()
         ]

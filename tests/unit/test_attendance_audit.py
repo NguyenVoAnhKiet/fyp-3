@@ -163,10 +163,13 @@ def test_camera_thread_on_recognition_result_creates_record(
 
     ct.recognition_result.connect(_on_result, Qt.DirectConnection)
 
-    # Act — simulate AIWorker emitting a success result
-    ct._on_recognition_result("success", user_id, "Camera Test User", 0.9, 0.85, "center")
+    # Act — simulate AIWorker emitting 3 success results to reach consensus
+    for _ in range(3):
+        ct._on_recognition_result(
+            "success", user_id, "Camera Test User", 0.9, 0.85, "center"
+        )
 
-    # Assert — an attendance record must have been created
+    # Assert — an attendance record must have been created (consensus after 3)
     assert len(records_created) == 1
     all_records = service.get_session_records(session_id)
     assert len(all_records) == 1

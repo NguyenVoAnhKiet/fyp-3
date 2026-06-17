@@ -51,8 +51,14 @@ htmlcov/
 # Obsidian workspace (local editor config — not part of the project)
 docs/.obsidian/
 
+# Project report (local docs — not part of the project)
+docs/project-report/
+
 # Copilot conversation history (transient)
 docs/copilot/copilot-conversations/
+
+# Deepwork progress files (local session state)
+.slim/deepwork/
 
 # Large model files (downloaded on demand)
 models/**/*.onnx

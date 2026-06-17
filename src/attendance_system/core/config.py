@@ -1,7 +1,7 @@
 """Centralized configuration resolution.
 
 This module owns the **single source of truth** for configuration resolution
-order (CLI > env > DB > default) and the one-time env→DB seeding pattern.
+order and the one-time defaults→DB seeding pattern.
 
 Architecture (see ``docs/plans/active/0005-system-config-resolver.md``):
 
@@ -9,7 +9,9 @@ Architecture (see ``docs/plans/active/0005-system-config-resolver.md``):
 * :class:`SettingsResolver` — class that performs the resolution work
   (behavior).  Has two modes:
 
-  - ``"runtime"`` (default) — full resolution: CLI > env > DB > default.
+  - ``"runtime"`` (default) — full resolution:
+    - Non-DB settings: CLI > env > default.
+    - DB-seedable settings: DB > ``defaults.py``.
     Used by ``main.py``.
   - ``"init"`` — minimal resolution for ``attendance-storage-init``:
     only ``database_path`` matters; ``load_dotenv()`` is skipped so the
@@ -18,20 +20,23 @@ Architecture (see ``docs/plans/active/0005-system-config-resolver.md``):
 * :func:`resolve_config` — convenience factory wiring up the typical
   runtime caller.
 
-Defaults live in :mod:`attendance_system.core.defaults`.
+All defaults live in :mod:`attendance_system.core.defaults`.
 """
 
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from . import defaults
+
+_log = logging.getLogger(__name__)
 
 # Public re-exports
 __all__ = [
@@ -92,6 +97,12 @@ class SystemConfig:
     liveness_threshold: float
     similarity_threshold: float
 
+    # --- Hybrid liveness decider ---
+    hybrid_voting_window: int
+    hybrid_boost_amount: float
+    hybrid_liveness_enabled: bool
+    recognition_interval: int
+
     # --- Timezone (mutable via Admin UI) ---
     timezone: str
 
@@ -105,16 +116,40 @@ class SystemConfig:
 # ---------------------------------------------------------------------------
 
 
-#: Env-var → DB-key mapping for seeded values.  Centralized so adding a new
-#: tunable only touches one place.  Env-var names mirror ``.env.example``.
-_SEEDABLE: tuple[tuple[str, str, str], ...] = (
-    # (env_var, db_key, value_type)
-    ("TIMEZONE", "timezone", "str"),
-    ("FACE_ANTISPOOF_CONFIDENCE_THRESHOLD", "liveness_threshold", "float"),
-    ("FACE_SIMILARITY_THRESHOLD", "similarity_threshold", "float"),
-    ("ATTENDANCE_FREEZE_SECONDS", "attendance_freeze_seconds", "int"),
-    ("ATTENDANCE_FREEZE_SOUND_ENABLED", "attendance_freeze_sound_enabled", "bool"),
-)
+#: Maps DB key → value_type string for the 9 seedable settings.
+#: Values come from :mod:`attendance_system.core.defaults` constants.
+_SEED_SETTINGS: dict[str, str] = {
+    "timezone": "str",
+    "liveness_threshold": "float",
+    "similarity_threshold": "float",
+    "attendance_freeze_seconds": "int",
+    "attendance_freeze_sound_enabled": "bool",
+    "hybrid_voting_window": "int",
+    "hybrid_boost_amount": "float",
+    "hybrid_liveness_enabled": "bool",
+    "recognition_interval": "int",
+}
+
+# Module-level assertion: verify every seedable key has a corresponding
+# ``DEFAULT_*`` constant in ``defaults.py``.  Fail-fast at import time
+# on drift between ``_SEED_SETTINGS`` and ``defaults.py``.
+for _db_key in _SEED_SETTINGS:
+    _const_name = f"DEFAULT_{_db_key.upper()}"
+    if not hasattr(defaults, _const_name):
+        raise RuntimeError(
+            f"Missing default constant: {_const_name} for seed key {_db_key}"
+        )
+
+
+def _stringify_for_db(value: Any, value_type: str) -> str:
+    """Convert a native Python value to its DB string representation.
+
+    Booleans become lowercase ``"true"``/``"false"`` to match the
+    ``_BOOL_TRUE`` / ``_BOOL_FALSE`` sets used by ``_resolve_bool``.
+    """
+    if value_type == "bool":
+        return "true" if value else "false"
+    return str(value)
 
 
 # Truthy / falsy string sets for env-var bool parsing
@@ -124,6 +159,10 @@ _BOOL_FALSE: frozenset[str] = frozenset({"0", "false", "no", "off"})
 
 class SettingsResolver:
     """Resolves :class:`SystemConfig` from CLI > env > DB > default.
+
+            For DB-seedable keys (thresholds, timezone, UX settings), the resolution
+            is **DB > defaults.py** — env vars are not consulted.
+    This ensures the Admin UI is the single source of truth after first run.
 
     Args:
         mode: ``"runtime"`` (default) or ``"init"``.  In init mode the
@@ -135,7 +174,8 @@ class SettingsResolver:
 
     1. **CLI** — argparse value, if not ``None`` and (for strings) non-empty.
     2. **Env** — ``os.environ[key]`` if set and non-empty (with int/bool
-       parsing handled here, not at call site).
+       parsing handled here, not at call site).  Only for non-DB settings
+       (paths, camera index, feature flags).
     3. **DB** — ``db_reader(db_key)`` if a reader is provided and returns
        a value.  Allows tests to inject a fake or skip the DB layer.
     4. **Default** — from :mod:`attendance_system.core.defaults`.
@@ -246,39 +286,61 @@ class SettingsResolver:
                 attendance_freeze_sound_enabled=(
                     defaults.DEFAULT_ATTENDANCE_FREEZE_SOUND_ENABLED
                 ),
+                hybrid_voting_window=defaults.DEFAULT_HYBRID_VOTING_WINDOW,
+                hybrid_boost_amount=defaults.DEFAULT_HYBRID_BOOST_AMOUNT,
+                hybrid_liveness_enabled=defaults.DEFAULT_HYBRID_LIVENESS_ENABLED,
+                recognition_interval=defaults.DEFAULT_RECOGNITION_INTERVAL,
             )
 
-        # --- Thresholds (CLI > env > DB > default) ---
+        # --- Thresholds (DB > defaults.py; no env override) ---
         liveness_threshold = self._resolve_float(
-            None,
-            env_map.get("FACE_ANTISPOOF_CONFIDENCE_THRESHOLD"),
+            None, None,
             read_db("liveness_threshold"),
             defaults.DEFAULT_LIVENESS_THRESHOLD,
         )
         similarity_threshold = self._resolve_float(
-            None,
-            env_map.get("FACE_SIMILARITY_THRESHOLD"),
+            None, None,
             read_db("similarity_threshold"),
             defaults.DEFAULT_SIMILARITY_THRESHOLD,
         )
 
-        # --- Timezone (DB > env > default; no CLI) ---
+        # --- Hybrid liveness decider (DB > defaults.py; no env) ---
+        hybrid_voting_window = self._resolve_int(
+            None, None,
+            read_db("hybrid_voting_window"),
+            defaults.DEFAULT_HYBRID_VOTING_WINDOW,
+        )
+        hybrid_boost_amount = self._resolve_float(
+            None, None,
+            read_db("hybrid_boost_amount"),
+            defaults.DEFAULT_HYBRID_BOOST_AMOUNT,
+        )
+        hybrid_liveness_enabled = self._resolve_bool(
+            None, None,
+            read_db("hybrid_liveness_enabled"),
+            defaults.DEFAULT_HYBRID_LIVENESS_ENABLED,
+        )
+        recognition_interval = self._resolve_int(
+            None, None,
+            read_db("recognition_interval"),
+            defaults.DEFAULT_RECOGNITION_INTERVAL,
+        )
+
+        # --- Timezone (DB > defaults.py; no env override) ---
         timezone = self._resolve_timezone(
-            env_map.get("TIMEZONE"),
+            None,
             read_db("timezone"),
             defaults.DEFAULT_TIMEZONE,
         )
 
-        # --- Attendance UX (CLI > env > DB > default) ---
+        # --- Attendance UX (DB > defaults.py; no env) ---
         attendance_freeze_seconds = self._resolve_int(
-            None,
-            env_map.get("ATTENDANCE_FREEZE_SECONDS"),
+            None, None,
             read_db("attendance_freeze_seconds"),
             defaults.DEFAULT_ATTENDANCE_FREEZE_SECONDS,
         )
         attendance_freeze_sound_enabled = self._resolve_bool(
-            None,
-            env_map.get("ATTENDANCE_FREEZE_SOUND_ENABLED"),
+            None, None,
             read_db("attendance_freeze_sound_enabled"),
             defaults.DEFAULT_ATTENDANCE_FREEZE_SOUND_ENABLED,
         )
@@ -306,20 +368,20 @@ class SettingsResolver:
             timezone=timezone,
             attendance_freeze_seconds=attendance_freeze_seconds,
             attendance_freeze_sound_enabled=attendance_freeze_sound_enabled,
+            hybrid_voting_window=hybrid_voting_window,
+            hybrid_boost_amount=hybrid_boost_amount,
+            hybrid_liveness_enabled=hybrid_liveness_enabled,
+            recognition_interval=recognition_interval,
         )
 
-    def seed_db_from_env(
+    def seed_db_from_defaults(
         self,
         settings: _SettingsServiceLike,
-        env: Mapping[str, str] | None = None,
     ) -> None:
-        """Write env values to the DB on first run only.
+        """Write defaults from ``defaults.py`` to the DB on first run only.
 
         Idempotent: if the DB already has a value for a key, it is left
-        untouched.  This preserves the legacy ``_seed_threshold`` /
-        ``_seed_setting`` semantics: env seeds DB on first run, then the
-        admin can change values via the UI and the env var will not
-        overwrite them.
+        untouched.  This preserves the Admin UI overrides across restarts.
 
         Skipped entirely in ``"init"`` mode because ``bootstrap.py`` must
         not call ``load_dotenv()``.
@@ -327,21 +389,14 @@ class SettingsResolver:
         Args:
             settings: Object exposing ``get`` / ``set`` (i.e., a
                 :class:`~attendance_system.services.settings_service.SettingsService`).
-            env: Environment mapping.  Pass ``None`` (the default) to
-                consult :data:`os.environ` at call time, or an explicit
-                mapping for hermetic / test use.  Pass ``{}`` to skip
-                environment entirely.
         """
         if self._mode == "init":
             return
-        env_map = os.environ if env is None else env
-        for env_key, db_key, value_type in _SEEDABLE:
+        for db_key, value_type in _SEED_SETTINGS.items():
             if settings.get(db_key) is not None:
                 continue  # DB owns this value; do not overwrite
-            raw = env_map.get(env_key)
-            if not raw or not raw.strip():
-                continue  # no env value to seed
-            settings.set(db_key, raw.strip(), value_type)
+            value = getattr(defaults, f"DEFAULT_{db_key.upper()}")
+            settings.set(db_key, _stringify_for_db(value, value_type), value_type)
 
     # ------------------------------------------------------------------
     # Per-type resolvers (CLI > env > [DB] > default)

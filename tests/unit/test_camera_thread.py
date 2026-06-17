@@ -284,3 +284,307 @@ def test_camera_thread_retry_read_releases_old_cap(mock_detector_create, mock_sl
     mock_old_cap.release.assert_called_once()
     mock_video_capture_cls.assert_called_with(camera_thread._camera_index)
 
+
+# ============================================================================
+# Recognition consensus tests
+# ============================================================================
+
+from collections import deque
+from attendance_system.ui.camera_thread import (
+    _CONSENSUS_THRESHOLD,
+    _CONSENSUS_WINDOW,
+)
+
+
+class TestComputeConsensus:
+    """Pure-function tests for ``CameraThread._compute_consensus``."""
+
+    def test_majority_same_user(self) -> None:
+        """2/3 same user → returns (uid, 'success')."""
+        buf: deque[tuple[int, str]] = deque(
+            [(101, "success"), (101, "success"), (0, "unrecognized")], maxlen=3
+        )
+        result = CameraThread._compute_consensus(buf, _CONSENSUS_THRESHOLD)
+        assert result == (101, "success")
+
+    def test_majority_all_same_user(self) -> None:
+        """3/3 same user → returns (uid, 'success')."""
+        buf: deque[tuple[int, str]] = deque(
+            [(101, "success"), (101, "success"), (101, "success")], maxlen=3
+        )
+        result = CameraThread._compute_consensus(buf, _CONSENSUS_THRESHOLD)
+        assert result == (101, "success")
+
+    def test_no_majority_returns_unrecognized(self) -> None:
+        """Mixed users but no real user has 2/3 → returns (0, 'unrecognized')."""
+        buf: deque[tuple[int, str]] = deque(
+            [(101, "success"), (102, "success"), (0, "unrecognized")], maxlen=3
+        )
+        result = CameraThread._compute_consensus(buf, _CONSENSUS_THRESHOLD)
+        assert result == (0, "unrecognized")
+
+    def test_majority_unrecognized_returns_unrecognized(self) -> None:
+        """2/3 unrecognized entries → returns (0, 'unrecognized')."""
+        buf: deque[tuple[int, str]] = deque(
+            [(0, "unrecognized"), (0, "unrecognized"), (101, "success")], maxlen=3
+        )
+        result = CameraThread._compute_consensus(buf, _CONSENSUS_THRESHOLD)
+        assert result == (0, "unrecognized")
+
+    def test_majority_spoof_returns_spoof(self) -> None:
+        """2/3 spoof entries → returns (0, 'spoof')."""
+        buf: deque[tuple[int, str]] = deque(
+            [(0, "spoof"), (0, "spoof"), (101, "success")], maxlen=3
+        )
+        result = CameraThread._compute_consensus(buf, _CONSENSUS_THRESHOLD)
+        assert result == (0, "spoof")
+
+    def test_majority_all_spoof_returns_spoof(self) -> None:
+        """3/3 spoof → returns (0, 'spoof')."""
+        buf: deque[tuple[int, str]] = deque(
+            [(0, "spoof"), (0, "spoof"), (0, "spoof")], maxlen=3
+        )
+        result = CameraThread._compute_consensus(buf, _CONSENSUS_THRESHOLD)
+        assert result == (0, "spoof")
+
+    def test_mixed_spoof_unrecognized_no_majority(self) -> None:
+        """Spoof not majority, no success majority → unrecognized."""
+        buf: deque[tuple[int, str]] = deque(
+            [(0, "spoof"), (0, "unrecognized"), (0, "unrecognized")], maxlen=3
+        )
+        result = CameraThread._compute_consensus(buf, _CONSENSUS_THRESHOLD)
+        assert result == (0, "unrecognized")
+
+    def test_spoof_edges_does_not_win_over_success(self) -> None:
+        """Success majority beats spoof minority."""
+        buf: deque[tuple[int, str]] = deque(
+            [(101, "success"), (101, "success"), (0, "spoof")], maxlen=3
+        )
+        result = CameraThread._compute_consensus(buf, _CONSENSUS_THRESHOLD)
+        assert result == (101, "success")
+
+    def test_buffer_not_full_returns_none(self) -> None:
+        """Fewer than window entries → returns None (suppress)."""
+        buf: deque[tuple[int, str]] = deque(
+            [(101, "success"), (102, "success")], maxlen=3
+        )
+        result = CameraThread._compute_consensus(buf, _CONSENSUS_THRESHOLD)
+        assert result is None
+
+    def test_empty_buffer_returns_none(self) -> None:
+        """Empty buffer → returns None."""
+        buf: deque[tuple[int, str]] = deque(maxlen=3)
+        result = CameraThread._compute_consensus(buf, _CONSENSUS_THRESHOLD)
+        assert result is None
+
+
+@patch("cv2.FaceDetectorYN.create")
+def test_consensus_suppresses_emission_until_window_full(mock_detector_create) -> None:
+    """``_on_recognition_result`` suppresses public signal until 3 results."""
+    mock_detector_create.side_effect = lambda *args, **kwargs: MagicMock()
+
+    liveness = MagicMock(spec=LivenessChecker)
+    recognizer = MagicMock(spec=FaceRecognizer)
+
+    thread = CameraThread(
+        session_id=1,
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
+        liveness_checker=liveness,
+        face_recognizer=recognizer,
+        detector_model_path=Path("fake.onnx"),
+    )
+
+    emitted: list[tuple] = []
+    thread.recognition_result.connect(
+        lambda *a: emitted.append(a), Qt.ConnectionType.DirectConnection
+    )
+
+    # Feed 3 consecutive success results for user 101
+    for i in range(3):
+        thread._on_recognition_result(
+            result_type="success",
+            user_id=101,
+            full_name="Alice",
+            liveness_score=0.9,
+            similarity_score=0.85,
+            matched_pose_label="front",
+        )
+
+    # Only the 3rd call should have emitted (buffer full + majority)
+    assert len(emitted) == 1
+    result_type, user_id = emitted[0][0], emitted[0][1]
+    assert result_type == "success"
+    assert user_id == 101
+
+
+@patch("cv2.FaceDetectorYN.create")
+def test_consensus_emits_spoof_on_spoof_majority(mock_detector_create) -> None:
+    """3 consecutive spoof results → consensus emits spoof."""
+    mock_detector_create.side_effect = lambda *args, **kwargs: MagicMock()
+
+    liveness = MagicMock(spec=LivenessChecker)
+    recognizer = MagicMock(spec=FaceRecognizer)
+
+    thread = CameraThread(
+        session_id=1,
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
+        liveness_checker=liveness,
+        face_recognizer=recognizer,
+        detector_model_path=Path("fake.onnx"),
+    )
+
+    emitted: list[tuple] = []
+    thread.recognition_result.connect(
+        lambda *a: emitted.append(a), Qt.ConnectionType.DirectConnection
+    )
+
+    for i in range(3):
+        thread._on_recognition_result(
+            result_type="spoof",
+            user_id=0,
+            full_name="",
+            liveness_score=0.2,
+            similarity_score=None,
+            matched_pose_label="",
+        )
+
+    assert len(emitted) == 1
+    assert emitted[0][0] == "spoof"
+    assert emitted[0][1] == 0
+
+
+@patch("cv2.FaceDetectorYN.create")
+def test_consensus_resets_on_face_loss(mock_detector_create) -> None:
+    """``_process_frame`` clears consensus buffer when no faces detected."""
+    mock_detector_create.side_effect = lambda *args, **kwargs: MagicMock()
+
+    liveness = MagicMock(spec=LivenessChecker)
+    recognizer = MagicMock(spec=FaceRecognizer)
+
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+
+    thread = CameraThread(
+        session_id=1,
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
+        liveness_checker=liveness,
+        face_recognizer=recognizer,
+        detector_model_path=Path("fake.onnx"),
+    )
+
+    # Fill buffer manually
+    thread._consensus_buffer.append(101)
+    thread._consensus_buffer.append(101)
+    thread._consensus_buffer.append(101)
+    assert len(thread._consensus_buffer) == 3
+
+    # Process frame with no faces → buffer should clear
+    thread._process_frame(frame, faces=None, frame_counter=42)
+    assert len(thread._consensus_buffer) == 0
+
+    # Also test with empty faces array
+    thread._consensus_buffer.append(101)
+    thread._process_frame(frame, faces=np.empty((0, 15)), frame_counter=43)
+    assert len(thread._consensus_buffer) == 0
+
+
+@patch("cv2.FaceDetectorYN.create")
+def test_consensus_independent_sessions(mock_detector_create) -> None:
+    """Each CameraThread has its own isolated consensus buffer."""
+    mock_detector_create.side_effect = lambda *args, **kwargs: MagicMock()
+
+    liveness1, liveness2 = MagicMock(spec=LivenessChecker), MagicMock(spec=LivenessChecker)
+    recognizer1, recognizer2 = MagicMock(spec=FaceRecognizer), MagicMock(spec=FaceRecognizer)
+
+    thread_a = CameraThread(session_id=1, liveness_threshold=0.5, similarity_threshold=0.6,
+                            liveness_checker=liveness1, face_recognizer=recognizer1,
+                            detector_model_path=Path("fake.onnx"))
+    thread_b = CameraThread(session_id=2, liveness_threshold=0.5, similarity_threshold=0.6,
+                            liveness_checker=liveness2, face_recognizer=recognizer2,
+                            detector_model_path=Path("fake.onnx"))
+
+    # Feed results to thread_a only
+    for i in range(3):
+        thread_a._on_recognition_result(
+            result_type="success", user_id=101, full_name="Alice",
+            liveness_score=0.9, similarity_score=0.85, matched_pose_label="front",
+        )
+
+    # thread_b should have empty buffer
+    assert len(thread_b._consensus_buffer) == 0
+
+
+@patch("cv2.FaceDetectorYN.create")
+def test_hybrid_params_forwarded_to_ai_pipeline(mock_detector_create) -> None:
+    """CameraThread forwards hybrid params to AIPipeline constructor."""
+    mock_detector_create.side_effect = lambda *args, **kwargs: MagicMock()
+
+    liveness = MagicMock(spec=LivenessChecker)
+    recognizer = MagicMock(spec=FaceRecognizer)
+
+    thread = CameraThread(
+        session_id=1,
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
+        liveness_checker=liveness,
+        face_recognizer=recognizer,
+        detector_model_path=Path("fake.onnx"),
+        hybrid_liveness_enabled=True,
+        hybrid_voting_window=7,
+        hybrid_boost_amount=0.20,
+        recognition_interval=3,
+    )
+
+    pipeline = thread._ai_worker._pipeline
+    assert pipeline._hybrid_liveness_enabled is True
+    assert pipeline._recognition_interval == 3
+    assert pipeline._hybrid_decider._voting_window == 7
+    assert pipeline._hybrid_decider._boost_amount == 0.20
+
+
+@patch("cv2.FaceDetectorYN.create")
+def test_consensus_emits_majority_user_data_not_current_frame(mock_detector_create) -> None:
+    """Consensus emission uses majority user's auxiliary data, not current frame's."""
+    mock_detector_create.side_effect = lambda *args, **kwargs: MagicMock()
+
+    liveness = MagicMock(spec=LivenessChecker)
+    recognizer = MagicMock(spec=FaceRecognizer)
+
+    thread = CameraThread(
+        session_id=1,
+        liveness_threshold=0.5,
+        similarity_threshold=0.6,
+        liveness_checker=liveness,
+        face_recognizer=recognizer,
+        detector_model_path=Path("fake.onnx"),
+    )
+
+    emitted: list[tuple] = []
+    thread.recognition_result.connect(
+        lambda *a: emitted.append(a), Qt.ConnectionType.DirectConnection
+    )
+
+    # Frames 1-2: user 101 (majority), Frame 3: user 102 (minority)
+    thread._on_recognition_result(
+        "success", 101, "Alice", 0.95, 0.88, "front"
+    )
+    thread._on_recognition_result(
+        "success", 101, "Alice", 0.94, 0.87, "front"
+    )
+    thread._on_recognition_result(
+        "success", 102, "Bob", 0.90, 0.76, "left"
+    )
+
+    # Buffer = [101, 101, 102] → consensus = 101
+    assert len(emitted) == 1
+    result_type, user_id, name, ls, ss, pose = emitted[0]
+    assert result_type == "success"
+    assert user_id == 101
+    # Must use Alice's data (last frame for user 101), not Bob's
+    assert name == "Alice"
+    assert ss == 0.87  # latest similarity for user 101
+    assert ls == 0.94  # latest liveness for user 101
+    assert pose == "front"  # latest pose for user 101
+
