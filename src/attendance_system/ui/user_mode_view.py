@@ -294,10 +294,10 @@ class UserModeView(QWidget):
         stats_layout = QGridLayout(stats_card)
         stats_layout.setContentsMargins(12, 12, 12, 12)
         stats_layout.setSpacing(10)
-        self._stat_success = self._make_stat_card("Đã ĐD", STATUS_SUCCESS)
-        self._stat_unrecognized = self._make_stat_card("Chưa ĐD", STATUS_ERROR)
-        self._stat_spoof = self._make_stat_card("Giả Mạo", STATUS_ERROR)
-        self._stat_time = self._make_stat_card("Thời Gian", STATUS_INFO)
+        self._stat_success, self._stat_success_label = self._make_stat_card("Đã ĐD", STATUS_SUCCESS)
+        self._stat_unrecognized, self._stat_unrecognized_label = self._make_stat_card("Chưa ĐD", STATUS_ERROR)
+        self._stat_spoof, self._stat_spoof_label = self._make_stat_card("Giả Mạo", STATUS_ERROR)
+        self._stat_time, self._stat_time_label = self._make_stat_card("Thời Gian", STATUS_INFO)
         stats_layout.addWidget(self._stat_success, 0, 0)
         stats_layout.addWidget(self._stat_unrecognized, 0, 1)
         stats_layout.addWidget(self._stat_spoof, 1, 0)
@@ -330,7 +330,7 @@ class UserModeView(QWidget):
         self._build_freeze_overlay()
         return panel
 
-    def _make_stat_card(self, label: str, colour: str) -> QFrame:
+    def _make_stat_card(self, label: str, colour: str) -> tuple[QFrame, QLabel]:
         card = QFrame()
         card.setStyleSheet(
             f"background: {BG_CARD}; border: none; border-radius: 10px;"
@@ -352,8 +352,7 @@ class UserModeView(QWidget):
         card_layout.addWidget(value)
         card_layout.addWidget(title)
 
-        card._value_label = value  # type: ignore[attr-defined]
-        return card
+        return card, value
 
     def _build_freeze_overlay(self) -> None:
         """Build the freeze overlay QLabel positioned over the camera feed."""
@@ -384,10 +383,10 @@ class UserModeView(QWidget):
             elapsed_text = "00:00"
 
         unresolved = self._stats_unrecognized + self._stats_spoof
-        self._stat_success._value_label.setText(str(self._stats_success))  # type: ignore[attr-defined]
-        self._stat_unrecognized._value_label.setText(str(unresolved))  # type: ignore[attr-defined]
-        self._stat_spoof._value_label.setText(str(self._stats_spoof))  # type: ignore[attr-defined]
-        self._stat_time._value_label.setText(elapsed_text)  # type: ignore[attr-defined]
+        self._stat_success_label.setText(str(self._stats_success))
+        self._stat_unrecognized_label.setText(str(unresolved))
+        self._stat_spoof_label.setText(str(self._stats_spoof))
+        self._stat_time_label.setText(elapsed_text)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -523,7 +522,7 @@ class UserModeView(QWidget):
             for rec in reversed(records):  # Reverse because _add_to_sidebar prepends
                 self._add_to_sidebar(rec["full_name"], rec["recorded_at"])
         except Exception:
-            pass
+            logger.warning("Failed to re-populate sidebar from existing session records")
 
         self._reset_camera_preview()
         self._stack.setCurrentIndex(_IDX_ACTIVE)
@@ -623,7 +622,7 @@ class UserModeView(QWidget):
                 # Extract HH:mm:ss from ISO
                 display_time = local_time.split("T")[1].split(".")[0]
             except Exception:
-                pass
+                logger.warning("Failed to parse display time from: %s", local_time)
         
         item_text = f"[{display_time}]  {name}"
         self._attendance_list.insertItem(0, item_text)
@@ -664,6 +663,7 @@ class UserModeView(QWidget):
                 QMessageBox.warning(self, "Session Closed", "Cannot record attendance: the session has been closed.")
                 return
             except Exception:
+                logger.warning("record_success failed, falling back to record_duplicate")
                 self._attendance.record_duplicate(self._session_id, user_id, now, details=details)
 
         elif result_type == "spoof":
@@ -716,6 +716,6 @@ class UserModeView(QWidget):
             for rec in reversed(records):
                 self._add_to_sidebar(rec["full_name"], rec["recorded_at"])
         except Exception:
-            pass
+            logger.warning("Failed to re-populate sidebar on timezone change")
 
 

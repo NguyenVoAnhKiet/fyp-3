@@ -43,11 +43,43 @@ logger = logging.getLogger(__name__)
 
 
 class CameraThreadBase(QThread):
-    """Base camera-capture thread.
+    """Base camera-capture thread using OpenCV, shared by attendance and enrollment flows.
 
-    Subclasses override :meth:`_process_frame` to implement per-frame AI
-    pipeline logic, and :meth:`_cleanup_worker` to disconnect AI worker
-    signals.
+    Owns the camera via ``cv2.VideoCapture`` and runs a capture loop in a
+    background ``QThread``.  Frames are mirrored horizontally so the user sees
+    a natural mirror reflection.
+
+    **Lifecycle:** ``start()`` (inherited from ``QThread``) → ``run()`` loop →
+    ``stop()``.  Capture can be temporarily suspended with ``pause()`` /
+    ``resume()``.
+
+    **Subclass hooks:**
+    * :meth:`_process_frame` — override to implement the per-frame AI pipeline
+      (face recognition, liveness, head-pose).  Called every frame from the
+      main loop with the BGR frame, detected faces, and a frame counter.
+    * :meth:`_cleanup_worker` — override to disconnect and stop any child
+      :class:`AIWorkerBase` thread (e.g. disconnect its signals before the
+      camera thread exits).
+
+    **Face detection:** Integrates with a YuNet ONNX face detector
+    (``face_detection_yunet_2023mar.onnx``) via :meth:`_detect_faces`.
+    Bounding boxes and landmarks are drawn in :meth:`_draw_bboxes`.
+
+    **Overlay rendering:** :meth:`_annotate_frame` uses ``QPainter`` to draw
+    result labels (recognised name, spoof warning, unrecognised) with coloured
+    text pills on the ``QImage`` before emitting it.
+
+    **Signals:**
+    * ``frame_ready(QImage)`` — emitted each cycle with the annotated display frame.
+    * ``camera_error(str)`` — emitted when the camera cannot be opened or the
+      read retry budget is exhausted.
+    * ``inference_warning(str)`` — emitted for non-fatal AI inference issues.
+
+    **Camera retry:** :meth:`_retry_read` implements exponential backoff
+    (1s/2s/4s) with up to 3 reconnection attempts before giving up.
+
+    Raises:
+        NotImplementedError: If :meth:`_process_frame` is not overridden.
     """
 
     frame_ready = pyqtSignal(QImage)
@@ -80,6 +112,7 @@ class CameraThreadBase(QThread):
         self._current_result_name: str = ""
         self._current_result_score: float = 0.0
 
+        # Written from main thread via stop(), read from worker thread. Atomic under CPython GIL.
         self._running = False
         self._paused: bool = False
 
@@ -278,12 +311,42 @@ class CameraThreadBase(QThread):
 
 
 class AIWorkerBase(QThread):
-    """Base AI worker thread.
+    """Base AI worker thread that processes frames from a backpressure queue.
 
-    Processes tasks from a queue of size 1 (backpressure) and implements a
-    circuit-breaker pattern for consecutive inference failures.
+    Runs in a background ``QThread`` and consumes tasks submitted via
+    :meth:`submit_task`.  Designed to be owned and fed by a
+    :class:`CameraThreadBase` subclass.
 
-    Subclasses override :meth:`_process_frame` and :meth:`_inference_error_types`.
+    **Queue backpressure:** The internal queue has ``maxsize=1``.  When the
+    worker is busy, ``submit_task()`` returns ``False`` immediately — the
+    caller drops the old frame rather than accumulating latency.
+
+    **Circuit-breaker:** Tracks consecutive ONNX inference failures.  After
+    30 consecutive failures (configured via :const:`_MAX_CONSECUTIVE_FAILURES`)
+    the worker emits ``camera_error`` and terminates itself.  This prevents
+    a stuck model from burning CPU indefinitely.  (See ADR-0001.)
+
+    **Subclass hooks:**
+    * :meth:`_process_frame` — override to run the actual inference pipeline
+      on a dequeued task.  Must raise one of the exception types returned by
+      :meth:`_inference_error_types` to trigger the circuit-breaker.
+    * :meth:`_inference_error_types` — return a tuple of exception classes
+      that should be counted as inference failures (e.g. ``(RuntimeError,)``).
+    * :meth:`_on_inference_error` — override to emit custom warning signals
+      or metrics when a single inference fails (before the breaker trips).
+
+    **Signals:**
+    * ``inference_warning(str)`` — emitted when a single inference fails
+      (via the default :meth:`_on_inference_error`).
+    * ``camera_error(str)`` — emitted when the circuit-breaker trips after
+      ``_MAX_CONSECUTIVE_FAILURES`` consecutive failures.
+
+    **Lifecycle:** ``start()`` → ``run()`` loop → ``stop()``.  The
+    :meth:`stop` method drains the queue, pushes a sentinel to unblock
+    ``queue.get()``, and waits up to 3 seconds for the thread to exit.
+
+    Raises:
+        NotImplementedError: If :meth:`_process_frame` is not overridden.
     """
 
     inference_warning = pyqtSignal(str)
@@ -297,6 +360,7 @@ class AIWorkerBase(QThread):
         super().__init__(parent)
         self._pipeline = pipeline
         self._queue: queue.Queue[Any] = queue.Queue(maxsize=1)
+        # Written from main thread via stop(), read from worker thread. Atomic under CPython GIL.
         self._running = False
         self._consecutive_failures = 0
 
