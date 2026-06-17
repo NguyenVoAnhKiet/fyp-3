@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft
+Done (2026-06-17)
 
 ## Context
 
@@ -34,20 +34,20 @@ Remove `system_defaults.json` and simplify `seed_db_from_defaults()` to read dir
 | Decision | Options Considered | Choice | Rationale |
 |----------|-------------------|--------|-----------|
 | Source of truth for defaults | JSON / Python dict / Both | **Python (`defaults.py`)** | Already the fallback in `resolve()`, provides type hints, IDE autocomplete, static analysis. JSON adds no value for a desktop app. |
-| `_SEED_DEFAULTS` structure | Explicit dict / Dynamic derivation | **Explicit dict** | Not all `DEFAULT_*` constants are seedable (e.g., model paths). `value_type` needed for `settings.set()`. Explicit dict documents the contract. |
+| `_SEED_SETTINGS` name | Keep / Rename to `_SEED_DEFAULTS` | **Keep `_SEED_SETTINGS`** | Oracle review: renaming adds churn without clarity gain. `_SEED_SETTINGS` maps DB key → value_type, which is descriptive enough. |
 | Startup validation | None / Module-level assertion | **Module-level assertion** | Verify all DB keys have corresponding `defaults.py` constants at import time. Fail-fast on drift. |
-| Bool stringification | `"true"`/`"false"` / `"1"`/`"0"` | **`"1"`/`"0"`** | Match existing DB convention (`_BOOL_TRUE`/`_BOOL_FALSE` sets). |
+| Bool stringification | `"true"`/`"false"` / `"1"`/`"0"` | **`"true"`/`"false"`** | Both work with `_resolve_bool`'s `_BOOL_TRUE`/`_BOOL_FALSE` sets. Existing tests expect `"true"`/`"false"`. No DB migration needed. |
 
 ## Tasks
 
 | # | Task | Agent | Depends On | Status |
 |---|------|-------|------------|--------|
-| 1 | Update `config.py`: remove JSON loading, simplify seeding | @fixer | — | Pending |
-| 2 | Delete `system_defaults.json` | @fixer | 1 | Pending |
-| 3 | Update `pyproject.toml`: remove JSON package-data | @fixer | 2 | Pending |
-| 4 | Update tests: remove JSON tests, update seed tests | @fixer | 1 | Pending |
-| 5 | Update codemap docs | @fixer | 1 | Pending |
-| 6 | Oracle review of implementation | @oracle | 1-5 | Pending |
+| 1 | Update `config.py`: remove JSON loading, simplify seeding | @fixer | — | Done |
+| 2 | Delete `system_defaults.json` | @fixer | 1 | Done |
+| 3 | Update `pyproject.toml`: remove JSON package-data | @fixer | 2 | Done |
+| 4 | Update tests: remove JSON tests, update seed tests | @fixer | 1 | Done |
+| 5 | Update codemap docs + AGENTS.md | @fixer | 1 | Done |
+| 6 | Oracle review of implementation | @oracle | 1-5 | Done |
 
 ## Implementation
 
@@ -55,17 +55,18 @@ Remove `system_defaults.json` and simplify `seed_db_from_defaults()` to read dir
 
 | File | Change |
 |------|--------|
-| `src/attendance_system/core/config.py` | Remove `import json`, `_load_defaults()`, `_SYSTEM_DEFAULTS`. Rename `_SEED_SETTINGS` → `_SEED_DEFAULTS`. Add module-level assertion. Simplify `seed_db_from_defaults()` to use `getattr(defaults, ...)`. |
+| `src/attendance_system/core/config.py` | Remove `import json`, `_load_defaults()`, `_SYSTEM_DEFAULTS`. Keep `_SEED_SETTINGS` name (per oracle recommendation). Add module-level assertion. Simplify `seed_db_from_defaults()` to use `getattr(defaults, ...)`. Update docstrings. |
 | `src/attendance_system/core/system_defaults.json` | **Delete.** |
 | `pyproject.toml` | Remove `[tool.setuptools.package-data]` section. |
-| `tests/unit/test_config_resolver.py` | Remove JSON-specific tests. Update seed tests to not patch `_SYSTEM_DEFAULTS`. Add assertion test. |
+| `tests/unit/test_config_resolver.py` | Remove 4 JSON-specific tests. Update seed tests to not patch `_SYSTEM_DEFAULTS`. Add `test_all_seed_keys_have_defaults_constant`. Remove `patch` import. |
+| `AGENTS.md` | Replace `system_defaults.json` reference with `defaults.py`; update seeding description. |
 | `src/codemap.md` | Update seeding description. |
 | `src/attendance_system/codemap.md` | Update seeding description. |
 | `src/attendance_system/core/codemap.md` | Remove `system_defaults.json` section, update seeding description. |
 
 ### Key code change
 
-**Before (current):**
+**Before:**
 ```python
 _SEED_SETTINGS: dict[str, str] = { ... }
 
@@ -84,26 +85,16 @@ def seed_db_from_defaults(self, settings):
             continue
         value = _SYSTEM_DEFAULTS.get(db_key)
         if value is None:
-            continue
+            continue  # BUG: also skips 0 / False
         settings.set(db_key, _stringify_for_db(value, value_type), value_type)
 ```
 
 **After (simplified):**
 ```python
-_SEED_DEFAULTS: dict[str, str] = {
-    "timezone": "str",
-    "liveness_threshold": "float",
-    "similarity_threshold": "float",
-    "attendance_freeze_seconds": "int",
-    "attendance_freeze_sound_enabled": "bool",
-    "hybrid_voting_window": "int",
-    "hybrid_boost_amount": "float",
-    "hybrid_liveness_enabled": "bool",
-    "recognition_interval": "int",
-}
+# Same _SEED_SETTINGS dict (kept name, no rename)
 
 # Module-level assertion: verify all keys have defaults.py constants
-for _db_key in _SEED_DEFAULTS:
+for _db_key in _SEED_SETTINGS:
     _const_name = f"DEFAULT_{_db_key.upper()}"
     if not hasattr(defaults, _const_name):
         raise RuntimeError(f"Missing default constant: {_const_name} for seed key {_db_key}")
@@ -111,7 +102,7 @@ for _db_key in _SEED_DEFAULTS:
 def seed_db_from_defaults(self, settings):
     if self._mode == "init":
         return
-    for db_key, value_type in _SEED_DEFAULTS.items():
+    for db_key, value_type in _SEED_SETTINGS.items():
         if settings.get(db_key) is not None:
             continue
         value = getattr(defaults, f"DEFAULT_{db_key.upper()}")
