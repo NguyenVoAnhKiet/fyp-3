@@ -35,7 +35,7 @@ then enters the Qt event loop.
 | `PROJECT_STATUS.md` | Current project status, known issues, and roadmap. |
 | *(deleted)* `CONTEXT.md` | Domain glossary — removed; content historically covered by `PROJECT_STATUS.md`. |
 | *(deleted)* `UPDATE_SUMMARY.md` | One-time changelog — removed. |
-| `README.md` | *(Does not exist yet — the `docs/README.md` serves as the documentation index.)* |
+| `README.md` | Bilingual project overview (EN/VI), quick start, known limitations. First thing committee/reviewers see. |
 
 ---
 

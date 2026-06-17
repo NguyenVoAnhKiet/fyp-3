@@ -6,14 +6,15 @@ Python 3.10+ offline face-attendance desktop app. PyQt5 UI, SQLite/WAL, ONNX Run
 
 ## Read first
 
-1. `pyproject.toml` — deps, entry points, build config
-2. `src/main.py` — app bootstrap (import order matters: onnxruntime before PyQt5)
-3. `src/attendance_system/core/config.py` — `SettingsResolver` + frozen `SystemConfig` (DB-seedable: DB > defaults.py; non-DB: CLI > env > default)
-4. `src/attendance_system/core/db.py` — SQLite connection (WAL, foreign keys, `check_same_thread=False`)
-5. `src/attendance_system/core/bootstrap.py` — storage initializer (no `load_dotenv()`, uses CLI args)
-6. `.env.example` — non-DB settings only (paths, camera, feature flags)
-7. `src/attendance_system/core/defaults.py` — seedable DB defaults as Python constants (9 keys, single source of truth)
-8. `codemap.md` + per-module `codemap.md` files — directory map with entrypoints
+1. `README.md` — bilingual project overview, quick start, known limitations (first thing committee/reviewers see)
+2. `pyproject.toml` — deps, entry points, build config
+3. `src/main.py` — app bootstrap (import order matters: onnxruntime before PyQt5)
+4. `src/attendance_system/core/config.py` — `SettingsResolver` + frozen `SystemConfig` (DB-seedable: DB > defaults.py; non-DB: CLI > env > default)
+5. `src/attendance_system/core/db.py` — SQLite connection (WAL, foreign keys, `check_same_thread=False`)
+6. `src/attendance_system/core/bootstrap.py` — storage initializer (no `load_dotenv()`, uses CLI args)
+7. `.env.example` — non-DB settings only (paths, camera, feature flags)
+8. `src/attendance_system/core/defaults.py` — seedable DB defaults as Python constants (9 keys, single source of truth)
+9. `codemap.md` + per-module `codemap.md` files — directory map with entrypoints
 
 Prefer executable sources over prose; if docs conflict with code/config/scripts, trust the executable source.
 
