@@ -1,6 +1,8 @@
 # AGENTS.md
 
-Python 3.11+ offline face-attendance desktop app. PyQt5 UI, SQLite/WAL, ONNX Runtime, bcrypt.
+Python 3.10+ offline face-attendance desktop app. PyQt5 UI, SQLite/WAL, ONNX Runtime, bcrypt. Windows primary (Linux/macOS compatible but untested).
+
+`pyproject.toml` declares `>=3.11` but the code runs on 3.10 because `from __future__ import annotations` is used everywhere (defers type evaluation at runtime).
 
 ## Read first
 
@@ -47,7 +49,7 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 - `CLAUDE.md` — behavioral layer (think before coding, simplicity, surgical changes, goal-driven execution). Read alongside this file.
 - `docs/agents/issue-tracker.md` — issues live on **GitHub Issues** via `gh` CLI; repo inferred from `git remote -v`.
 - `docs/agents/triage-labels.md` — five canonical labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`.
-- `docs/agents/domain.md` — read root `CONTEXT.md` + relevant `docs/adr/*` before working in an area; use glossary vocabulary in outputs.
+- `docs/agents/domain.md` — read relevant `docs/adr/*` before working in an area; use glossary vocabulary in outputs. (`CONTEXT.md` was deleted; `PROJECT_STATUS.md` fills the role.)
 - `docs/plans/README.md` — feature plans convention (`active/` → `archive/` with date prefix on Done; standard sections: Status / Context / Goals / Non-Goals / Design Decisions / Implementation / Testing).
 - `docs/adr/0001-onnx-circuit-breaker.md` — explains the 30-failure ONNX circuit-breaker pattern.
 
@@ -74,7 +76,7 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 ## Tests
 
 - `tests/conftest.py` imports `onnxruntime` before `pytest`, ensures `src/` is on `sys.path`, and provides a `database` fixture (isolated `tmp_path` SQLite, full schema).
-- `tests/unit/` — fast, mocked DB; `tests/integration/` — real DB/storage paths.
+- `tests/unit/` — fast, mocked DB; `tests/integration/` — real DB/storage paths; `tests/contract/` — contract/invariant tests.
 - `cryptography`, `pandas`, `openpyxl` are soft deps; tests skip related paths if missing.
 - `models/**/*.onnx` are gitignored — download separately before running integration tests.
 
