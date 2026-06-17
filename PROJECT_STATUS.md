@@ -421,6 +421,14 @@ Models are gitignored. Download separately:
 
 ---
 
+### Refactoring, Architecture & Documentation (Plans 0013–0015)
+
+- **Plan 0013 — UI Polish Review:** Code cleanup, simplification, and readability improvements across the UI layer.
+- **Plan 0014 — Architecture Deepening:** Module extraction, separation of concerns, and dependency improvements.
+- **Plan 0015 — Documentation:** Minimal bilingual README, i18n limitation note in thesis report, and project status updates.
+
+---
+
 ## Next Steps (Roadmap)
 
 ### Immediate (Phase 4 Completion)
