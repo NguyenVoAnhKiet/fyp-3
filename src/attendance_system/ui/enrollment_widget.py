@@ -56,6 +56,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _TARGET_CAPTURE_COUNT = 5
+_SUCCESS_EFFECT_DELAY_MS = 1500
 
 class EnrollmentWidget(QWidget):
     """
@@ -495,7 +496,7 @@ class EnrollmentWidget(QWidget):
         """Finalize enrollment after success effect plays."""
         user_id = self._user_dropdown.currentData()
         # Delay final save + dialog by 1.5s so success effect is visible
-        QTimer.singleShot(1500, lambda: self._finalize_enrollment(user_id, pose_embeddings))
+        QTimer.singleShot(_SUCCESS_EFFECT_DELAY_MS, lambda: self._finalize_enrollment(user_id, pose_embeddings))
 
     def _finalize_enrollment(self, user_id: int, pose_embeddings: dict[str, np.ndarray]) -> None:
         """Save five pose embeddings and show result (called after success effect)."""

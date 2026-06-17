@@ -57,7 +57,7 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 - `onnxruntime` must be imported **before** `PyQt5` on Windows (DLL conflict). Both `src/main.py` and `tests/conftest.py` do this.
 - `QImage` crossing threads must be `.copy()`'d first.
 - Create worker `QThread`s in `__init__`, start them in `run()`.
-- `EnrollmentCameraThread` flips frames (mirror); attendance `CameraThread` does not.
+- Both `CameraThreadBase.run()` and `EnrollmentCameraThread` flip frames horizontally (`cv2.flip(frame, 1)`) so users see a mirror reflection. The raw camera feed is NOT shown to users.
 - `CachingFaceReferenceRepository` wrapper owns the face-references cache; inner `FaceReferenceRepository` is a pure SQLite adapter. Invalidation is enforced by the wrapper — see `tests/unit/test_caching_face_reference_repository.py` (parametrized over 4 write methods).
 - `_crop_face` scale: 2.7 for liveness (broad context), 1.5 for head-pose (tight crop).
 - `_COOLDOWN_SECONDS = 1.5` in `camera_thread.py` — per-user cooldown before re-recognition. In-memory, resets on thread restart.
@@ -95,14 +95,3 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 - `set_timezone_config(name)` in `utils/time_utils.py` mutates the module-level `_tz`. Called at startup and again on Settings save.
 - Cross-widget signal: `time_utils.timezone_signals.timezone_changed` — `UserModeView` and `AttendanceHistoryWidget` connect to re-render on change.
 - Resolution order: DB > defaults.py (no CLI flag, no env override).
-
-## Repository Map
-
-A full codemap is available at `codemap.md` in the project root.
-
-Before working on any task, read `codemap.md` to understand:
-- Project architecture and entry points
-- Directory responsibilities and design patterns
-- Data flow and integration points between modules
-
-For deep work on a specific folder, also read that folder's `codemap.md`.

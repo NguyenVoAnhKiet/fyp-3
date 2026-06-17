@@ -282,7 +282,7 @@ def test_camera_thread_retry_read_releases_old_cap(mock_detector_create, mock_sl
     
     # Verify that the old cap was released BEFORE VideoCapture was reinstantiated
     mock_old_cap.release.assert_called_once()
-    mock_video_capture_cls.assert_called_with(camera_thread._camera_index)
+    mock_video_capture_cls.assert_called_with(camera_thread._camera_index, cv2.CAP_DSHOW)
 
 
 # ============================================================================

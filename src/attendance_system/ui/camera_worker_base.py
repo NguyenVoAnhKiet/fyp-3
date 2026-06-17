@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import queue
 import time
+from pathlib import Path
 from typing import Any
 
 import cv2
@@ -16,7 +17,6 @@ import numpy as np
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtGui import QImage
 
-from pathlib import Path
 from attendance_system.utils.face_utils import _create_face_detector
 
 # ---------------------------------------------------------------------------

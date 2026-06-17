@@ -58,6 +58,7 @@ from attendance_system.ui.styles import (
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
+from attendance_system.core.defaults import DEFAULT_ATTENDANCE_FREEZE_SECONDS
 from attendance_system.utils.time_utils import (
     timezone_signals,
     utc_now_iso,
@@ -437,7 +438,7 @@ class UserModeView(QWidget):
         if self._freeze_timer is not None:
             self._freeze_timer.stop()
         seconds_str = self._settings.get("attendance_freeze_seconds")
-        seconds = int(seconds_str) if seconds_str is not None else 4
+        seconds = int(seconds_str) if seconds_str is not None else DEFAULT_ATTENDANCE_FREEZE_SECONDS
         if seconds == 0:
             return  # feature disabled
         if self._camera_thread is not None:

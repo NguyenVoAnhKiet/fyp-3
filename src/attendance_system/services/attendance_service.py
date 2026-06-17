@@ -150,19 +150,19 @@ class AttendanceService:
         end_date: str | None = None,
         class_name: str | None = None,
         subject_name: str | None = None,
-    ):
+    ) -> list[sqlite3.Row]:
         return self.sessions.get_sessions(start_date, end_date, class_name, subject_name)
 
-    def get_session_details(self, session_id: int):
+    def get_session_details(self, session_id: int) -> sqlite3.Row | None:
         return self.sessions.get_by_id(session_id)
 
-    def get_session_records(self, session_id: int):
+    def get_session_records(self, session_id: int) -> list[sqlite3.Row]:
         return self.attendance.get_records_with_users(session_id)
 
-    def get_unique_classes(self):
+    def get_unique_classes(self) -> list[str]:
         return [row["class_name"] for row in self.sessions.list_unique_classes()]
 
-    def get_unique_subjects(self):
+    def get_unique_subjects(self) -> list[str]:
         return [row["subject_name"] for row in self.sessions.list_unique_subjects()]
 
     @staticmethod
