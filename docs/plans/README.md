@@ -44,3 +44,4 @@ Browse `docs/plans/archive/` for completed plans. Date prefix sorts chronologica
 | 0012 | [Simplify Seeding: Use defaults.py Directly](archive/2026-06-17-0012-simplify-seeding-use-defaults-py.md) | 2026-06-17 | `refactor/upgrade-ai` |
 | 0013 | [Quick Wins — Test Fix, Imports, Types](archive/2026-06-17-0013-quick-wins-test-imports-types.md) | 2026-06-17 | — |
 | 0014 | [Code Quality — Error Handling, Dynamic Attributes, Docstrings](archive/2026-06-17-0014-code-quality-error-thread-docs.md) | 2026-06-17 | `refactor/complete_project` |
+| 0015 | [Documentation — README, i18n Notes, Defense Prep](archive/2026-06-18-0015-docs-readme-i18n-defense.md) | 2026-06-18 | `refactor/complete_project` |

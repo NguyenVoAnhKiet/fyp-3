@@ -2,7 +2,7 @@
 
 ## Status
 
-**Draft** (revised after Oracle review 2026-06-17)
+**Done** (2026-06-18)
 
 ## Context
 
