@@ -62,6 +62,7 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 - Create worker `QThread`s in `__init__`, start them in `run()`.
 - Both `CameraThreadBase.run()` and `EnrollmentCameraThread` flip frames horizontally (`cv2.flip(frame, 1)`) so users see a mirror reflection. The raw camera feed is NOT shown to users.
 - `CachingFaceReferenceRepository` wrapper owns the face-references cache; inner `FaceReferenceRepository` is a pure SQLite adapter. Invalidation is enforced by the wrapper — see `tests/unit/test_caching_face_reference_repository.py` (parametrized over 4 write methods).
+- Enrollment tab has a "Hiển thị users đã enroll" checkbox. When checked, `UserRepository.list_active()` returns all users (not just unregistered). Re-enroll uses the same 5-pose flow; `save_enrollment()` atomically replaces old poses. Confirmation dialog prevents accidental re-enroll.
 - `_crop_face` scale: 2.7 for liveness (broad context), 1.5 for head-pose (tight crop).
 - `_COOLDOWN_SECONDS = 1.5` in `camera_thread.py` — per-user cooldown before re-recognition. In-memory, resets on thread restart.
 - `_AI_FRAME_SKIP = 3` — full AI pipeline runs every 3rd frame (~10 Hz at 30 fps).

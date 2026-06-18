@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from PyQt5.QtCore import Qt, pyqtSlot, QPropertyAnimation, QTimer
 from PyQt5.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 from PyQt5.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFrame,
     QGraphicsDropShadowEffect,
@@ -89,6 +90,7 @@ class EnrollmentWidget(QWidget):
         # Fall back to a bare repo for tests / legacy callers.
         self._enroll_service = EnrollmentService(database, references=face_refs)
         self._camera_thread: EnrollmentCameraThread | None = None
+        self._is_reenroll = False
 
         self._build_ui()
 
@@ -131,7 +133,11 @@ class EnrollmentWidget(QWidget):
         """)
         self._refresh_btn.clicked.connect(self.refresh_users)
         selection_layout.addWidget(self._refresh_btn)
-        
+
+        self._show_enrolled_cb = QCheckBox("Hiển thị users đã enroll")
+        self._show_enrolled_cb.toggled.connect(self._on_show_enrolled_toggled)
+        selection_layout.addWidget(self._show_enrolled_cb)
+
         selection_layout.addStretch()
         layout.addLayout(selection_layout)
 
@@ -264,24 +270,53 @@ class EnrollmentWidget(QWidget):
         
         self.refresh_users()
 
+    def _on_show_enrolled_toggled(self, checked: bool) -> None:
+        """Refresh user list when toggle changes."""
+        self.refresh_users()
+
     def refresh_users(self) -> None:
-        """Load users who don't have a registered face yet."""
+        """Load users based on toggle state."""
         self._user_dropdown.clear()
-        users = self._user_repo.list_unregistered()
+        if self._show_enrolled_cb.isChecked():
+            users = self._user_repo.list_active()
+        else:
+            users = self._user_repo.list_unregistered()
         for user in users:
             display_text = f"{user['student_id']} - {user['full_name']}"
-            self._user_dropdown.addItem(display_text, user["id"])
-        
+            is_enrolled = bool(user["face_registered"])
+            if is_enrolled:
+                display_text += " (Đã đăng ký)"
+            self._user_dropdown.addItem(display_text, (user["id"], is_enrolled, user["full_name"]))
+
         if not users:
-            self._user_dropdown.addItem("Không có người dùng nào cần đăng ký", -1)
+            if self._show_enrolled_cb.isChecked():
+                self._user_dropdown.addItem("Không có người dùng nào", (-1, False, ""))
+            else:
+                self._user_dropdown.addItem("Không có người dùng nào cần đăng ký", (-1, False, ""))
             self._start_btn.setEnabled(False)
         else:
             self._start_btn.setEnabled(True)
 
     def _start_enrollment(self) -> None:
-        user_id = self._user_dropdown.currentData()
-        if user_id == -1:
+        item_data = self._user_dropdown.currentData()
+        if item_data is None or item_data[0] == -1:
             return
+        user_id, is_reenroll, full_name = item_data
+
+        # Confirmation for re-enroll
+        if is_reenroll:
+            reply = QMessageBox.question(
+                self, "Xác Nhận",
+                f"Bạn có chắc muốn re-enroll {full_name}?\n"
+                "Dữ liệu face cũ sẽ bị thay thế.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply == QMessageBox.No:
+                return
+
+        # Store is_reenroll for later use in _finalize_enrollment
+        self._is_reenroll = is_reenroll
 
         # Camera index: prefer admin's last choice in DB, fall back to
         # ``SystemConfig.camera_index`` (resolved at startup).
@@ -289,11 +324,6 @@ class EnrollmentWidget(QWidget):
         cam_idx = int(saved_cam) if saved_cam is not None else self._config.camera_index
 
         # Liveness check is intentionally bypassed during enrollment.
-        # Multi-pose face capture (yaw/pitch/roll) already provides strong
-        # implicit anti-spoofing — a static photo cannot complete the pose
-        # sequence. Additionally, the enrollment crop scale (2.7) differs
-        # from MiniFASNet's expected scale (1.5), causing false rejects
-        # on angled faces.
         if self._liveness_checker.is_enabled:
             logger.info(
                 "Enrollment: liveness check available but intentionally "
@@ -310,7 +340,7 @@ class EnrollmentWidget(QWidget):
         # Start thread
         self._camera_thread = EnrollmentCameraThread(
             camera_index=cam_idx,
-            liveness_checker=enrollment_liveness,  # Use bypass liveness
+            liveness_checker=enrollment_liveness,
             face_recognizer=self._face_recognizer,
             head_pose_estimator=self._head_pose_estimator,
             liveness_threshold=self._config.liveness_threshold,
@@ -333,6 +363,7 @@ class EnrollmentWidget(QWidget):
         self._stop_btn.setEnabled(True)
         self._user_dropdown.setEnabled(False)
         self._refresh_btn.setEnabled(False)
+        self._show_enrolled_cb.setEnabled(False)
 
     def _confirm_and_stop(self) -> None:
         """Show confirmation dialog before stopping (user-initiated)."""
@@ -393,6 +424,7 @@ class EnrollmentWidget(QWidget):
         self._stop_btn.setEnabled(False)
         self._user_dropdown.setEnabled(True)
         self._refresh_btn.setEnabled(True)
+        self._show_enrolled_cb.setEnabled(True)
 
     @pyqtSlot(QImage)
     def update_frame(self, image: QImage) -> None:
@@ -494,11 +526,14 @@ class EnrollmentWidget(QWidget):
     @pyqtSlot(dict)
     def _handle_complete(self, pose_embeddings: dict[str, np.ndarray]) -> None:
         """Finalize enrollment after success effect plays."""
-        user_id = self._user_dropdown.currentData()
-        # Delay final save + dialog by 1.5s so success effect is visible
-        QTimer.singleShot(_SUCCESS_EFFECT_DELAY_MS, lambda: self._finalize_enrollment(user_id, pose_embeddings))
+        user_id = self._user_dropdown.currentData()[0]
+        is_reenroll = self._is_reenroll
+        QTimer.singleShot(
+            _SUCCESS_EFFECT_DELAY_MS,
+            lambda: self._finalize_enrollment(user_id, pose_embeddings, is_reenroll),
+        )
 
-    def _finalize_enrollment(self, user_id: int, pose_embeddings: dict[str, np.ndarray]) -> None:
+    def _finalize_enrollment(self, user_id: int, pose_embeddings: dict[str, np.ndarray], is_reenroll: bool) -> None:
         """Save five pose embeddings and show result (called after success effect)."""
         try:
             pose_bytes = {
@@ -511,7 +546,12 @@ class EnrollmentWidget(QWidget):
                 model_name="SFace",
                 vector_length=len(first_emb),
             )
-            QMessageBox.information(self, "Thành Công", "Đăng ký khuôn mặt thành công!")
+            user = self._user_repo.get_by_id(user_id)
+            if is_reenroll:
+                msg = f"Cập nhật face thành công cho {user['full_name']}!"
+            else:
+                msg = "Đăng ký khuôn mặt thành công!"
+            QMessageBox.information(self, "Thành Công", msg)
         except Exception as e:
             QMessageBox.critical(self, "Lỗi", f"Không thể lưu dữ liệu: {str(e)}")
         
