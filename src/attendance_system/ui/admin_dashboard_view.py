@@ -186,6 +186,7 @@ class AdminDashboardView(QWidget):
         layout.addWidget(title)
 
         nav_items = [
+            ("📊", "Tổng quan", "Tổng Quan Hệ Thống", _IDX_WELCOME),
             ("👤", "Người dùng", "Quản lý Người Dùng", _IDX_USERS),
             ("📷", "Đăng ký", "Đăng Ký Khuôn Mặt", _IDX_ENROLLMENT),
             ("📋", "Lịch sử", "Lịch Sử Điểm Danh", _IDX_HISTORY),

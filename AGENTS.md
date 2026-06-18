@@ -77,9 +77,20 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 ## Tests
 
 - `tests/conftest.py` imports `onnxruntime` before `pytest`, ensures `src/` is on `sys.path`, and provides a `database` fixture (isolated `tmp_path` SQLite, full schema).
-- `tests/unit/` — fast, mocked DB; `tests/integration/` — real DB/storage paths; `tests/contract/` — contract/invariant tests.
+- `tests/unit/` — fast, mocked DB; `tests/integration/` — real DB/storage paths.
 - `cryptography`, `pandas`, `openpyxl` are soft deps; tests skip related paths if missing.
 - `models/**/*.onnx` are gitignored — download separately before running integration tests.
+
+## Scripts
+
+Standalone diagnostic/maintenance scripts in `scripts/`. Not part of app entry points; run manually.
+- `reset_users.py` — wipe users + face references (preserves attendance history). Interactive confirmation required.
+- `diagnose_poor_light.py` — single-image liveness diagnostic with preprocessing variants (CLAHE, gamma).
+- `test_poor_light_liveness.py` — synthetic brightness sweep across preprocessing methods.
+- `hypothesis_test_poor_light.py` — root-cause investigation of poor-light rejection (4 hypotheses).
+- `tune_liveness_threshold.py` — data-driven threshold calibration from real + spoof video pairs.
+
+See `scripts/codemap.md` for full details and the investigative pipeline relationship.
 
 ## Liveness (Anti-Spoofing)
 
