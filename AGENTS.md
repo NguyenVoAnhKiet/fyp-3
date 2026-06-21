@@ -110,3 +110,14 @@ See `scripts/codemap.md` for full details and the investigative pipeline relatio
 - `set_timezone_config(name)` in `utils/time_utils.py` mutates the module-level `_tz`. Called at startup and again on Settings save.
 - Cross-widget signal: `time_utils.timezone_signals.timezone_changed` — `UserModeView` and `AttendanceHistoryWidget` connect to re-render on change.
 - Resolution order: DB > defaults.py (no CLI flag, no env override).
+
+## Repository Map
+
+A full codemap is available at `codemap.md` in the project root.
+
+Before working on any task, read `codemap.md` to understand:
+- Project architecture and entry points
+- Directory responsibilities and design patterns
+- Data flow and integration points between modules
+
+For deep work on a specific folder, also read that folder's `codemap.md`.

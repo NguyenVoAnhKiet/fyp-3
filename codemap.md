@@ -28,7 +28,7 @@ then enters the Qt event loop.
 
 | File | Role |
 |---|---|
-| `pyproject.toml` | Project metadata, `requires-python >=3.11`, dependencies (PyQt5, onnxruntime, opencv-python, deepface-cv2, bcrypt, numpy, python-dotenv), CLI entry points (`attendance-app` → `main:main`, `attendance-storage-init`), setuptools package find under `src/`. |
+| `pyproject.toml` | Project metadata, `requires-python >=3.11`, dependencies (PyQt5, onnxruntime, opencv-python, bcrypt, numpy, python-dotenv), CLI entry points (`attendance-app` → `main:main`, `attendance-storage-init`), setuptools package find under `src/`. |
 | `.env.example` | Template for `.env`. Organised into 3 sections: **Security & Encryption** (Fernet key, admin credentials), **Database & Hardware** (DB path), **AI Pipeline Models** (paths to YuNet, SFace, MiniFASNet, MobileNetV2 ONNX models). Liveness, head-pose, and attendance UX settings are DB-seedable only (no env vars). |
 | `AGENTS.md` | Primary orientation file for LLM agents. Contains: read-first file list, CLI commands, startup wiring details, per-module gotchas (threading, ONNX/PyQt5 import order, cooldowns, frame-skip constants, NULL-sort rules), and test layout. |
 | `CLAUDE.md` | Behavioral guidelines for LLM agents: think-before-coding, simplicity-first, surgical changes, goal-driven execution. |

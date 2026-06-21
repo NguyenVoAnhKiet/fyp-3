@@ -91,11 +91,13 @@ SessionClosedError              # recording attendance in a closed session
 - **Recognition event recording**: `record_success()`, `record_duplicate()`, `record_spoof_warning()`, `record_unrecognized()`. Each writes to both `recognition_events` and (where applicable) `attendance_records` tables. `record_duplicate` handles `sqlite3.IntegrityError` gracefully by fetching the existing record ID. All four methods validate session status and raise `SessionClosedError` on closed sessions.
 - **Export**: `export_session_to_csv()` / `export_session_to_excel()` via optional `pandas` and `openpyxl`. Converts UTC timestamps to local timezone for human-readable output.
 - **Lookups**: `get_unique_classes()`, `get_unique_subjects()` for filter dropdowns.
+- **Rich docstring**: Class-level Sphinx-style docstring documents error semantics (`SessionClosedError`, `LookupError`, `IntegrityError` fallback), session lifecycle, and export dependency requirements.
+- **Return type annotations**: All public methods are annotated — `start_session()` → `int`, `record_*()` → `int`, `end_session()` → `None`, `get_*()` → `list[sqlite3.Row]` / `sqlite3.Row | None`, `export_*()` → `None`, `get_unique_*()` → `list[str]`.
 
 ### `authentication_service.py` — Admin credentials
 
 - `authenticate(username, password)` — bcrypt hash comparison. Returns `bool` only (no session tokens — offline desktop app). `hash_password()` helper used during admin creation/seeding.
-- Defensive: early return `False` on empty input or `bcrypt` exceptions.
+- Defensive: early return `False` on empty input or `bcrypt` exceptions. Logs a `logger.warning("bcrypt check failed: %s", e)` on bcrypt failure (uses `import logging` / `logger = logging.getLogger(__name__)` at module level).
 
 ### `enrollment_service.py` — Face registration
 
