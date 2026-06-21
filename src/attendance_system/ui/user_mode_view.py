@@ -249,6 +249,10 @@ class UserModeView(QWidget):
         title.setStyleSheet(f"color: {TEXT_PRIMARY};")
         top_row.addWidget(title)
         top_row.addStretch(1)
+        hint = QLabel("📏 Ngồi cách camera khoảng 30 cm")
+        hint.setFont(FONT_BODY)
+        hint.setStyleSheet(f"color: {STATUS_INFO}; font-weight: 600;")
+        top_row.addWidget(hint)
         header_layout.addLayout(top_row)
 
         self._session_info_label = QLabel("")

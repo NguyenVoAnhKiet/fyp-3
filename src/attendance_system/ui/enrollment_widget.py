@@ -214,9 +214,10 @@ class EnrollmentWidget(QWidget):
         self._guidance_label.setFont(FONT_BODY)
         labels_col.addWidget(self._guidance_label)
 
-        self._angles_label = QLabel("Góc: -")
-        self._angles_label.setFont(FONT_BODY)
-        labels_col.addWidget(self._angles_label)
+        self._distance_hint_label = QLabel("📏 Ngồi cách camera khoảng 30 cm")
+        self._distance_hint_label.setFont(FONT_BODY)
+        self._distance_hint_label.setStyleSheet(f"color: {STATUS_INFO}; font-weight: 600;")
+        labels_col.addWidget(self._distance_hint_label)
 
         info_row.addLayout(labels_col)
         info_row.addStretch()
@@ -444,7 +445,6 @@ class EnrollmentWidget(QWidget):
         if total > 0:
             self._progress_bar.setMaximum(total)
         self._progress_bar.setValue(current)
-        self._angles_label.setText(f"Góc: {angles_text or '-'}")
         guidance = guidance_text or hold_text or "-"
         self._guidance_label.setText(f"Hướng dẫn: {guidance}")
         self._draw_pose_icon(guidance)

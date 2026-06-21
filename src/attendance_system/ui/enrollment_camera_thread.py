@@ -503,17 +503,8 @@ class EnrollmentCameraThread(CameraThreadBase):
             painter.setPen(QColor(255, 255, 255))
             painter.drawText(x, y, text)
 
-        if self._status_text:
-            draw_text_with_shadow(self._status_text, 20, 40, 20, True)
-
-        if self._angles_text and self._angles_text != "-":
-            draw_text_with_shadow(self._angles_text, 20, 70, 16)
-
-        if self._hold_text:
-            draw_text_with_shadow(self._hold_text, 20, 100, 16)
-
         if self._guidance_text:
-            draw_text_with_shadow(self._guidance_text, 20, 130, 16)
+            draw_text_with_shadow(self._guidance_text, 20, 40, 20, True)
 
         painter.end()
         return qimg

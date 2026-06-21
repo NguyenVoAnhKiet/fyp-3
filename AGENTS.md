@@ -63,6 +63,9 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 - Both `CameraThreadBase.run()` and `EnrollmentCameraThread` flip frames horizontally (`cv2.flip(frame, 1)`) so users see a mirror reflection. The raw camera feed is NOT shown to users.
 - `CachingFaceReferenceRepository` wrapper owns the face-references cache; inner `FaceReferenceRepository` is a pure SQLite adapter. Invalidation is enforced by the wrapper — see `tests/unit/test_caching_face_reference_repository.py` (parametrized over 4 write methods).
 - Enrollment tab has a "Hiển thị users đã enroll" checkbox. When checked, `UserRepository.list_active()` returns all users (not just unregistered). Re-enroll uses the same 5-pose flow; `save_enrollment()` atomically replaces old poses. Confirmation dialog prevents accidental re-enroll.
+- Enrollment camera preview only shows `_guidance_text` (single line, e.g., "Nghiêng trái", "Giữ yên"). `_status_text`, `_angles_text`, `_hold_text` are not drawn on the camera — they're only used in `_sync_progress` for the widget labels below the camera.
+- `_angles_label` ("Góc: -") has been removed from enrollment UI. The angles data still flows through `_angles_text` in the camera thread but is not displayed.
+- Distance hint "📏 Ngồi cách camera khoảng 30 cm" appears in the ACTIVE attendance panel (top row, right of title) and in the enrollment widget (below guidance label). Uses `STATUS_INFO` color + bold for visibility.
 - `_crop_face` scale: 2.7 for liveness (broad context), 1.5 for head-pose (tight crop).
 - `_COOLDOWN_SECONDS = 1.5` in `camera_thread.py` — per-user cooldown before re-recognition. In-memory, resets on thread restart.
 - `_AI_FRAME_SKIP = 3` — full AI pipeline runs every 3rd frame (~10 Hz at 30 fps).
