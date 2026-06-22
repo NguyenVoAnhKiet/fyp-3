@@ -103,6 +103,10 @@ class SystemConfig:
     hybrid_liveness_enabled: bool
     recognition_interval: int
 
+    # --- Admin credentials (env > defaults.py; consumed once at seed time) ---
+    admin_username: str
+    admin_password: str
+
     # --- Timezone (mutable via Admin UI) ---
     timezone: str
 
@@ -266,6 +270,14 @@ class SettingsResolver:
             defaults.DEFAULT_HEADPOSE_ENABLED,
         )
 
+        # --- Admin credentials (os.environ > defaults; same for init mode) ---
+        admin_username = os.environ.get(
+            "ADMIN_USERNAME", defaults.DEFAULT_ADMIN_USERNAME
+        )
+        admin_password = os.environ.get(
+            "ADMIN_PASSWORD", defaults.DEFAULT_ADMIN_PASSWORD
+        )
+
         # In init mode we don't resolve the rest — bootstrap only needs
         # the database path.  Return early with sensible defaults for the
         # rest so callers can still construct a valid SystemConfig.
@@ -279,6 +291,8 @@ class SettingsResolver:
                 camera_index=camera_index,
                 antispoof_enabled=antispoof_enabled,
                 headpose_enabled=headpose_enabled,
+                admin_username=admin_username,
+                admin_password=admin_password,
                 liveness_threshold=defaults.DEFAULT_LIVENESS_THRESHOLD,
                 similarity_threshold=defaults.DEFAULT_SIMILARITY_THRESHOLD,
                 timezone=defaults.DEFAULT_TIMEZONE,
@@ -363,6 +377,8 @@ class SettingsResolver:
             camera_index=camera_index,
             antispoof_enabled=antispoof_enabled,
             headpose_enabled=headpose_enabled,
+            admin_username=admin_username,
+            admin_password=admin_password,
             liveness_threshold=liveness_threshold,
             similarity_threshold=similarity_threshold,
             timezone=timezone,

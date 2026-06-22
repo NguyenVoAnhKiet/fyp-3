@@ -59,7 +59,7 @@ Core infrastructure layer: manages configuration resolution (CLI > env > DB > de
 
 - **`StorageManager`** — `@dataclass(slots=True)` with a `database: Database` field.
 - **`initialize()`** — opens a session, calls `initialize_schema(connection)`, then `_seed_admin(connection)`.
-- **`_seed_admin(connection)`** — checks if `admin_credentials` is empty; if so, inserts a default admin from environment variables `ADMIN_USERNAME` / `ADMIN_PASSWORD` (fallback: `admin`/`admin`). Password is bcrypt-hashed with `bcrypt.gensalt()`.
+- **`_seed_admin(connection)`** — checks if `admin_credentials` is empty; if so, inserts admin from environment variables `ADMIN_USERNAME` / `ADMIN_PASSWORD` (must be set — raises `ValueError` if missing/blank). Password is bcrypt-hashed with `bcrypt.gensalt()`.
 
 **Important**: `StorageManager` is **not** a disk-storage manager (despite its name). It manages database schema + seed state. Actual face-image file storage lives in `services/` or `repositories/`.
 
@@ -67,10 +67,10 @@ Core infrastructure layer: manages configuration resolution (CLI > env > DB > de
 
 - **`build_parser()`** — `argparse.ArgumentParser` with `--database-path` (default from `DATABASE_PATH` env var or `attendance.db`).
 - **`initialize_storage(database_path)`** — constructs `Database(DatabaseConfig(path=database_path))` and passes it to `StorageManager.initialize()`.
-- **`main(argv)`** — creates a `SettingsResolver(mode="init")`, calls `resolver.resolve(cli=args, env={}, db_reader=None)` to get the database path (hermetic — no `os.environ` or `.env`), then calls `initialize_storage`. Returns 0.
+- **`main(argv)`** — calls `load_dotenv()` (so `ADMIN_USERNAME`/`ADMIN_PASSWORD` from .env are available for admin seeding), creates a `SettingsResolver(mode="init")`, calls `resolver.resolve(cli=args, env={}, db_reader=None)` to get the database path (resolver stays hermetic — no `os.environ` for its own resolution), then calls `initialize_storage`. Returns 0.
 - **`__main__` guard** — `raise SystemExit(main())`.
 
-**Important**: bootstrap does **not** call `load_dotenv()`. It uses `SettingsResolver` in `"init"` mode with an empty env mapping so it is fully hermetic. Environment variables (`DATABASE_PATH`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`) for seeding are read directly by `StorageManager` via `os.getenv`.
+**Important**: bootstrap now calls `load_dotenv()` for admin credentials, but the `SettingsResolver` still uses `"init"` mode with `env={}` so database-path resolution remains hermetic. Environment variables (`ADMIN_USERNAME`, `ADMIN_PASSWORD`) for seeding are read directly by `StorageManager` via `os.getenv`.
 
 ### `liveness_tracker.py` — Backward-compatibility re-export shim
 
@@ -97,7 +97,7 @@ Core infrastructure layer: manages configuration resolution (CLI > env > DB > de
 ### Data flow
 
 1. **Startup**: `attendance-app` → `load_dotenv()` → `SettingsResolver.resolve()` builds frozen `SystemConfig` (CLI > env > DB > default) → `set_timezone_config()` → `initialize_storage()` creates/upgrades schema → `seed_db_from_defaults()` idempotently writes `defaults.py` values → wire services → launch UI.
-2. **Storage init**: `attendance-storage-init` CLI → `bootstrap.main()` → `SettingsResolver(mode="init")` resolves only `database_path` → `StorageManager.initialize()` → `initialize_schema(connection)` creates tables → `_seed_admin()` inserts default admin.
+2. **Storage init**: `attendance-storage-init` CLI → `bootstrap.main()` → `load_dotenv()` → `SettingsResolver(mode="init")` resolves only `database_path` → `StorageManager.initialize()` → `initialize_schema(connection)` creates tables → `_seed_admin()` inserts admin from env vars.
 3. **Runtime**: `Database` is instantiated (via `DatabaseConfig` from `SystemConfig`) → wired into repositories → services call `database.session()` for transactional DB access.
 4. **Schema changes**: New `CREATE TABLE` statements go into `SCHEMA_STATEMENTS`. Backward-compatible migrations (column additions, constraint changes, table recreations) go into `initialize_schema()` after the schema loop.
 5. **Admin UI overrides**: Admin changes a threshold/timezone/UX setting in UI → `SettingsService.set()` writes to `system_settings` DB → takes effect immediately. On next app restart, `SettingsResolver` reads from DB (priority level 3) — seeded env values do not overwrite because `seed_db_from_env` is idempotent (only writes if key is unset).

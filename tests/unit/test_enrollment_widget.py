@@ -49,6 +49,8 @@ def _make_test_config() -> SystemConfig:
         camera_index=0,
         antispoof_enabled=True,
         headpose_enabled=True,
+        admin_username=defaults.DEFAULT_ADMIN_USERNAME,
+        admin_password=defaults.DEFAULT_ADMIN_PASSWORD,
         liveness_threshold=defaults.DEFAULT_LIVENESS_THRESHOLD,
         similarity_threshold=defaults.DEFAULT_SIMILARITY_THRESHOLD,
         attendance_freeze_seconds=defaults.DEFAULT_ATTENDANCE_FREEZE_SECONDS,

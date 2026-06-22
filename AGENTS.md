@@ -2,7 +2,7 @@
 
 Python 3.10+ offline face-attendance desktop app. PyQt5 UI, SQLite/WAL, ONNX Runtime, bcrypt. Windows primary (Linux/macOS compatible but untested).
 
-`pyproject.toml` declares `>=3.11` but the code runs on 3.10 because `from __future__ import annotations` is used everywhere (defers type evaluation at runtime).
+Runs on Python 3.10+. `from __future__ import annotations` is used across the codebase to defer type evaluation at runtime.
 
 ## Read first
 
@@ -11,7 +11,7 @@ Python 3.10+ offline face-attendance desktop app. PyQt5 UI, SQLite/WAL, ONNX Run
 3. `src/main.py` — app bootstrap (import order matters: onnxruntime before PyQt5)
 4. `src/attendance_system/core/config.py` — `SettingsResolver` + frozen `SystemConfig` (DB-seedable: DB > defaults.py; non-DB: CLI > env > default)
 5. `src/attendance_system/core/db.py` — SQLite connection (WAL, foreign keys, `check_same_thread=False`)
-6. `src/attendance_system/core/bootstrap.py` — storage initializer (no `load_dotenv()`, uses CLI args)
+6. `src/attendance_system/core/bootstrap.py` — storage initializer (loads `.env` for admin seeding; uses CLI args for DB path)
 7. `.env.example` — non-DB settings only (paths, camera, feature flags)
 8. `src/attendance_system/core/defaults.py` — seedable DB defaults as Python constants (9 keys, single source of truth)
 9. `codemap.md` + per-module `codemap.md` files — directory map with entrypoints
@@ -40,8 +40,8 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 ## Wiring
 
 - **Entry points:** `attendance-app` → `main:main`; `attendance-storage-init` → `attendance_system.core.bootstrap:main`.
-- **Startup order:** `load_dotenv()` → `SettingsResolver.resolve()` (builds frozen `SystemConfig`, CLI > env > DB > default) → `set_timezone_config(config.timezone)` → `initialize_storage()` → `SettingsResolver.seed_db_from_defaults()` (idempotent defaults→DB seeding) → validate ONNX models → wire services → launch `MainWindow`.
-- **`bootstrap.py`** uses raw CLI args + `DATABASE_PATH` env var, **not** `load_dotenv()`.
+- **Startup order:** `load_dotenv()` → `SettingsResolver.resolve()` (first pass, DB-independent → provisional config) → `initialize_storage()` → `SettingsResolver.seed_db_from_defaults()` (idempotent defaults→DB seeding) → `SettingsResolver.resolve()` (second pass with DB → final `SystemConfig`) → `set_timezone_config(config.timezone)` → validate ONNX models → wire services → launch `MainWindow`.
+- **`bootstrap.py`** calls `load_dotenv()` so `ADMIN_USERNAME` / `ADMIN_PASSWORD` can be read from `.env` for admin seeding. Config resolution uses `env={}` (hermetic) to determine `database_path` without pulling in other runtime env values.
 - **`db.py`** connections: WAL journal, `synchronous=NORMAL`, `foreign_keys=ON`, `check_same_thread=False`. Path traversal guard in `DatabaseConfig`.
 - **Config priority:** CLI arg > env var > DB > default (timezone is the exception — DB > env > default, no CLI flag). Resolved by `SettingsResolver` in `core/config.py`. Seed-once defaults→DB flow: `SettingsResolver.seed_db_from_defaults()` only writes if the DB key is unset, so Admin UI changes survive.
 

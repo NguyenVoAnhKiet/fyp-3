@@ -108,7 +108,11 @@ def main(argv: list[str] | None = None) -> int:
 
     # --- Phase 3: Bootstrap database ------------------------------------------
     try:
-        initialize_storage(provisional.database_path)
+        initialize_storage(
+            provisional.database_path,
+            admin_username=provisional.admin_username,
+            admin_password=provisional.admin_password,
+        )
     except Exception as exc:
         QMessageBox.critical(
             None,

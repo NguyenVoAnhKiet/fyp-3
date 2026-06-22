@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "database-storage-core"
 version = "0.1.0"
 description = "Local storage core for the attendance system"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
     "bcrypt",
     "PyQt5",
