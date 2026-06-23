@@ -166,7 +166,7 @@ def test_seed_db_from_defaults_skips_when_key_exists() -> None:
 
 
 def test_seed_db_from_defaults_converts_db_types_to_strings() -> None:
-    """``defaults.py`` float/bool/int → '0.5'/'false'/'5'.
+    """``defaults.py`` float/bool/int values are stringified for DB storage.
     
     Uses real defaults from :mod:`attendance_system.core.defaults`.
     """
@@ -174,17 +174,20 @@ def test_seed_db_from_defaults_converts_db_types_to_strings() -> None:
     SettingsResolver().seed_db_from_defaults(settings=settings)
     called = {call.args[0]: call.args[1] for call in settings.set.call_args_list}
     assert called["liveness_threshold"] == "0.5"
-    assert called["hybrid_liveness_enabled"] == "false"
+    assert called["hybrid_liveness_enabled"] == (
+        "true" if defaults.DEFAULT_HYBRID_LIVENESS_ENABLED else "false"
+    )
     assert called["hybrid_voting_window"] == "5"
 
 
 def test_seed_db_from_defaults_valid_zero_and_false_are_valid() -> None:
-    """0 and false are valid seed values (never skipped)."""
+    """Bool seed values are valid and stringified instead of skipped."""
     settings = _empty_db()
     SettingsResolver().seed_db_from_defaults(settings=settings)
     called = {call.args[0]: call.args[1] for call in settings.set.call_args_list}
-    # ``hybrid_liveness_enabled`` defaults to ``False`` → must be seeded as "false"
-    assert called["hybrid_liveness_enabled"] == "false"
+    assert called["hybrid_liveness_enabled"] == (
+        "true" if defaults.DEFAULT_HYBRID_LIVENESS_ENABLED else "false"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -192,11 +195,11 @@ def test_seed_db_from_defaults_valid_zero_and_false_are_valid() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_bootstrap_mode_skips_dotenv() -> None:
-    """Init mode does not consult env (no ``load_dotenv()`` upstream)."""
+def test_bootstrap_mode_keeps_non_admin_settings_hermetic() -> None:
+    """Init mode ignores non-admin env values passed through ``env``."""
     # When bootstrap.py is invoked, env may be polluted from the shell.
     # In init mode the resolver should still resolve the database path
-    # from CLI args, but skip DB-seeding and threshold/UX resolution.
+    # from CLI args, but skip threshold/UX resolution.
     env = {"FACE_ANTISPOOF_CONFIDENCE_THRESHOLD": "0.99"}  # would corrupt init
     args = argparse.Namespace(
         database_path="/tmp/explicit.db",
@@ -217,6 +220,45 @@ def test_runtime_mode_consults_env_for_non_db_settings() -> None:
     env = {"CAMERA_INDEX": "5"}
     cfg = SettingsResolver(mode="runtime").resolve(env=env, db_reader=None)
     assert cfg.camera_index == 5
+
+
+def test_admin_credentials_are_resolved_from_process_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Admin seed credentials come from process env after dotenv loading."""
+    monkeypatch.setenv("ADMIN_USERNAME", "root")
+    monkeypatch.setenv("ADMIN_PASSWORD", "Root@1234")
+
+    cfg = SettingsResolver().resolve(env={}, db_reader=None)
+
+    assert cfg.admin_username == "root"
+    assert cfg.admin_password == "Root@1234"
+
+
+def test_admin_credentials_have_no_hardcoded_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing admin env values stay empty so storage init can fail fast."""
+    monkeypatch.delenv("ADMIN_USERNAME", raising=False)
+    monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
+
+    cfg = SettingsResolver().resolve(env={}, db_reader=None)
+
+    assert cfg.admin_username == ""
+    assert cfg.admin_password == ""
+
+
+def test_empty_admin_env_values_do_not_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Blank env values remain blank; no default admin is substituted."""
+    monkeypatch.setenv("ADMIN_USERNAME", "")
+    monkeypatch.setenv("ADMIN_PASSWORD", "")
+
+    cfg = SettingsResolver().resolve(env={}, db_reader=None)
+
+    assert cfg.admin_username == ""
+    assert cfg.admin_password == ""
 
 
 def test_init_mode_skips_defaults_seeding() -> None:

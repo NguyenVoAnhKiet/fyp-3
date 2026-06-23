@@ -37,7 +37,7 @@ DEFAULT_HYBRID_BOOST_AMOUNT: float = 0.10
 
 #: Whether the new hybrid liveness decider is enabled (feature flag).
 #: When False, uses the legacy liveness path.
-DEFAULT_HYBRID_LIVENESS_ENABLED: bool = False
+DEFAULT_HYBRID_LIVENESS_ENABLED: bool = True
 
 #: Number of AI-frames between recognition runs in hybrid mode.
 #: At _AI_FRAME_SKIP=3 and interval=5, recognition runs ~every 15 camera
@@ -76,9 +76,7 @@ DEFAULT_RECOGNITION_MODEL_PATH: Path = Path(
 DEFAULT_DETECTOR_MODEL_PATH: Path = Path(
     "models/face_detection/face_detection_yunet_2023mar.onnx"
 )
-DEFAULT_LIVENESS_MODEL_PATH: Path = Path(
-    "models/anti_spoof/best_model_quantized.onnx"
-)
+DEFAULT_LIVENESS_MODEL_PATH: Path = Path("models/anti_spoof/best_model_quantized.onnx")
 DEFAULT_HEADPOSE_MODEL_PATH: Path = Path("models/head_pose/mobilenetv2.onnx")
 
 # ---------------------------------------------------------------------------

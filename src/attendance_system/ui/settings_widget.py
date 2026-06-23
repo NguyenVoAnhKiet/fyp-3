@@ -99,7 +99,39 @@ class _CameraScanThread(QThread):
 
 
 class SettingsWidget(QWidget):
-    """Form for editing system-wide settings (camera, thresholds)."""
+    """Form for editing system-wide settings (camera, AI thresholds, timezone, attendance freeze).
+
+    Loads current values from :class:`~attendance_system.services.settings_service.SettingsService`
+    on init and persists edits via the same service (which writes to the DB).  This widget
+    does **not** handle CLI / env override precedence — that lives in
+    :class:`~attendance_system.core.config.SettingsResolver`.
+
+    **Camera:** A background :class:`_CameraScanThread` probes indices 0-4 on
+    startup (and on \"Quét lại\" button click) to discover available cameras.
+    The combo box is disabled during scanning to prevent stale selections.
+
+    **Timezone:** Choices are listed in :data:`TIMEZONE_CHOICES`.  On save,
+    the IANA timezone is persisted to the DB and immediately applied via
+    :func:`~attendance_system.utils.time_utils.set_timezone_config`, which
+    emits :attr:`~attendance_system.utils.time_utils.timezone_signals.timezone_changed`
+    so other widgets re-render their time displays.
+
+    **AI thresholds:** Liveness and similarity thresholds are ``QDoubleSpinBox``
+    widgets with range [0.0, 1.0] and step 0.05.  Their defaults come from
+    :mod:`attendance_system.core.defaults`.
+
+    **Attendance freeze:** Controls the cooldown period (0-10 seconds) and an
+    optional sound effect after a successful recognition.
+
+    **Persistence:** :meth:`_save` calls ``SettingsService.set()`` for each key,
+    converts widget values to strings with an explicit type hint (``"int"``,
+    ``"float"``, ``"bool"``, ``"str"``), and shows a confirmation dialog.
+
+    See Also:
+        * :mod:`attendance_system.core.defaults` — single source of truth for defaults.
+        * :class:`attendance_system.services.settings_service.SettingsService` — DB CRUD wrapper.
+        * :class:`attendance_system.core.config.SettingsResolver` — full config precedence.
+    """
 
     def __init__(self, settings_service: SettingsService, parent: QWidget | None = None) -> None:
         super().__init__(parent)

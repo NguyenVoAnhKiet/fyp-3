@@ -14,11 +14,32 @@ from attendance_system.services.exceptions import SessionClosedError
 
 
 class AttendanceService:
-    """
-    Service layer for attendance recording and session management.
+    """Service layer orchestrating attendance recording, session management, and recognition events.
+
+    Sits between the UI layer and the four underlying repositories:
+    :class:`~attendance_system.repositories.session_repository.SessionRepository`,
+    :class:`~attendance_system.repositories.attendance_repository.AttendanceRepository`,
+    :class:`~attendance_system.repositories.recognition_event_repository.RecognitionEventRepository`,
+    and :class:`~attendance_system.repositories.user_repository.UserRepository`.
+
+    **Session lifecycle:** ``start_session()`` → ``record_success()`` / ``record_duplicate()`` /
+    ``record_spoof_warning()`` / ``record_unrecognized()`` → ``end_session()``.
+
+    **Error semantics:**
+    * All mutation methods raise :class:`SessionClosedError` if the session status is not ``"active"``.
+    * ``record_success()`` and :meth:`_validate_session_and_user` raise ``LookupError`` for
+      missing sessions or users.
+    * ``record_duplicate()`` raises ``LookupError`` if no prior attendance record exists
+      (the caller must call ``record_success`` first).
+    * ``record_success()`` catches ``sqlite3.IntegrityError`` on duplicate
+      ``(session_id, user_id)`` — falling back to the existing record — so the caller
+      never sees a DB-level uniqueness violation.
+
+    **Export:** ``export_session_to_csv()`` / ``export_session_to_excel()`` require the
+    optional ``pandas`` dependency.
 
     Raises:
-        SessionClosedError: When attempting to record attendance in a closed session.
+        SessionClosedError: When recording attendance in a closed session.
         LookupError: When session or user is not found.
     """
     def __init__(self, database: Database) -> None:
@@ -150,19 +171,19 @@ class AttendanceService:
         end_date: str | None = None,
         class_name: str | None = None,
         subject_name: str | None = None,
-    ):
+    ) -> list[sqlite3.Row]:
         return self.sessions.get_sessions(start_date, end_date, class_name, subject_name)
 
-    def get_session_details(self, session_id: int):
+    def get_session_details(self, session_id: int) -> sqlite3.Row | None:
         return self.sessions.get_by_id(session_id)
 
-    def get_session_records(self, session_id: int):
+    def get_session_records(self, session_id: int) -> list[sqlite3.Row]:
         return self.attendance.get_records_with_users(session_id)
 
-    def get_unique_classes(self):
+    def get_unique_classes(self) -> list[str]:
         return [row["class_name"] for row in self.sessions.list_unique_classes()]
 
-    def get_unique_subjects(self):
+    def get_unique_subjects(self) -> list[str]:
         return [row["subject_name"] for row in self.sessions.list_unique_subjects()]
 
     @staticmethod

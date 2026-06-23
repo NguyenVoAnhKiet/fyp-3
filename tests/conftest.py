@@ -19,11 +19,14 @@ if str(SRC) not in sys.path:
 
 
 @pytest.fixture
-def database(tmp_path: Path):
+def database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from attendance_system.core.db import Database, DatabaseConfig
     from attendance_system.core.storage_manager import StorageManager
 
+    monkeypatch.setenv("ADMIN_USERNAME", "admin")
+    monkeypatch.setenv("ADMIN_PASSWORD", "Admin@1234")
+
     db = Database(DatabaseConfig(path=tmp_path / "database.db"))
-    StorageManager(db).initialize()
+    StorageManager(db).initialize(admin_username="admin", admin_password="Admin@1234")
     return db
 

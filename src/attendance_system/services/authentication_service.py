@@ -1,6 +1,10 @@
 from __future__ import annotations
+import logging
+
 import bcrypt
 from attendance_system.repositories.admin_repository import AdminRepository
+
+logger = logging.getLogger(__name__)
 
 class AuthenticationService:
     """Service for handling administrator authentication."""
@@ -35,7 +39,8 @@ class AuthenticationService:
 
         try:
             return bcrypt.checkpw(provided_password, stored_hash)
-        except Exception:
+        except Exception as e:
+            logger.warning("bcrypt check failed: %s", e)
             # Log error in real app, return False for security
             return False
 

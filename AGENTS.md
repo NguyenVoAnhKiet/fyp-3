@@ -1,17 +1,20 @@
 # AGENTS.md
 
-Python 3.11+ offline face-attendance desktop app. PyQt5 UI, SQLite/WAL, ONNX Runtime, bcrypt.
+Python 3.10+ offline face-attendance desktop app. PyQt5 UI, SQLite/WAL, ONNX Runtime, bcrypt. Windows primary (Linux/macOS compatible but untested).
+
+Runs on Python 3.10+. `from __future__ import annotations` is used across the codebase to defer type evaluation at runtime.
 
 ## Read first
 
-1. `pyproject.toml` — deps, entry points, build config
-2. `src/main.py` — app bootstrap (import order matters: onnxruntime before PyQt5)
-3. `src/attendance_system/core/config.py` — `SettingsResolver` + frozen `SystemConfig` (DB-seedable: DB > defaults.py; non-DB: CLI > env > default)
-4. `src/attendance_system/core/db.py` — SQLite connection (WAL, foreign keys, `check_same_thread=False`)
-5. `src/attendance_system/core/bootstrap.py` — storage initializer (no `load_dotenv()`, uses CLI args)
-6. `.env.example` — non-DB settings only (paths, camera, feature flags)
-7. `src/attendance_system/core/defaults.py` — seedable DB defaults as Python constants (9 keys, single source of truth)
-8. `codemap.md` + per-module `codemap.md` files — directory map with entrypoints
+1. `README.md` — bilingual project overview, quick start, known limitations (first thing committee/reviewers see)
+2. `pyproject.toml` — deps, entry points, build config
+3. `src/main.py` — app bootstrap (import order matters: onnxruntime before PyQt5)
+4. `src/attendance_system/core/config.py` — `SettingsResolver` + frozen `SystemConfig` (DB-seedable: DB > defaults.py; non-DB: CLI > env > default)
+5. `src/attendance_system/core/db.py` — SQLite connection (WAL, foreign keys, `check_same_thread=False`)
+6. `src/attendance_system/core/bootstrap.py` — storage initializer (loads `.env` for admin seeding; uses CLI args for DB path)
+7. `.env.example` — non-DB settings only (paths, camera, feature flags)
+8. `src/attendance_system/core/defaults.py` — seedable DB defaults as Python constants (9 keys, single source of truth)
+9. `codemap.md` + per-module `codemap.md` files — directory map with entrypoints
 
 Prefer executable sources over prose; if docs conflict with code/config/scripts, trust the executable source.
 
@@ -37,8 +40,8 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 ## Wiring
 
 - **Entry points:** `attendance-app` → `main:main`; `attendance-storage-init` → `attendance_system.core.bootstrap:main`.
-- **Startup order:** `load_dotenv()` → `SettingsResolver.resolve()` (builds frozen `SystemConfig`, CLI > env > DB > default) → `set_timezone_config(config.timezone)` → `initialize_storage()` → `SettingsResolver.seed_db_from_defaults()` (idempotent defaults→DB seeding) → validate ONNX models → wire services → launch `MainWindow`.
-- **`bootstrap.py`** uses raw CLI args + `DATABASE_PATH` env var, **not** `load_dotenv()`.
+- **Startup order:** `load_dotenv()` → `SettingsResolver.resolve()` (first pass, DB-independent → provisional config) → `initialize_storage()` → `SettingsResolver.seed_db_from_defaults()` (idempotent defaults→DB seeding) → `SettingsResolver.resolve()` (second pass with DB → final `SystemConfig`) → `set_timezone_config(config.timezone)` → validate ONNX models → wire services → launch `MainWindow`.
+- **`bootstrap.py`** calls `load_dotenv()` so `ADMIN_USERNAME` / `ADMIN_PASSWORD` can be read from `.env` for admin seeding. These are required for a fresh DB with no admin account; there is no hardcoded fallback admin. Config resolution uses `env={}` (hermetic) to determine `database_path` without pulling in other runtime env values.
 - **`db.py`** connections: WAL journal, `synchronous=NORMAL`, `foreign_keys=ON`, `check_same_thread=False`. Path traversal guard in `DatabaseConfig`.
 - **Config priority:** CLI arg > env var > DB > default (timezone is the exception — DB > env > default, no CLI flag). Resolved by `SettingsResolver` in `core/config.py`. Seed-once defaults→DB flow: `SettingsResolver.seed_db_from_defaults()` only writes if the DB key is unset, so Admin UI changes survive.
 
@@ -47,7 +50,7 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 - `CLAUDE.md` — behavioral layer (think before coding, simplicity, surgical changes, goal-driven execution). Read alongside this file.
 - `docs/agents/issue-tracker.md` — issues live on **GitHub Issues** via `gh` CLI; repo inferred from `git remote -v`.
 - `docs/agents/triage-labels.md` — five canonical labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`.
-- `docs/agents/domain.md` — read root `CONTEXT.md` + relevant `docs/adr/*` before working in an area; use glossary vocabulary in outputs.
+- `docs/agents/domain.md` — read relevant `docs/adr/*` before working in an area; use glossary vocabulary in outputs. (`CONTEXT.md` was deleted; `PROJECT_STATUS.md` fills the role.)
 - `docs/plans/README.md` — feature plans convention (`active/` → `archive/` with date prefix on Done; standard sections: Status / Context / Goals / Non-Goals / Design Decisions / Implementation / Testing).
 - `docs/adr/0001-onnx-circuit-breaker.md` — explains the 30-failure ONNX circuit-breaker pattern.
 
@@ -57,8 +60,12 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 - `onnxruntime` must be imported **before** `PyQt5` on Windows (DLL conflict). Both `src/main.py` and `tests/conftest.py` do this.
 - `QImage` crossing threads must be `.copy()`'d first.
 - Create worker `QThread`s in `__init__`, start them in `run()`.
-- `EnrollmentCameraThread` flips frames (mirror); attendance `CameraThread` does not.
+- Both `CameraThreadBase.run()` and `EnrollmentCameraThread` flip frames horizontally (`cv2.flip(frame, 1)`) so users see a mirror reflection. The raw camera feed is NOT shown to users.
 - `CachingFaceReferenceRepository` wrapper owns the face-references cache; inner `FaceReferenceRepository` is a pure SQLite adapter. Invalidation is enforced by the wrapper — see `tests/unit/test_caching_face_reference_repository.py` (parametrized over 4 write methods).
+- Enrollment tab has a "Hiển thị users đã enroll" checkbox. When checked, `UserRepository.list_active()` returns all users (not just unregistered). Re-enroll uses the same 5-pose flow; `save_enrollment()` atomically replaces old poses. Confirmation dialog prevents accidental re-enroll.
+- Enrollment camera preview only shows `_guidance_text` (single line, e.g., "Nghiêng trái", "Giữ yên"). `_status_text`, `_angles_text`, `_hold_text` are not drawn on the camera — they're only used in `_sync_progress` for the widget labels below the camera.
+- `_angles_label` ("Góc: -") has been removed from enrollment UI. The angles data still flows through `_angles_text` in the camera thread but is not displayed.
+- Distance hint "📏 Ngồi cách camera khoảng 30 cm" appears in the ACTIVE attendance panel (top row, right of title) and in the enrollment widget (below guidance label). Uses `STATUS_INFO` color + bold for visibility.
 - `_crop_face` scale: 2.7 for liveness (broad context), 1.5 for head-pose (tight crop).
 - `_COOLDOWN_SECONDS = 1.5` in `camera_thread.py` — per-user cooldown before re-recognition. In-memory, resets on thread restart.
 - `_AI_FRAME_SKIP = 3` — full AI pipeline runs every 3rd frame (~10 Hz at 30 fps).
@@ -77,6 +84,17 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 - `tests/unit/` — fast, mocked DB; `tests/integration/` — real DB/storage paths.
 - `cryptography`, `pandas`, `openpyxl` are soft deps; tests skip related paths if missing.
 - `models/**/*.onnx` are gitignored — download separately before running integration tests.
+
+## Scripts
+
+Standalone diagnostic/maintenance scripts in `scripts/`. Not part of app entry points; run manually.
+- `reset_users.py` — wipe users + face references (preserves attendance history). Interactive confirmation required.
+- `diagnose_poor_light.py` — single-image liveness diagnostic with preprocessing variants (CLAHE, gamma).
+- `test_poor_light_liveness.py` — synthetic brightness sweep across preprocessing methods.
+- `hypothesis_test_poor_light.py` — root-cause investigation of poor-light rejection (4 hypotheses).
+- `tune_liveness_threshold.py` — data-driven threshold calibration from real + spoof video pairs.
+
+See `scripts/codemap.md` for full details and the investigative pipeline relationship.
 
 ## Liveness (Anti-Spoofing)
 
