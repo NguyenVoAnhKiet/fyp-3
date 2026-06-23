@@ -17,10 +17,11 @@ DB table) with CLI overrides for storage initialization.
 | Storage initializer | `attendance-storage-init` | `attendance_system.core.bootstrap:main()` | Seeds the database schema and creates the admin account (idempotent) |
 
 `attendance-storage-init` must be run at least once before the GUI can operate.
-The bootstrap entry point uses raw CLI args + `DATABASE_PATH` env var (no
-`load_dotenv()`). The GUI entry point calls `load_dotenv()`, resolves
-configuration (CLI > env > DB > default), initializes storage, wires services,
-then enters the Qt event loop.
+The bootstrap entry point calls `load_dotenv()` so admin seed credentials can
+come from `.env`, while database-path resolution remains CLI-first and
+hermetic. The GUI entry point calls `load_dotenv()`, resolves configuration
+(CLI > env > DB > default), initializes storage, wires services, then enters
+the Qt event loop.
 
 ---
 

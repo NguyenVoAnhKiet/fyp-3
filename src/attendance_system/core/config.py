@@ -14,8 +14,7 @@ Architecture (see ``docs/plans/active/0005-system-config-resolver.md``):
     - DB-seedable settings: DB > ``defaults.py``.
     Used by ``main.py``.
   - ``"init"`` — minimal resolution for ``attendance-storage-init``:
-    only ``database_path`` matters; ``load_dotenv()`` is skipped so the
-    init command does not pull in environment values meant for runtime.
+    only ``database_path`` and admin seeding credentials matter.
 
 * :func:`resolve_config` — convenience factory wiring up the typical
   runtime caller.
@@ -103,7 +102,7 @@ class SystemConfig:
     hybrid_liveness_enabled: bool
     recognition_interval: int
 
-    # --- Admin credentials (env > defaults.py; consumed once at seed time) ---
+    # --- Admin credentials (env-only; consumed once at seed time) ---
     admin_username: str
     admin_password: str
 
@@ -170,9 +169,8 @@ class SettingsResolver:
 
     Args:
         mode: ``"runtime"`` (default) or ``"init"``.  In init mode the
-            resolver only resolves ``database_path`` and skips env seeding
-            (because ``bootstrap.py`` does not call ``load_dotenv()`` and
-            should not mutate DB values from environment).
+            resolver resolves ``database_path`` and admin seed credentials,
+            while keeping non-admin tunables hermetic.
 
     Resolution precedence (per tunable):
 
@@ -270,17 +268,13 @@ class SettingsResolver:
             defaults.DEFAULT_HEADPOSE_ENABLED,
         )
 
-        # --- Admin credentials (os.environ > defaults; same for init mode) ---
-        admin_username = os.environ.get(
-            "ADMIN_USERNAME", defaults.DEFAULT_ADMIN_USERNAME
-        )
-        admin_password = os.environ.get(
-            "ADMIN_PASSWORD", defaults.DEFAULT_ADMIN_PASSWORD
-        )
+        # --- Admin credentials (env-only; no hardcoded fallback) ---
+        admin_username = os.environ.get("ADMIN_USERNAME", "")
+        admin_password = os.environ.get("ADMIN_PASSWORD", "")
 
-        # In init mode we don't resolve the rest — bootstrap only needs
-        # the database path.  Return early with sensible defaults for the
-        # rest so callers can still construct a valid SystemConfig.
+        # In init mode, bootstrap only needs the database path plus admin
+        # seed credentials. Return early with sensible defaults for the rest
+        # so callers can still construct a valid SystemConfig.
         if self._mode == "init":
             return SystemConfig(
                 database_path=database_path,
@@ -399,8 +393,8 @@ class SettingsResolver:
         Idempotent: if the DB already has a value for a key, it is left
         untouched.  This preserves the Admin UI overrides across restarts.
 
-        Skipped entirely in ``"init"`` mode because ``bootstrap.py`` must
-        not call ``load_dotenv()``.
+        Skipped entirely in ``"init"`` mode because bootstrap only creates
+        schema and admin credentials; runtime seeds system settings.
 
         Args:
             settings: Object exposing ``get`` / ``set`` (i.e., a

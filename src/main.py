@@ -114,10 +114,18 @@ def main(argv: list[str] | None = None) -> int:
             admin_password=provisional.admin_password,
         )
     except Exception as exc:
+        detail = str(exc)
+        message = f"A database migration error occurred:\n\n{detail}"
+        if "ADMIN_USERNAME and ADMIN_PASSWORD" in detail:
+            message = (
+                "Initial admin credentials are required before the first run.\n\n"
+                "Set ADMIN_USERNAME and ADMIN_PASSWORD in your .env file, "
+                "then start the application again."
+            )
         QMessageBox.critical(
             None,
             "Database Initialization Failed",
-            f"A database migration error occurred:\n\n{exc}\n\nThe application cannot start.",
+            f"{message}\n\nThe application cannot start.",
         )
         return 1
 

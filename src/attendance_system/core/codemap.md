@@ -8,17 +8,17 @@ Core infrastructure layer: manages configuration resolution (CLI > env > DB > de
 
 ### `config.py` — Centralized configuration resolution (Plan 0005)
 
-- **`SystemConfig`** — `@dataclass(slots=True, frozen=True)` holding all resolved system tunables exactly once: database/model paths, camera index, feature flags (`antispoof_enabled`, `headpose_enabled`, `hybrid_liveness_enabled`), AI thresholds, hybrid liveness decider params (`hybrid_voting_window`, `hybrid_boost_amount`, `recognition_interval`), timezone, attendance UX settings. Immutable; constructed by `SettingsResolver` at startup.
+- **`SystemConfig`** — `@dataclass(slots=True, frozen=True)` holding all resolved system tunables exactly once: database/model paths, camera index, feature flags (`antispoof_enabled`, `headpose_enabled`, `hybrid_liveness_enabled`), AI thresholds, hybrid liveness decider params (`hybrid_voting_window`, `hybrid_boost_amount`, `recognition_interval`), timezone, attendance UX settings, and env-only admin seed credentials. Immutable; constructed by `SettingsResolver` at startup.
 - **`SettingsResolver`** — Class that performs resolution in two modes:
   - `"runtime"` (default) — full resolution; used by `main.py`. For DB-seedable keys, resolution is **DB > defaults.py** (env vars not consulted). For non-DB settings (paths, camera, feature flags): CLI > env > default.
-  - `"init"` — minimal resolution for `attendance-storage-init`; only `database_path` matters, skips env seeding (bootstrap does not call `load_dotenv()`).
+  - `"init"` — minimal resolution for `attendance-storage-init`; resolves `database_path` and env-only admin seed credentials while keeping non-admin settings hermetic.
 - **`resolve_config()`** — Convenience factory that wires `SettingsService.get` as the `db_reader` for the resolver.
 - **`seed_db_from_defaults()`** — Idempotent defaults→DB seeding: reads values from `defaults.py` constants via `getattr` and writes to `system_settings` only if the DB key is unset (preserving Admin UI overrides). Skipped in init mode.
 - **`_SEED_SETTINGS`** — Dict mapping DB key → value_type string for the 9 seedable settings (5 original + 4 hybrid: `hybrid_voting_window`, `hybrid_boost_amount`, `hybrid_liveness_enabled`, `recognition_interval`).
 - **Module-level assertion** — Verifies every `_SEED_SETTINGS` key has a corresponding `DEFAULT_*` constant in `defaults.py` at import time. Fail-fast on drift.
 - **Per-type resolvers** — `_resolve_path`, `_resolve_int`, `_resolve_float`, `_resolve_bool`, `_resolve_timezone`. Each encapsulates CLI > env > [DB] > default fallback logic with proper empty-string and parse-error handling. Timezone uses DB > default (no CLI flag, no env) with `zoneinfo.ZoneInfo` validation.
 
-**Important**: `bootstrap.py` uses `SettingsResolver(mode="init")` with `env={}` for hermetic resolution — no `os.environ` consulted, no `.env` loaded. The `SettingsResolver` owns all parsing logic (int/bool/float) so call sites don't duplicate it.
+**Important**: `bootstrap.py` calls `load_dotenv()` so admin seed credentials can come from `.env` / process env, but uses `SettingsResolver(mode="init")` with `env={}` for hermetic non-admin resolution. The `SettingsResolver` owns all parsing logic (int/bool/float) so call sites don't duplicate it.
 
 ### `defaults.py` — Default values for all system tunables
 
@@ -59,7 +59,7 @@ Core infrastructure layer: manages configuration resolution (CLI > env > DB > de
 
 - **`StorageManager`** — `@dataclass(slots=True)` with a `database: Database` field.
 - **`initialize()`** — opens a session, calls `initialize_schema(connection)`, then `_seed_admin(connection)`.
-- **`_seed_admin(connection)`** — checks if `admin_credentials` is empty; if so, inserts admin from environment variables `ADMIN_USERNAME` / `ADMIN_PASSWORD` (must be set — raises `ValueError` if missing/blank). Password is bcrypt-hashed with `bcrypt.gensalt()`.
+- **`_seed_admin(connection)`** — checks if `admin_credentials` is empty; if so, inserts admin from resolved `ADMIN_USERNAME` / `ADMIN_PASSWORD` values (must be set via `.env` or process env — raises `ValueError` if missing/blank). Password is bcrypt-hashed with `bcrypt.gensalt()`.
 
 **Important**: `StorageManager` is **not** a disk-storage manager (despite its name). It manages database schema + seed state. Actual face-image file storage lives in `services/` or `repositories/`.
 
@@ -67,10 +67,10 @@ Core infrastructure layer: manages configuration resolution (CLI > env > DB > de
 
 - **`build_parser()`** — `argparse.ArgumentParser` with `--database-path` (default from `DATABASE_PATH` env var or `attendance.db`).
 - **`initialize_storage(database_path)`** — constructs `Database(DatabaseConfig(path=database_path))` and passes it to `StorageManager.initialize()`.
-- **`main(argv)`** — calls `load_dotenv()` (so `ADMIN_USERNAME`/`ADMIN_PASSWORD` from .env are available for admin seeding), creates a `SettingsResolver(mode="init")`, calls `resolver.resolve(cli=args, env={}, db_reader=None)` to get the database path (resolver stays hermetic — no `os.environ` for its own resolution), then calls `initialize_storage`. Returns 0.
+- **`main(argv)`** — calls `load_dotenv()` (so `ADMIN_USERNAME`/`ADMIN_PASSWORD` from .env are available for admin seeding), creates a `SettingsResolver(mode="init")`, calls `resolver.resolve(cli=args, env={}, db_reader=None)` to get the database path and env-only admin credentials, then calls `initialize_storage`. Returns 0.
 - **`__main__` guard** — `raise SystemExit(main())`.
 
-**Important**: bootstrap now calls `load_dotenv()` for admin credentials, but the `SettingsResolver` still uses `"init"` mode with `env={}` so database-path resolution remains hermetic. Environment variables (`ADMIN_USERNAME`, `ADMIN_PASSWORD`) for seeding are read directly by `StorageManager` via `os.getenv`.
+**Important**: bootstrap calls `load_dotenv()` for admin credentials, but the `SettingsResolver` still uses `"init"` mode with `env={}` so database-path resolution remains hermetic. Admin seed credentials are resolved from process env only; there is no hardcoded fallback admin account.
 
 ### `liveness_tracker.py` — Backward-compatibility re-export shim
 
@@ -97,7 +97,7 @@ Core infrastructure layer: manages configuration resolution (CLI > env > DB > de
 ### Data flow
 
 1. **Startup**: `attendance-app` → `load_dotenv()` → `SettingsResolver.resolve()` builds frozen `SystemConfig` (CLI > env > DB > default) → `set_timezone_config()` → `initialize_storage()` creates/upgrades schema → `seed_db_from_defaults()` idempotently writes `defaults.py` values → wire services → launch UI.
-2. **Storage init**: `attendance-storage-init` CLI → `bootstrap.main()` → `load_dotenv()` → `SettingsResolver(mode="init")` resolves only `database_path` → `StorageManager.initialize()` → `initialize_schema(connection)` creates tables → `_seed_admin()` inserts admin from env vars.
+2. **Storage init**: `attendance-storage-init` CLI → `bootstrap.main()` → `load_dotenv()` → `SettingsResolver(mode="init")` resolves `database_path` plus env-only admin seed credentials → `StorageManager.initialize()` → `initialize_schema(connection)` creates tables → `_seed_admin()` inserts admin from env vars or fails if they are missing.
 3. **Runtime**: `Database` is instantiated (via `DatabaseConfig` from `SystemConfig`) → wired into repositories → services call `database.session()` for transactional DB access.
 4. **Schema changes**: New `CREATE TABLE` statements go into `SCHEMA_STATEMENTS`. Backward-compatible migrations (column additions, constraint changes, table recreations) go into `initialize_schema()` after the schema loop.
 5. **Admin UI overrides**: Admin changes a threshold/timezone/UX setting in UI → `SettingsService.set()` writes to `system_settings` DB → takes effect immediately. On next app restart, `SettingsResolver` reads from DB (priority level 3) — seeded env values do not overwrite because `seed_db_from_env` is idempotent (only writes if key is unset).
@@ -110,7 +110,7 @@ Core infrastructure layer: manages configuration resolution (CLI > env > DB > de
 - **Schema-as-tuple** — all DDL is in a single immutable tuple; migrations are imperative after the schema loop. Simple and auditable.
 - **No ORM** — raw SQL with `sqlite3.Row` keeps the dependency footprint minimal and avoids ORM overhead for a single-process desktop app.
 - **Frozen `SystemConfig`** — immutable config object prevents accidental post-construction mutation; single injection point for all tunables instead of ad-hoc env reads throughout the codebase.
-- **`SettingsResolver` two modes** — `"init"` mode keeps `bootstrap.py` hermetic (no `load_dotenv()`, no `os.environ` consultation), while `"runtime"` mode provides full resolution. This prevents the init CLI from accidentally pulling in `.env` values meant for the app.
+- **`SettingsResolver` two modes** — `"init"` mode keeps non-admin settings hermetic while still accepting admin seed credentials already loaded into process env; `"runtime"` mode provides full resolution. This prevents the init CLI from accidentally pulling in unrelated `.env` values meant for the app.
 - **Idempotent defaults→DB seeding** — `seed_db_from_defaults()` only writes if the DB key is unset, so Admin UI changes survive restarts. All defaults come from `defaults.py`.
 - **Defaults centralized** — all default values in `defaults.py` instead of scattered across modules. Threshold migrations become a one-file change.
 - **Liveness tracker re-export** — the old `core/liveness_tracker.py` re-exports from `services/` for backward compatibility without code duplication.

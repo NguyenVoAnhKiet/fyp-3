@@ -41,7 +41,7 @@ $env:PYTHONPATH='src'; python src/main.py     # Windows equivalent
 
 - **Entry points:** `attendance-app` → `main:main`; `attendance-storage-init` → `attendance_system.core.bootstrap:main`.
 - **Startup order:** `load_dotenv()` → `SettingsResolver.resolve()` (first pass, DB-independent → provisional config) → `initialize_storage()` → `SettingsResolver.seed_db_from_defaults()` (idempotent defaults→DB seeding) → `SettingsResolver.resolve()` (second pass with DB → final `SystemConfig`) → `set_timezone_config(config.timezone)` → validate ONNX models → wire services → launch `MainWindow`.
-- **`bootstrap.py`** calls `load_dotenv()` so `ADMIN_USERNAME` / `ADMIN_PASSWORD` can be read from `.env` for admin seeding. Config resolution uses `env={}` (hermetic) to determine `database_path` without pulling in other runtime env values.
+- **`bootstrap.py`** calls `load_dotenv()` so `ADMIN_USERNAME` / `ADMIN_PASSWORD` can be read from `.env` for admin seeding. These are required for a fresh DB with no admin account; there is no hardcoded fallback admin. Config resolution uses `env={}` (hermetic) to determine `database_path` without pulling in other runtime env values.
 - **`db.py`** connections: WAL journal, `synchronous=NORMAL`, `foreign_keys=ON`, `check_same_thread=False`. Path traversal guard in `DatabaseConfig`.
 - **Config priority:** CLI arg > env var > DB > default (timezone is the exception — DB > env > default, no CLI flag). Resolved by `SettingsResolver` in `core/config.py`. Seed-once defaults→DB flow: `SettingsResolver.seed_db_from_defaults()` only writes if the DB key is unset, so Admin UI changes survive.
 

@@ -92,17 +92,6 @@ DEFAULT_ANTISPOOF_ENABLED: bool = True
 DEFAULT_HEADPOSE_ENABLED: bool = True
 
 # ---------------------------------------------------------------------------
-# Admin credentials (used for initial admin seeding — env > default)
-# ---------------------------------------------------------------------------
-
-#: Initial admin username when no ADMIN_USERNAME env var is set.
-DEFAULT_ADMIN_USERNAME: str = "admin"
-
-#: Initial admin password when no ADMIN_PASSWORD env var is set.
-#: Users should change this after first login via the Admin UI.
-DEFAULT_ADMIN_PASSWORD: str = "admin123"
-
-# ---------------------------------------------------------------------------
 # Timezone
 # ---------------------------------------------------------------------------
 
